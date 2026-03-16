@@ -162,13 +162,13 @@ Expected result:
 
 Current boundary:
 
+- Current minimal published runtime slice: `runtime-backed ~go plan`
 - closed repo-local runtime helpers:
   - `scripts/sopify_runtime.py`: default raw-input entry
   - `scripts/go_plan_runtime.py`: plan-only helper
 - `scripts/sync-runtime-assets.sh` can now sync the runtime bundle into `.sopify-runtime/` in another repository
 - the `.sopify-runtime/` bundle already includes portable `tests/test_runtime.py` and `scripts/check-runtime-smoke.sh`
-- the generic entry still does not auto-bridge `~compare` or `workflow-learning`
-- no standalone develop bridge is provided yet for `~go exec`
+- not part of this release slice: generic-entry auto-bridge for `~compare`, a standalone `workflow-learning` runtime helper, and the `~go exec` develop bridge
 - the current shape now fits self-use and secondary integration, but it is still not a full host-side installer flow
 
 ---

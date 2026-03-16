@@ -1,6 +1,6 @@
 # Sopify Runtime 蓝图
 
-状态: 进行中（P0 runtime skeleton 已落地，R0 最小可发布版本待收口）
+状态: 进行中（P0 runtime skeleton 与 R0 最小发布切片已收口，P1 待推进）
 创建日期: 2026-03-13
 维护方式: 持续更新
 
@@ -101,10 +101,12 @@ R0 需要补齐：
 - 新增 `scripts/check-runtime-smoke.sh`，并已将 runtime unit test + smoke check 接入 CI
 - README、AGENTS、蓝图任务单口径已对齐
 
-当前仍未收口：
+当前对外口径：
 
-- `~compare` 的通用入口自动桥接
-- `~go exec` / `workflow-learning` 的独立 runtime helper
+- 本轮只承诺 `runtime-backed ~go plan`
+- `~compare` 仍保留宿主侧专用桥接，不属于这条最小发布切片
+- `~go exec` / `workflow-learning` 的独立 runtime helper 也不属于 R0 发布范围
+- 上述能力保留到后续阶段继续评估，不再作为当前 R0 阻塞项
 
 ### P1
 

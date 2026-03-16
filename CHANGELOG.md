@@ -6,6 +6,14 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+### Scope
+
+- Current minimal published runtime slice: `runtime-backed ~go plan`
+- Not part of this slice:
+  - generic-entry auto-bridge for `~compare`
+  - standalone `~go exec` develop bridge
+  - standalone `workflow-learning` runtime helper
+
 ### Added
 
 - New sub-skill `model-compare` (CN/EN) for configuration-driven multi-model parallel comparison with manual user selection.
@@ -14,6 +22,10 @@ This changelog is maintained manually (not auto-generated).
   - Natural-language prefix: `对比分析：<question>`
 - Multi-model MVP config block in `examples/sopify.config.yaml` with `candidates`, `timeout_sec`, and `max_parallel`.
 - New GitHub Actions workflow `.github/workflows/ci.yml` to gate PR/Push with sync and version checks.
+- Default repo-local raw-input runtime entry `scripts/sopify_runtime.py` and plan-only helper `scripts/go_plan_runtime.py`.
+- Runtime bundle sync script `scripts/sync-runtime-assets.sh` for vendoring `.sopify-runtime/` into another repository.
+- Runtime smoke check script `scripts/check-runtime-smoke.sh`.
+- Runtime behavior test coverage in `tests/test_runtime.py`, including vendored bundle validation.
 
 ### Changed
 
@@ -45,6 +57,9 @@ This changelog is maintained manually (not auto-generated).
   - `sync-skills.sh`
   - `check-skills-sync.sh`
   - `check-version-consistency.sh`
+- Clarified release boundary across README, blueprint, and changelog:
+  - current minimal published slice = `runtime-backed ~go plan`
+  - `~compare` generic-entry bridge / `~go exec` develop bridge / `workflow-learning` runtime helper remain out of scope for this slice
 
 ## [2026-02-13] - 2026-02-13
 

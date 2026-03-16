@@ -162,13 +162,13 @@ bash scripts/check-runtime-smoke.sh
 
 当前边界：
 
+- 当前对外承诺的最小 runtime 发布切片：`runtime-backed ~go plan`
 - 已收口 repo-local runtime helper：
   - `scripts/sopify_runtime.py`：默认原始输入入口
   - `scripts/go_plan_runtime.py`：plan-only helper
 - 已提供 `scripts/sync-runtime-assets.sh`，用于把 runtime bundle 同步到目标仓库的 `.sopify-runtime/`
 - `.sopify-runtime/` bundle 内已包含便携 `tests/test_runtime.py` 与 `scripts/check-runtime-smoke.sh`
-- 尚未在通用入口里自动桥接：`~compare`、`workflow-learning`
-- 尚未提供独立 develop bridge：`~go exec`
+- 不属于本轮发布切片：`~compare` 的通用入口自动桥接、`workflow-learning` 的独立 runtime helper、`~go exec` develop bridge
 - 因此当前已经适合“自用 + 二次接入”，但仍不是完整宿主安装器形态
 
 ---

@@ -230,7 +230,7 @@ P0 实现原则：
 - `tests/test_runtime.py` 已纳入版本控制
 - 当前 CI 已接入 runtime unit test 与 smoke check
 
-## R0 目标（后置，可选）
+## R0 目标（已收口）
 
 把 runtime skeleton 进一步收口为“可发布的最小版本”。
 
@@ -315,14 +315,20 @@ R0 实现原则：
 
 ### 7. 发布说明
 
-- [ ] 更新 changelog，明确本次只发布 `runtime-backed ~go plan`
-- [ ] 给出已支持、未支持、后续阶段的边界说明
-- [ ] 保证 README、蓝图、变更说明三者口径一致
+- [x] 更新 changelog，明确本次只发布 `runtime-backed ~go plan`
+- [x] 给出已支持、未支持、后续阶段的边界说明
+- [x] 保证 README、蓝图、变更说明三者口径一致
 
 验收条件：
 
 - 外部读者可以快速理解本次发布范围
 - 不会把 P0 skeleton 误读为完整 runtime 发布
+
+R0 收口说明：
+
+- 当前对外承诺的最小发布切片是 `runtime-backed ~go plan`
+- `~compare` 的通用入口自动桥接不属于本轮发布承诺
+- `~go exec` develop bridge 与 `workflow-learning` 独立 runtime helper 顺延到后续阶段
 
 ## P1 目标
 
