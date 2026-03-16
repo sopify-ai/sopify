@@ -8,7 +8,8 @@ from typing import Any, Mapping, Optional
 
 from .config import load_runtime_config
 from .context_recovery import recover_context
-from .models import PlanArtifact, ReplayEvent, RouteDecision, RunState, RuntimeResult, SkillMeta
+from .kb import bootstrap_kb
+from .models import KbArtifact, PlanArtifact, ReplayEvent, RouteDecision, RunState, RuntimeResult, SkillMeta
 from .plan_scaffold import create_plan_scaffold
 from .replay import ReplayWriter
 from .router import Router
@@ -40,6 +41,7 @@ def run_runtime(
     config = load_runtime_config(workspace_root, global_config_path=global_config_path)
     state_store = StateStore(config)
     state_store.ensure()
+    kb_artifact: KbArtifact | None = bootstrap_kb(config)
 
     skills = SkillRegistry(config, user_home=user_home).discover()
     router = Router(config, state_store=state_store)
@@ -118,6 +120,7 @@ def run_runtime(
         route=decision,
         recovered_context=latest_context,
         discovered_skills=skills,
+        kb_artifact=kb_artifact,
         plan_artifact=plan_artifact,
         skill_result=skill_result,
         replay_session_dir=replay_session_dir,

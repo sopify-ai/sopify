@@ -218,6 +218,10 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
 def _collect_changes(result: RuntimeResult) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
+    for path in result.kb_artifact.files if result.kb_artifact is not None else ():
+        if path not in seen:
+            seen.add(path)
+            ordered.append(path)
     for path in result.plan_artifact.files if result.plan_artifact is not None else ():
         if path not in seen:
             seen.add(path)

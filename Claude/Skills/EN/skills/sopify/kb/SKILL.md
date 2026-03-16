@@ -61,13 +61,14 @@ Create files as needed:
 ```yaml
 Initial setup:
   - .sopify-skills/project.md (required)
+  - .sopify-skills/wiki/overview.md
+  - .sopify-skills/user/preferences.md (an empty file may exist first; real preferences are written only after explicit long-term statements)
+  - .sopify-skills/history/index.md
 
 First plan:
   - .sopify-skills/plan/ directory
-  - .sopify-skills/history/index.md
 
 First module documentation:
-  - .sopify-skills/wiki/overview.md
   - .sopify-skills/wiki/modules/{module}.md
 
 First API documentation:
@@ -77,9 +78,12 @@ First data model documentation:
   - .sopify-skills/wiki/data.md
 
 First explicit "long-term preference" statement:
-  - .sopify-skills/user/preferences.md
   - .sopify-skills/user/feedback.jsonl
 ```
+
+Notes:
+- The current runtime already lands a minimum KB bootstrap, so `project.md / overview.md / preferences.md / history/index.md` are created on the first run
+- `preferences.md` may be created as an empty skeleton first, but actual preferences should still be written only for explicit long-term statements
 
 ---
 

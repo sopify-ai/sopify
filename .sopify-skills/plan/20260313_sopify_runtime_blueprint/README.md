@@ -119,6 +119,13 @@ R0 需要补齐：
 - 将高价值 skills 脚本化，例如 `workflow-learning` 和 `templates`
 - 继续保持核心流程与外围产品层解耦
 
+当前已落地：
+
+- `runtime/kb.py` 已接入 runtime 主链，用于首次运行时 bootstrap 最小 KB 骨架
+- 当前最小 KB 文件集包括 `project.md`、`wiki/overview.md`、`user/preferences.md`、`history/index.md`
+- 当前只生成基于根配置、manifest、顶层目录的轻量快照，不做源码级扫描
+- 该能力当前只负责“建立长期资产入口”，尚未进入选择性历史回收与 history archive
+
 ## 当前明确不做
 
 - 不做深 `core / adapter / provider / plugin` 拆分
@@ -126,7 +133,7 @@ R0 需要补齐：
 - 不做全量自动加载 KB
 - R0 不发布 `~go exec` 的最小 develop bridge
 - R0 不发布 `workflow-learning` / `templates` 的 runtime 脚本化
-- R0 不发布 history / task state / KB bootstrap
+- R0 不发布 history / task state
 - P0 不做完整 develop 自动执行器
 - P0 / P1 不优先做安装器、更新器、通知、hooks 等外围产品层
 - 不做 marketplace 式 skill 平台

@@ -345,15 +345,22 @@ P1 实现原则：
 
 ### 1. 最小 KB 支持
 
-- [ ] 实现 KB bootstrap
-- [ ] 初始化最小 wiki 与 user 文件
-- [ ] 只持久化明确的长期偏好
+- [x] 实现 KB bootstrap
+- [x] 初始化最小 wiki 与 user 文件
+- [x] 只持久化明确的长期偏好
 - [ ] 优先扫描根配置文件，再按需扫描目录结构和源码
 
 验收条件：
 
 - KB 可以按需初始化
 - 偏好写入保持保守和结构化
+
+当前收口说明：
+
+- 已在 `runtime/kb.py` 中落地首次运行的最小 KB bootstrap
+- 当前最小文件集为 `project.md`、`wiki/overview.md`、`user/preferences.md`、`history/index.md`
+- 当前 `project.md` 只基于根配置、manifest、顶层目录生成快照，源码级扫描仍待后续补齐
+- 本轮不包含选择性历史回收与 history archive
 
 ### 2. 选择性历史回收
 
@@ -414,7 +421,7 @@ P1 实现原则：
 
 ### 7. P1 行为测试
 
-- [ ] 测试 KB bootstrap
+- [x] 测试 KB bootstrap
 - [ ] 测试选择性历史回收
 - [ ] 测试 history archive
 - [ ] 测试 task state 更新

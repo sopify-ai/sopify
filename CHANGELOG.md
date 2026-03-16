@@ -16,6 +16,7 @@ This changelog is maintained manually (not auto-generated).
 
 ### Added
 
+- Minimal KB bootstrap in `runtime/kb.py`, creating `project.md`, `wiki/overview.md`, `user/preferences.md`, and `history/index.md` on first runtime execution.
 - New sub-skill `model-compare` (CN/EN) for configuration-driven multi-model parallel comparison with manual user selection.
 - New compare trigger contract:
   - Command: `~compare <question>`
@@ -60,6 +61,9 @@ This changelog is maintained manually (not auto-generated).
 - Clarified release boundary across README, blueprint, and changelog:
   - current minimal published slice = `runtime-backed ~go plan`
   - `~compare` generic-entry bridge / `~go exec` develop bridge / `workflow-learning` runtime helper remain out of scope for this slice
+- Clarified the next-stage boundary across runtime/docs/tests:
+  - P1-A now lands only the minimum KB bootstrap
+  - selective history recovery / history archive / task-state runtime remain for later P1 slices
 
 ## [2026-02-13] - 2026-02-13
 

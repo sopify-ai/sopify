@@ -212,6 +212,22 @@ class PlanArtifact:
 
 
 @dataclass(frozen=True)
+class KbArtifact:
+    """Minimal knowledge-base files created by the runtime."""
+
+    mode: str
+    files: tuple[str, ...]
+    created_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "files": list(self.files),
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
 class RecoveredContext:
     """Minimal context recovered from filesystem state."""
 
@@ -272,6 +288,7 @@ class RuntimeResult:
     route: RouteDecision
     recovered_context: RecoveredContext
     discovered_skills: tuple[SkillMeta, ...] = ()
+    kb_artifact: Optional[KbArtifact] = None
     plan_artifact: Optional[PlanArtifact] = None
     skill_result: Optional[Mapping[str, Any]] = None
     replay_session_dir: Optional[str] = None
@@ -282,6 +299,7 @@ class RuntimeResult:
             "route": self.route.to_dict(),
             "recovered_context": self.recovered_context.to_dict(),
             "discovered_skills": [skill.to_dict() for skill in self.discovered_skills],
+            "kb_artifact": self.kb_artifact.to_dict() if self.kb_artifact else None,
             "plan_artifact": self.plan_artifact.to_dict() if self.plan_artifact else None,
             "skill_result": dict(self.skill_result or {}),
             "replay_session_dir": self.replay_session_dir,

@@ -353,12 +353,13 @@ P0 只允许读取：
 
 1. 加载 config
 2. 加载 state
-3. 发现 skills
-4. 分类 route
-5. 回收最小上下文
-6. 持久化 route 状态
-7. 分支进入 scaffold / replay / runtime skill / plain Q&A
-8. 按需写 replay 事件
+3. 初始化最小 KB 骨架
+4. 发现 skills
+5. 分类 route
+6. 回收最小上下文
+7. 持久化 route 状态
+8. 分支进入 scaffold / replay / runtime skill / plain Q&A
+9. 按需写 replay 事件
 
 不负责：
 
@@ -416,12 +417,15 @@ P0 只允许读取：
 - 最小知识库初始化
 - 最小偏好持久化
 - 轻量项目上下文文件
-- 先读根配置文件，再按需扩展到目录结构和源码扫描
+- 当前先读取根配置、manifest、顶层目录；后续再按需扩展到源码扫描
+- 当前最小落地范围是首次运行时创建 `project.md`、`wiki/overview.md`、`user/preferences.md`、`history/index.md`
 
 不负责：
 
 - 智能全量文档同步
 - 全量自动加载知识库
+- history archive
+- 选择性历史回收策略
 
 ### `runtime/history.py`
 

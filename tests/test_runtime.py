@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from runtime.config import ConfigError, load_runtime_config
 from runtime.engine import run_runtime
+from runtime.kb import bootstrap_kb
 from runtime.plan_scaffold import create_plan_scaffold
 from runtime.output import render_runtime_output
 from runtime.replay import ReplayWriter
@@ -188,6 +189,57 @@ class SkillRegistryTests(unittest.TestCase):
             self.assertIsNotNone(model_compare.runtime_entry)
 
 
+class KnowledgeBaseBootstrapTests(unittest.TestCase):
+    def test_progressive_bootstrap_creates_minimal_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            artifact = bootstrap_kb(config)
+
+            self.assertEqual(
+                set(artifact.files),
+                {
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/wiki/overview.md",
+                    ".sopify-skills/user/preferences.md",
+                    ".sopify-skills/history/index.md",
+                },
+            )
+            self.assertIn("当前暂无已确认的长期偏好", (workspace / ".sopify-skills" / "user" / "preferences.md").read_text(encoding="utf-8"))
+            self.assertIn("变更历史索引", (workspace / ".sopify-skills" / "history" / "index.md").read_text(encoding="utf-8"))
+            self.assertTrue((workspace / ".sopify-skills" / "wiki" / "modules").is_dir())
+
+    def test_full_bootstrap_creates_extended_kb_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "sopify.config.yaml").write_text("advanced:\n  kb_init: full\n", encoding="utf-8")
+            config = load_runtime_config(workspace)
+
+            artifact = bootstrap_kb(config)
+
+            self.assertIn(".sopify-skills/wiki/arch.md", artifact.files)
+            self.assertIn(".sopify-skills/wiki/api.md", artifact.files)
+            self.assertIn(".sopify-skills/wiki/data.md", artifact.files)
+            self.assertIn(".sopify-skills/user/feedback.jsonl", artifact.files)
+
+    def test_bootstrap_is_idempotent_and_preserves_existing_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            first = bootstrap_kb(config)
+            self.assertTrue(first.files)
+
+            project_path = workspace / ".sopify-skills" / "project.md"
+            project_path.write_text("# custom\n", encoding="utf-8")
+
+            second = bootstrap_kb(config)
+
+            self.assertEqual(second.files, ())
+            self.assertEqual(project_path.read_text(encoding="utf-8"), "# custom\n")
+
+
 class EngineIntegrationTests(unittest.TestCase):
     def test_engine_handles_plan_resume_and_cancel(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -196,6 +248,10 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(first.route.route_name, "plan_only")
             self.assertIsNotNone(first.plan_artifact)
             self.assertIsNotNone(first.replay_session_dir)
+            self.assertTrue((workspace / ".sopify-skills" / "project.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "wiki" / "overview.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "user" / "preferences.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
 
             resumed = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home")
             self.assertEqual(resumed.route.route_name, "resume_active")
@@ -234,6 +290,8 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIn("[tmp", completed.stdout)
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
             self.assertTrue((workspace / ".sopify-skills" / "replay" / "sessions").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "project.md").exists())
+            self.assertIn(".sopify-skills/project.md", rendered)
 
     def test_synced_runtime_bundle_runs_in_another_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -268,6 +326,8 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIn(".sopify-skills/plan/", completed.stdout)
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
             self.assertTrue((workspace / ".sopify-skills" / "replay" / "sessions").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "project.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
 
 
 if __name__ == "__main__":

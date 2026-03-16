@@ -36,6 +36,10 @@ OUTPUT="$(
 PLAN_DIR="$WORK_DIR/.sopify-skills/plan"
 STATE_FILE="$WORK_DIR/.sopify-skills/state/current_plan.json"
 REPLAY_DIR="$WORK_DIR/.sopify-skills/replay/sessions"
+PROJECT_FILE="$WORK_DIR/.sopify-skills/project.md"
+OVERVIEW_FILE="$WORK_DIR/.sopify-skills/wiki/overview.md"
+PREFERENCES_FILE="$WORK_DIR/.sopify-skills/user/preferences.md"
+HISTORY_INDEX="$WORK_DIR/.sopify-skills/history/index.md"
 
 if [[ ! -d "$PLAN_DIR" ]]; then
   echo "Smoke check failed: missing plan directory: $PLAN_DIR" >&2
@@ -52,8 +56,21 @@ if [[ ! -d "$REPLAY_DIR" ]]; then
   exit 1
 fi
 
+for file in "$PROJECT_FILE" "$OVERVIEW_FILE" "$PREFERENCES_FILE" "$HISTORY_INDEX"; do
+  if [[ ! -f "$file" ]]; then
+    echo "Smoke check failed: missing KB bootstrap file: $file" >&2
+    exit 1
+  fi
+done
+
 if [[ "$OUTPUT" != *".sopify-skills/plan/"* ]]; then
   echo "Smoke check failed: runtime output did not include the plan path." >&2
+  printf '%s\n' "$OUTPUT" >&2
+  exit 1
+fi
+
+if [[ "$OUTPUT" != *".sopify-skills/project.md"* ]]; then
+  echo "Smoke check failed: runtime output did not include KB bootstrap changes." >&2
   printf '%s\n' "$OUTPUT" >&2
   exit 1
 fi

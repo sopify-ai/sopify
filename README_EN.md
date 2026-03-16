@@ -155,6 +155,11 @@ bash scripts/check-runtime-smoke.sh
 
 Expected result:
 
+- first run bootstraps the minimum KB skeleton:
+  - `.sopify-skills/project.md`
+  - `.sopify-skills/wiki/overview.md`
+  - `.sopify-skills/user/preferences.md`
+  - `.sopify-skills/history/index.md`
 - generate `.sopify-skills/plan/`
 - update `.sopify-skills/state/`
 - write `.sopify-skills/replay/`
@@ -168,6 +173,7 @@ Current boundary:
   - `scripts/go_plan_runtime.py`: plan-only helper
 - `scripts/sync-runtime-assets.sh` can now sync the runtime bundle into `.sopify-runtime/` in another repository
 - the `.sopify-runtime/` bundle already includes portable `tests/test_runtime.py` and `scripts/check-runtime-smoke.sh`
+- `P1-A` is now landed: the first runtime execution bootstraps the minimum KB skeleton, but this still does not include selective history recovery or history archive
 - not part of this release slice: generic-entry auto-bridge for `~compare`, a standalone `workflow-learning` runtime helper, and the `~go exec` develop bridge
 - the current shape now fits self-use and secondary integration, but it is still not a full host-side installer flow
 

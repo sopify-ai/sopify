@@ -155,6 +155,11 @@ bash scripts/check-runtime-smoke.sh
 
 预期结果：
 
+- 首次运行会初始化最小 KB 骨架：
+  - `.sopify-skills/project.md`
+  - `.sopify-skills/wiki/overview.md`
+  - `.sopify-skills/user/preferences.md`
+  - `.sopify-skills/history/index.md`
 - 生成 `.sopify-skills/plan/`
 - 更新 `.sopify-skills/state/`
 - 写入 `.sopify-skills/replay/`
@@ -168,6 +173,8 @@ bash scripts/check-runtime-smoke.sh
   - `scripts/go_plan_runtime.py`：plan-only helper
 - 已提供 `scripts/sync-runtime-assets.sh`，用于把 runtime bundle 同步到目标仓库的 `.sopify-runtime/`
 - `.sopify-runtime/` bundle 内已包含便携 `tests/test_runtime.py` 与 `scripts/check-runtime-smoke.sh`
+- 当前 `P1-A` 已落地：首次运行会 bootstrap 最小 KB 骨架，但还不包含选择性历史回收或 history 归档
+- 当前 KB 快照只读取根配置、manifest 与顶层目录，不做源码级扫描
 - 不属于本轮发布切片：`~compare` 的通用入口自动桥接、`workflow-learning` 的独立 runtime helper、`~go exec` develop bridge
 - 因此当前已经适合“自用 + 二次接入”，但仍不是完整宿主安装器形态
 
