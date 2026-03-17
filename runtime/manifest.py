@@ -10,6 +10,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Mapping
 
 from .builtin_catalog import load_builtin_skills
+from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
 from .router import SUPPORTED_ROUTE_NAMES
 from .state import iso_now
@@ -104,8 +105,10 @@ def build_bundle_manifest(
             "builtin_catalog": True,
             "plan_scaffold": True,
             "kb_bootstrap": True,
+            "decision_checkpoint": True,
             "replay_capture": True,
             "writes_handoff_file": True,
+            "writes_decision_file": True,
             "runtime_skill_ids": list(runtime_skill_ids),
         },
         limits={
@@ -116,6 +119,8 @@ def build_bundle_manifest(
                 "quick_fix",
                 "resume_active",
                 "exec_plan",
+                "decision_pending",
+                "decision_resume",
                 "compare",
                 "replay",
                 "consult",
@@ -126,6 +131,7 @@ def build_bundle_manifest(
                 "replay": "required",
             },
             "runtime_payload_required_skill_ids": ["model-compare"],
+            "decision_file": CURRENT_DECISION_RELATIVE_PATH,
         },
     )
 

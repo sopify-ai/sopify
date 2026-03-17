@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 
+from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
 from .models import RuntimeResult
 
@@ -17,6 +18,8 @@ _PHASE_LABELS = {
         "resume_active": "开发实施",
         "exec_plan": "开发实施",
         "cancel_active": "命令完成",
+        "decision_pending": "方案设计",
+        "decision_resume": "方案设计",
         "compare": "模型对比",
         "replay": "咨询问答",
         "consult": "咨询问答",
@@ -30,6 +33,8 @@ _PHASE_LABELS = {
         "resume_active": "Development",
         "exec_plan": "Development",
         "cancel_active": "Command Complete",
+        "decision_pending": "Solution Design",
+        "decision_resume": "Solution Design",
         "compare": "Model Compare",
         "replay": "Q&A",
         "consult": "Q&A",
@@ -45,6 +50,9 @@ _LABELS = {
         "route": "路由",
         "reason": "原因",
         "status": "状态",
+        "question": "问题",
+        "options": "选项",
+        "decision": "决策",
         "handoff": "交接",
         "current_plan": "当前方案",
         "stage": "阶段",
@@ -61,6 +69,7 @@ _LABELS = {
         "resume_handoff": "已恢复当前流程，当前 repo-local runtime 未执行 develop bridge",
         "exec_handoff": "已识别 exec 路由，当前 repo-local runtime 未执行 develop bridge",
         "default_handoff": "已识别路由，当前 repo-local runtime 未执行后续动作",
+        "decision_pending_handoff": "已进入决策确认，正式 plan 会在用户拍板后生成",
         "next_retry": "检查输入、配置或运行时状态后重试",
         "next_plan": "~go exec 执行 或 回复修改意见",
         "next_workflow": "在宿主会话中继续执行后续阶段，或显式使用 ~go plan 只规划",
@@ -73,10 +82,12 @@ _LABELS = {
         "next_replay": "继续使用 workflow-learning 回放链路",
         "next_quick_fix": "在宿主会话中继续执行快速修复",
         "next_consult": "在宿主会话中继续问答，或改成明确变更请求",
+        "next_decision": "回复 1/2（或 ~decide choose <option_id>）确认方案，或输入 取消 终止本轮设计",
         "handoff_review_or_execute_plan": "已写入 plan handoff，宿主可继续评审方案或执行",
         "handoff_continue_host_workflow": "已写入 workflow handoff，后续阶段需宿主继续",
         "handoff_continue_host_develop": "已写入 develop handoff，后续开发需宿主继续",
         "handoff_continue_host_quick_fix": "已写入 quick-fix handoff，当前 runtime 未直接改代码",
+        "handoff_confirm_decision": "已写入 decision handoff，宿主应先确认当前设计分叉",
         "handoff_host_compare_bridge_required": "已写入 compare handoff，当前仍需宿主侧 compare bridge",
         "handoff_review_compare_results": "已写入 compare handoff，可在宿主侧继续选择结果",
         "handoff_host_replay_bridge_required": "已写入 replay handoff，当前仍需 workflow-learning 专用链路",
@@ -89,6 +100,9 @@ _LABELS = {
         "route": "Route",
         "reason": "Reason",
         "status": "Status",
+        "question": "Question",
+        "options": "Options",
+        "decision": "Decision",
         "handoff": "Handoff",
         "current_plan": "Current Plan",
         "stage": "Stage",
@@ -105,6 +119,7 @@ _LABELS = {
         "resume_handoff": "Active flow restored; the repo-local runtime has not executed the develop bridge",
         "exec_handoff": "exec route recognized; the repo-local runtime has not executed the develop bridge",
         "default_handoff": "Route recognized; the repo-local runtime has not executed the downstream action",
+        "decision_pending_handoff": "Decision checkpoint is pending; the formal plan will be created after user confirmation",
         "next_retry": "Check the input, config, or runtime state and retry",
         "next_plan": "~go exec to execute or reply with feedback",
         "next_workflow": "Continue the downstream stages in the host session, or use ~go plan for planning only",
@@ -117,10 +132,12 @@ _LABELS = {
         "next_replay": "Use the workflow-learning replay flow",
         "next_quick_fix": "Continue the quick-fix flow in the host session",
         "next_consult": "Continue the discussion in the host session, or restate it as a change request",
+        "next_decision": "Reply with 1/2 (or `~decide choose <option_id>`) to confirm, or type cancel to abort this design round",
         "handoff_review_or_execute_plan": "plan handoff written; the host can review the plan or execute it",
         "handoff_continue_host_workflow": "workflow handoff written; downstream stages still need the host flow",
         "handoff_continue_host_develop": "develop handoff written; downstream implementation still needs the host flow",
         "handoff_continue_host_quick_fix": "quick-fix handoff written; the runtime did not modify code directly",
+        "handoff_confirm_decision": "decision handoff written; the host should confirm the current design split first",
         "handoff_host_compare_bridge_required": "compare handoff written; the host-side compare bridge is still required",
         "handoff_review_compare_results": "compare handoff written; candidate results are ready for host-side review",
         "handoff_host_replay_bridge_required": "replay handoff written; workflow-learning still needs its dedicated bridge",
@@ -206,6 +223,19 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
             f"{labels['replay']}: {replay_value}",
         ]
 
+    if route_name == "decision_pending" and result.recovered_context.current_decision is not None:
+        current_decision = result.recovered_context.current_decision
+        recommended = current_decision.recommended_option_id or labels["missing"]
+        option_text = " | ".join(
+            f"[{index}] {option.title}"
+            for index, option in enumerate(current_decision.options, start=1)
+        )
+        return [
+            f"{labels['question']}: {current_decision.question}",
+            f"{labels['options']}: {option_text or labels['missing']}",
+            f"{labels['status']}: {_decision_pending_status(language, recommended)}",
+        ]
+
     if route_name in {"workflow", "light_iterate"} and result.plan_artifact is not None:
         return [
             f"{labels['plan']}: {result.plan_artifact.path}",
@@ -250,6 +280,9 @@ def _collect_changes(result: RuntimeResult) -> list[str]:
         if path not in seen:
             seen.add(path)
             ordered.append(path)
+    if result.recovered_context.current_decision is not None and CURRENT_DECISION_RELATIVE_PATH not in seen:
+        seen.add(CURRENT_DECISION_RELATIVE_PATH)
+        ordered.append(CURRENT_DECISION_RELATIVE_PATH)
     if result.handoff is not None and CURRENT_HANDOFF_RELATIVE_PATH not in seen:
         seen.add(CURRENT_HANDOFF_RELATIVE_PATH)
         ordered.append(CURRENT_HANDOFF_RELATIVE_PATH)
@@ -260,6 +293,8 @@ def _next_hint(result: RuntimeResult, language: str) -> str:
     labels = _LABELS[language]
     if result.handoff is not None:
         return _handoff_next_hint(result, language)
+    if result.route.route_name == "decision_pending":
+        return labels["next_decision"]
     if result.route.route_name == "cancel_active":
         return labels["next_cancel"]
     return labels["next_retry"]
@@ -269,6 +304,8 @@ def _status_symbol(result: RuntimeResult) -> str:
     route_name = result.route.route_name
     if route_name == "plan_only":
         return "✓" if result.plan_artifact is not None else "!"
+    if route_name == "decision_pending":
+        return "?"
     if route_name == "cancel_active":
         return "✓"
     if route_name == "compare" and result.skill_result:
@@ -299,6 +336,8 @@ def _status_message(result: RuntimeResult, language: str) -> str:
         return labels["compare_ready"] if result.skill_result else labels["compare_handoff"]
     if route_name == "replay":
         return labels["replay_handoff"]
+    if route_name == "decision_pending":
+        return labels["decision_pending_handoff"]
     if route_name == "resume_active":
         return labels["resume_handoff"]
     if route_name == "exec_plan":
@@ -327,6 +366,8 @@ def _handoff_next_hint(result: RuntimeResult, language: str) -> str:
         return labels["next_resume"] if result.route.route_name == "resume_active" else labels["next_exec"]
     if handoff.handoff_kind == "quick_fix":
         return labels["next_quick_fix"]
+    if handoff.handoff_kind == "decision":
+        return labels["next_decision"]
     if handoff.handoff_kind == "compare":
         return labels["next_compare"] if handoff.required_host_action == "review_compare_results" else labels["next_compare_bridge"]
     if handoff.handoff_kind == "replay":
@@ -342,6 +383,12 @@ def _diagnostic_reason(result: RuntimeResult) -> str:
     if result.route.reason:
         return result.route.reason
     return result.route.route_name
+
+
+def _decision_pending_status(language: str, recommended_option_id: str) -> str:
+    if language == "en-US":
+        return f"awaiting confirmation (recommended `{recommended_option_id}`)"
+    return f"等待确认（推荐 `{recommended_option_id}`）"
 
 
 def _phase_label(route_name: str, language: str) -> str:

@@ -178,6 +178,8 @@ Current boundary:
 - `scripts/sync-runtime-assets.sh` can now sync the runtime bundle into `.sopify-runtime/` in another repository
 - bundle sync now generates `.sopify-runtime/manifest.json` to describe entries, supported routes, builtin catalog, and the future handoff file location
 - runtime now writes `.sopify-skills/state/current_handoff.json` so the host can read the structured next action directly
+- the runtime now creates the minimum `blueprint/README.md` on the first real-project trigger and populates the full `blueprint/` skeleton on the first plan lifecycle
+- the runtime now supports the first decision-checkpoint slice: explicit design splits pause plan creation, write `.sopify-skills/state/current_decision.json`, and wait for confirmation before materializing the formal plan
 - the `.sopify-runtime/` bundle already includes portable `tests/test_runtime.py` and `scripts/check-runtime-smoke.sh`
 - `P1-A` is now landed: the first runtime execution bootstraps the minimum KB skeleton, but this still does not include selective history recovery or history archive
 - not part of this release slice: generic-entry auto-bridge for `~compare`, a standalone `workflow-learning` runtime helper, and the `~go exec` develop bridge
@@ -196,6 +198,13 @@ Projects integrated with Sopify follow this default documentation model:
 - the first Sopify trigger in a real project repository should at least land `.sopify-skills/blueprint/README.md`
 - the first plan lifecycle should then populate `blueprint/background.md / design.md / tasks.md`
 - the active plan is archived into `history/` only when the task is being closed out and prepared for verification
+
+First decision-checkpoint slice:
+
+- it only applies on planning routes such as `~go plan`, `~go`, or equivalent planner-selected routes
+- the current auto-trigger is deterministic and only reacts to explicit alternatives, using markers such as `还是`, `vs`, or `or`
+- when triggered, the runtime pauses before creating the formal plan and prints a text fallback so the user can reply with `1/2` or `~decide choose <option_id>`
+- `go_plan_runtime.py` now treats a pending decision checkpoint as a successful planning outcome instead of a failure
 
 ---
 

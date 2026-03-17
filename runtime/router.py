@@ -6,7 +6,8 @@ from dataclasses import dataclass
 import re
 from typing import Iterable
 
-from .models import RouteDecision, RuntimeConfig, SkillMeta
+from .decision import parse_decision_response
+from .models import DecisionState, RouteDecision, RuntimeConfig, SkillMeta
 from .state import StateStore
 
 _COMMAND_PATTERNS = (
@@ -23,6 +24,8 @@ SUPPORTED_ROUTE_NAMES = (
     "resume_active",
     "exec_plan",
     "cancel_active",
+    "decision_pending",
+    "decision_resume",
     "compare",
     "replay",
     "consult",
@@ -92,6 +95,11 @@ class Router:
     def classify(self, user_input: str, *, skills: Iterable[SkillMeta]) -> RouteDecision:
         text = user_input.strip()
         active_run = self.state_store.get_current_run()
+        current_decision = self.state_store.get_current_decision()
+
+        decide_decision = _classify_decide_command(text)
+        if decide_decision is not None:
+            return self._with_capture(decide_decision)
 
         command_decision = _classify_command(text)
         if command_decision is not None:
@@ -116,6 +124,11 @@ class Router:
                 should_recover_context=True,
                 active_run_action="cancel",
             )
+
+        if current_decision is not None and current_decision.status in {"pending", "confirmed"}:
+            pending_decision = _classify_pending_decision(text, current_decision, skills=skills)
+            if pending_decision is not None:
+                return self._with_capture(pending_decision)
 
         if active_run is not None and _normalize(text) in _CONTINUE_KEYWORDS:
             return self._with_capture(
@@ -252,6 +265,57 @@ def _classify_command(text: str) -> RouteDecision | None:
                 candidate_skill_ids=("model-compare",),
                 runtime_skill_id="model-compare",
             )
+    return None
+
+
+def _classify_decide_command(text: str) -> RouteDecision | None:
+    stripped = text.strip()
+    lowered = stripped.lower()
+    if not lowered.startswith("~decide"):
+        return None
+    if lowered.startswith("~decide status") or lowered == "~decide":
+        return RouteDecision(
+            route_name="decision_pending",
+            request_text=stripped,
+            reason="Matched explicit decision status command",
+            complexity="medium",
+            should_recover_context=True,
+            candidate_skill_ids=("design",),
+            active_run_action="inspect_decision",
+        )
+    return RouteDecision(
+        route_name="decision_resume",
+        request_text=stripped,
+        reason="Matched explicit decision response command",
+        complexity="medium",
+        should_recover_context=True,
+        candidate_skill_ids=("design",),
+        active_run_action="decision_response",
+    )
+
+
+def _classify_pending_decision(text: str, current_decision: DecisionState, *, skills: Iterable[SkillMeta]) -> RouteDecision | None:
+    response = parse_decision_response(current_decision, text)
+    if response.action == "status":
+        return RouteDecision(
+            route_name="decision_pending",
+            request_text=text,
+            reason="Pending decision checkpoint is waiting for confirmation",
+            complexity="medium",
+            should_recover_context=True,
+            candidate_skill_ids=_candidate_skills(skills, "design"),
+            active_run_action="inspect_decision",
+        )
+    if response.action in {"choose", "materialize", "cancel", "invalid"}:
+        return RouteDecision(
+            route_name="decision_resume",
+            request_text=text,
+            reason="Matched a response for the pending decision checkpoint",
+            complexity="medium",
+            should_recover_context=True,
+            candidate_skill_ids=_candidate_skills(skills, "design"),
+            active_run_action="decision_response",
+        )
     return None
 
 

@@ -184,6 +184,146 @@ class RunState:
 
 
 @dataclass(frozen=True)
+class DecisionOption:
+    """A concrete option presented by a decision checkpoint."""
+
+    option_id: str
+    title: str
+    summary: str
+    tradeoffs: tuple[str, ...] = ()
+    impacts: tuple[str, ...] = ()
+    recommended: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.option_id,
+            "title": self.title,
+            "summary": self.summary,
+            "tradeoffs": list(self.tradeoffs),
+            "impacts": list(self.impacts),
+            "recommended": self.recommended,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "DecisionOption":
+        return cls(
+            option_id=str(data.get("id") or ""),
+            title=str(data.get("title") or ""),
+            summary=str(data.get("summary") or ""),
+            tradeoffs=tuple(data.get("tradeoffs") or ()),
+            impacts=tuple(data.get("impacts") or ()),
+            recommended=bool(data.get("recommended", False)),
+        )
+
+
+@dataclass(frozen=True)
+class DecisionSelection:
+    """User-confirmed selection captured by the checkpoint."""
+
+    option_id: str
+    source: str
+    raw_input: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "option_id": self.option_id,
+            "source": self.source,
+            "raw_input": self.raw_input,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "DecisionSelection":
+        return cls(
+            option_id=str(data.get("option_id") or ""),
+            source=str(data.get("source") or "text"),
+            raw_input=str(data.get("raw_input") or ""),
+        )
+
+
+@dataclass(frozen=True)
+class DecisionState:
+    """Filesystem-backed pending design decision."""
+
+    decision_id: str
+    feature_key: str
+    phase: str
+    status: str
+    decision_type: str
+    question: str
+    summary: str
+    options: tuple[DecisionOption, ...]
+    recommended_option_id: Optional[str] = None
+    default_option_id: Optional[str] = None
+    context_files: tuple[str, ...] = ()
+    resume_route: Optional[str] = None
+    request_text: str = ""
+    requested_plan_level: Optional[str] = None
+    capture_mode: str = "off"
+    candidate_skill_ids: tuple[str, ...] = ()
+    selection: Optional[DecisionSelection] = None
+    created_at: str = ""
+    updated_at: str = ""
+    confirmed_at: Optional[str] = None
+    consumed_at: Optional[str] = None
+
+    @property
+    def selected_option_id(self) -> Optional[str]:
+        return self.selection.option_id if self.selection is not None else None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "decision_id": self.decision_id,
+            "feature_key": self.feature_key,
+            "phase": self.phase,
+            "status": self.status,
+            "decision_type": self.decision_type,
+            "question": self.question,
+            "summary": self.summary,
+            "options": [option.to_dict() for option in self.options],
+            "recommended_option_id": self.recommended_option_id,
+            "default_option_id": self.default_option_id,
+            "context_files": list(self.context_files),
+            "resume_route": self.resume_route,
+            "request_text": self.request_text,
+            "requested_plan_level": self.requested_plan_level,
+            "capture_mode": self.capture_mode,
+            "candidate_skill_ids": list(self.candidate_skill_ids),
+            "selection": self.selection.to_dict() if self.selection else None,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "confirmed_at": self.confirmed_at,
+            "consumed_at": self.consumed_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "DecisionState":
+        selection = data.get("selection")
+        return cls(
+            decision_id=str(data.get("decision_id") or ""),
+            feature_key=str(data.get("feature_key") or ""),
+            phase=str(data.get("phase") or "design"),
+            status=str(data.get("status") or "pending"),
+            decision_type=str(data.get("decision_type") or "design_choice"),
+            question=str(data.get("question") or ""),
+            summary=str(data.get("summary") or ""),
+            options=tuple(DecisionOption.from_dict(option) for option in (data.get("options") or ())),
+            recommended_option_id=data.get("recommended_option_id") or None,
+            default_option_id=data.get("default_option_id") or None,
+            context_files=tuple(data.get("context_files") or ()),
+            resume_route=data.get("resume_route") or None,
+            request_text=str(data.get("request_text") or ""),
+            requested_plan_level=data.get("requested_plan_level") or None,
+            capture_mode=str(data.get("capture_mode") or "off"),
+            candidate_skill_ids=tuple(data.get("candidate_skill_ids") or ()),
+            selection=DecisionSelection.from_dict(selection) if isinstance(selection, Mapping) else None,
+            created_at=str(data.get("created_at") or ""),
+            updated_at=str(data.get("updated_at") or ""),
+            confirmed_at=data.get("confirmed_at") or None,
+            consumed_at=data.get("consumed_at") or None,
+        )
+
+
+@dataclass(frozen=True)
 class PlanArtifact:
     """Generated plan package metadata."""
 
@@ -242,6 +382,7 @@ class RecoveredContext:
     loaded_files: tuple[str, ...] = ()
     current_run: Optional[RunState] = None
     current_plan: Optional[PlanArtifact] = None
+    current_decision: Optional[DecisionState] = None
     last_route: Optional[RouteDecision] = None
     documents: Mapping[str, str] = field(default_factory=dict)
 
@@ -254,6 +395,7 @@ class RecoveredContext:
             "loaded_files": list(self.loaded_files),
             "current_run": self.current_run.to_dict() if self.current_run else None,
             "current_plan": self.current_plan.to_dict() if self.current_plan else None,
+            "current_decision": self.current_decision.to_dict() if self.current_decision else None,
             "last_route": self.last_route.to_dict() if self.last_route else None,
             "documents": dict(self.documents),
         }

@@ -108,6 +108,6 @@ def execute_runtime_cli(
             )
         )
 
-    if require_plan_artifact and result.plan_artifact is None:
+    if require_plan_artifact and result.plan_artifact is None and result.route.route_name != "decision_pending":
         return 1
     return 0

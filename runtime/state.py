@@ -9,7 +9,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Optional
 
 from .handoff import read_runtime_handoff, write_runtime_handoff
-from .models import PlanArtifact, RouteDecision, RunState, RuntimeConfig, RuntimeHandoff
+from .models import DecisionState, PlanArtifact, RouteDecision, RunState, RuntimeConfig, RuntimeHandoff
 
 
 class StateStore:
@@ -22,6 +22,7 @@ class StateStore:
         self.last_route_path = self.root / "last_route.json"
         self.current_plan_path = self.root / "current_plan.json"
         self.current_handoff_path = self.root / "current_handoff.json"
+        self.current_decision_path = self.root / "current_decision.json"
 
     def ensure(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -58,6 +59,17 @@ class StateStore:
     def clear_current_plan(self) -> None:
         self.current_plan_path.unlink(missing_ok=True)
 
+    def get_current_decision(self) -> Optional[DecisionState]:
+        payload = self._read_json(self.current_decision_path)
+        return DecisionState.from_dict(payload) if payload else None
+
+    def set_current_decision(self, decision_state: DecisionState) -> None:
+        self.ensure()
+        self._write_json(self.current_decision_path, decision_state.to_dict())
+
+    def clear_current_decision(self) -> None:
+        self.current_decision_path.unlink(missing_ok=True)
+
     def get_current_handoff(self) -> Optional[RuntimeHandoff]:
         return read_runtime_handoff(self.current_handoff_path)
 
@@ -76,6 +88,7 @@ class StateStore:
         self.clear_current_run()
         self.clear_current_plan()
         self.clear_current_handoff()
+        self.clear_current_decision()
 
     def update_active_run(self, *, stage: Optional[str] = None, status: Optional[str] = None) -> Optional[RunState]:
         current = self.get_current_run()

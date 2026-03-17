@@ -1,6 +1,6 @@
 # 项目蓝图索引
 
-状态: 文档已收口，待实现
+状态: 文档已收口，部分已实现
 创建日期: 2026-03-17
 维护方式: 首次识别到真实项目仓库并触发 Sopify 时，至少创建本文件；索引区块由 Sopify 托管刷新，说明区块允许人工补充
 
@@ -46,13 +46,14 @@
 - 首次进入 plan 生命周期时，再补齐 `blueprint/background.md / design.md / tasks.md`
 - `plan` 只保留当前活动方案；到“本轮任务收口、准备交付验证”时再归档到 `history/`
 - `full` 任务必须更新深层 blueprint；`standard` 仅在边界或契约变化时更新；`light` 不强制
+- design 阶段若出现长期契约分叉，先进入 decision checkpoint；用户确认后才生成唯一正式 plan
 <!-- sopify:auto:contracts:end -->
 
 ## 当前焦点
 
 <!-- sopify:auto:focus:start -->
-- 先实现文档治理闭环
-- 再在 design 阶段引入决策确认能力（decision checkpoint）
+- blueprint bootstrap 与 decision checkpoint 第一版已接入 runtime
+- 下一步收口 finalize_plan、history 归档与 blueprint obligation 判定
 - 保持单活动 plan 模型，不引入额外 drafts 目录或 commit 阶段强校验
 <!-- sopify:auto:focus:end -->
 
@@ -70,6 +71,6 @@
 ## 维护说明
 
 - 本文件是项目级入口索引，不承载单次任务的完整实现细节。
-- 当前仓库已完成蓝图文档收口；自动创建、自动刷新、收口归档等行为仍待 runtime 实现对齐。
+- 当前仓库已完成蓝图文档收口；blueprint bootstrap 与 decision checkpoint 第一版已落地，自动刷新与 finalize 收口仍待继续实现。
 - 自动区块优先保持“短、稳、可扫描”；深入说明进入 `background.md / design.md / tasks.md`。
 - 若人工补充内容与代码、宿主契约、目录契约冲突，以实现与正式蓝图为准，并在后续收口时修正。

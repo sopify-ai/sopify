@@ -136,6 +136,7 @@ Complex Task (full 3 phases):
 Note: when the current repository provides `scripts/sopify_runtime.py`, raw input should prefer that default repo-local runtime entry; when the runtime is vendored into another repository, the host should read `.sopify-runtime/manifest.json` first to choose the entry, and only then fall back to `.sopify-runtime/scripts/sopify_runtime.py`; use the matching `go_plan_runtime.py` helper only when you explicitly want the plan-only path.
 Note: when Sopify is triggered inside a project workspace and the workspace does not yet have a compatible `.sopify-runtime/manifest.json`, the host should read `~/.claude/sopify/payload-manifest.json` and call `~/.claude/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>` first; once bootstrap succeeds, continue through the repo-local bundle manifest.
 Note: after runtime execution, if `.sopify-skills/state/current_handoff.json` exists, the host should prioritize its `required_host_action`, `recommended_skill_ids`, and `artifacts` to decide the next step; the rendered `Next:` line is only a human-facing summary, not the sole machine contract.
+Note: when `current_handoff.json.required_host_action == confirm_decision`, the host must also read `.sopify-skills/state/current_decision.json`, present the question/options/recommended_option_id to the user, and wait for confirmation before resuming the default runtime entry; do not materialize the formal plan or jump to `~go exec` before confirmation.
 
 **workflow-learning proactive capture policy:**
 ```yaml
@@ -299,6 +300,11 @@ Semantic analysis routing:
 - When a workspace is missing a compatible bundle, the host should call `~/.claude/sopify/helpers/bootstrap_workspace.py` before trying to route through vendored runtime entries.
 - For vendored runtime entry selection, treat `.sopify-runtime/manifest.json` as the source of truth.
 - For post-run continuation, treat `.sopify-skills/state/current_handoff.json` as the source of truth and fall back to the rendered `Next:` text only when the handoff file is missing.
+- When `current_handoff.json.required_host_action == confirm_decision`, treat `.sopify-skills/state/current_decision.json` as the sole machine contract for the active design split.
+- For a pending decision, the preferred host UX is to show the `question`, list `options[*]` in order, and highlight `recommended_option_id`; users may answer with `1/2/...` or explicitly use `~decide choose <option_id>`.
+- `~decide status|choose|cancel` is a debug/override surface only; the normal path is for the host to enter the confirmation loop automatically from the `confirm_decision` handoff.
+- While a decision is pending, the host must not create or rewrite the formal plan on its own and must not treat the rendered `Next:` text as an executable machine instruction.
+- After the user confirms, the host should re-enter the default runtime entry in the same workspace and let runtime materialize the single formal plan; if `current_decision.json` is cleared afterwards, that is the expected close-out behavior.
 
 ---
 
@@ -432,9 +438,10 @@ scripts/model_compare_runtime.py             # runtime implementation for ~compa
 ~/.claude/sopify/helpers/bootstrap_workspace.py # Claude global helper used to bootstrap `.sopify-runtime/` into a workspace
 .sopify-runtime/manifest.json                # vendored bundle machine contract; hosts should read this first
 .sopify-skills/state/current_handoff.json    # structured handoff written by the runtime; hosts should read this first after execution
+.sopify-skills/state/current_decision.json   # decision checkpoint state; read only when handoff requests confirm_decision
 ```
 
-Note: the default entry is `scripts/sopify_runtime.py`; when vendored, prefer `.sopify-runtime/manifest.json` to select the entry; if the workspace bundle is missing or incompatible, the host should preflight through `~/.claude/sopify/payload-manifest.json` and call `~/.claude/sopify/helpers/bootstrap_workspace.py` first; `go_plan_runtime.py` is only for plan-only; after execution the host should read `.sopify-skills/state/current_handoff.json` before trusting `Next:`; `~compare` still depends on a host-side dedicated bridge.
+Note: the default entry is `scripts/sopify_runtime.py`; when vendored, prefer `.sopify-runtime/manifest.json` to select the entry; if the workspace bundle is missing or incompatible, the host should preflight through `~/.claude/sopify/payload-manifest.json` and call `~/.claude/sopify/helpers/bootstrap_workspace.py` first; `go_plan_runtime.py` is only for plan-only; after execution the host should read `.sopify-skills/state/current_handoff.json` before trusting `Next:`; if `required_host_action=confirm_decision`, continue into `.sopify-skills/state/current_decision.json`; `~compare` still depends on a host-side dedicated bridge.
 
 **Configuration File:** `sopify.config.yaml` (project root)
 

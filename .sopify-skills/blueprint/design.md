@@ -1,6 +1,6 @@
 # 文档治理蓝图设计
 
-状态: 文档已收口，待实现
+状态: 文档已收口，部分已实现
 创建日期: 2026-03-17
 
 ## 设计原则
@@ -185,6 +185,221 @@ archive_ready: false
 - 不引入多份 draft plan
 - 不要求用户额外配置
 - 不把关键决策只留在聊天上下文里
+
+## 决策确认触发契约
+
+### 自动触发条件
+
+第一版 runtime 已按确定性规则落地自动触发：
+
+- 仅在 `plan_only / workflow / light_iterate` 中生效
+- 仅对显式多方案输入触发，当前识别符包括 `还是 / vs / or`
+- 同时要求命中长期契约关键词（如 `runtime / payload / manifest / blueprint / 目录 / 宿主 / workspace`）
+
+也就是说，第一版先优先保证“严谨可测”，而不是对所有隐式分叉都做激进猜测。
+
+只有同时满足以下条件，才进入 decision checkpoint：
+
+1. 当前已进入 `design` 阶段，而不是咨询、快速修复或 develop 收口
+2. 至少存在 2 个都可实施的候选方案
+3. 候选方案差异涉及长期契约，而不是局部实现细节
+4. 不同选择会改变后续 plan 内容、任务拆分或 blueprint 写入结果
+5. 现有 `project.md / blueprint / 当前活动上下文` 不能直接推导唯一答案
+
+长期契约分叉典型包括：
+
+- 宿主接入契约
+- payload / manifest / handoff 结构
+- 目录落点与生命周期
+- 模块边界或职责切分
+- 持久化格式与状态文件协议
+- 依赖引入策略或验证链路
+
+### 不触发条件
+
+以下情况不应触发 decision checkpoint：
+
+- 只是命名、注释、文案、排版等轻量差异
+- 只有一个方案符合现有契约，其他候选明显无效
+- 已被 `project.md` 或 blueprint 明确写死
+- `light` 级任务内的局部实现细节
+- 单纯为了给用户“看起来有选择”而构造伪分叉
+
+## 决策状态机
+
+决策确认采用单 pending 模型，每个仓库同一时刻只允许一个未完成决策：
+
+```text
+none
+  -> pending      # design 识别到需拍板的分叉，写入 current_decision.json
+  -> confirmed    # 用户选定方案，但正式 plan 尚未完全物化
+  -> consumed     # 已基于确认结果生成唯一正式 plan
+  -> cancelled    # 用户取消，本轮 design 不继续产出正式 plan
+  -> stale        # 上下文已变化，原决策不再可信，需要重建
+```
+
+状态要求：
+
+- `pending` 时，plan 不得提前生成
+- `confirmed` 时，必须保留足够信息让 runtime 能幂等恢复 plan 物化
+- `consumed` 后，应清理当前决策状态，避免后续误恢复
+- `cancelled` 后，不生成正式 plan，由用户重新发起设计或修改需求
+- `stale` 只表示状态失效，不等于用户已经完成选择
+
+## `state/current_decision.json` 契约
+
+第一版不新增多文件协议，统一落到：
+
+```text
+.sopify-skills/state/current_decision.json
+```
+
+建议最小字段：
+
+```yaml
+decision_id:
+feature_key:
+phase: design
+status: pending|confirmed|consumed|cancelled|stale
+decision_type:
+question:
+summary:
+options:
+  - id:
+    title:
+    summary:
+    tradeoffs:
+    impacts:
+    recommended: true|false
+recommended_option_id:
+default_option_id:
+context_files:
+  - project.md
+  - .sopify-skills/blueprint/README.md
+resume_route:
+selection:
+  option_id:
+  source: interactive|text|debug_override
+  raw_input:
+created_at:
+updated_at:
+confirmed_at:
+consumed_at:
+```
+
+字段要求：
+
+- `options` 应限制为 2-3 个高价值候选；超过 3 个时，design 先自行压缩 shortlist
+- `recommended_option_id` 必须存在，且推荐理由要能落到输出摘要
+- `raw_input` 允许保留用户自由输入，但后续只进 plan，不直接写 blueprint
+- `context_files` 用于恢复时提示模型优先读取哪些文件，而不是重新扫全仓
+
+## 交互契约
+
+### 主路径
+
+第一版主路径只支持 design 自动触发：
+
+1. design 识别到长期契约分叉
+2. 写入 `current_decision.json`
+3. 输出简洁决策摘要与候选项
+4. 等待用户选择
+5. 用户确认后继续生成唯一正式 plan
+
+### 交互形态
+
+宿主若支持交互式 UI，应优先渲染成 Inquirer 风格选择器；若不支持，则退化为文本选择：
+
+- 推荐项排第一
+- 每个候选只展示一行摘要和一行关键 tradeoff
+- 允许用户选择现有选项、要求重做比较、或明确取消
+- 不要求用户学习额外配置或预先启用某个模式
+
+### `~decide` 边界
+
+`~decide` 只作为调试或覆盖入口，不是第一版主路径：
+
+- `~decide status`：查看当前 pending decision
+- `~decide choose <option_id>`：直接选定某个候选
+- `~decide cancel`：放弃本轮 decision checkpoint
+
+它不负责：
+
+- 主动发现是否需要决策
+- 取代 design 阶段的自动触发
+- 让用户绕过当前 blueprint / project 契约随意落 plan
+
+## 与现有 `auto_decide` 的边界
+
+`README/AGENTS` 中已有 `auto_decide`，但该能力属于需求分析阶段的缺口补全，不应越权替代 design 阶段的决策确认。
+
+边界应固定为：
+
+- `auto_decide`：当需求评分不足时，是否允许 AI 代为补齐分析缺口
+- `decision checkpoint`：当 design 出现长期契约分叉时，是否需要用户拍板
+
+第一版中：
+
+- `auto_decide` 不绕过 decision checkpoint
+- 出现 decision checkpoint 时，默认必须等待用户确认
+- 不新增新的配置项去关闭这条主路径
+
+## Plan 物化契约
+
+decision checkpoint 通过前，不生成正式 `plan/` 目录。
+
+用户确认后，runtime 才基于所选方案物化唯一正式 plan，并在 plan 元数据中补充决策字段：
+
+```yaml
+decision_checkpoint:
+  required: true
+  decision_id:
+  selected_option_id:
+  status: confirmed
+```
+
+同时在 plan 正文中保留完整决策块，至少包括：
+
+- 问题定义
+- 候选方案摘要
+- 最终选择
+- 推荐理由与用户确认结果
+- 被放弃方案的关键取舍
+
+这样可以保证：
+
+- plan 是唯一正式执行入口
+- 后续 develop / history 不必回头解析聊天记录
+- 决策解释在 plan 中完整可追溯
+
+## Blueprint / History 写入边界
+
+写入分层固定如下：
+
+- `plan`：写完整决策上下文、用户选择、被放弃方案的关键取舍
+- `history`：写摘要级结论，便于之后追溯为什么走了该方案
+- `blueprint`：只在形成稳定长期结论时写入，不写原始自由输入
+
+blueprint 的典型落点：
+
+- `blueprint/README.md` 的关键契约与当前焦点摘要
+- `blueprint/design.md` 中的宿主契约、目录契约、状态协议
+- `blueprint/background.md` 中新增的长期边界或非目标
+
+## 恢复与幂等
+
+决策确认必须支持中断恢复：
+
+1. 若仓库存在 `current_decision.json` 且状态为 `pending / confirmed`，优先恢复，而不是重新生成新决策
+2. 若用户修改了核心上下文，导致原候选不再可信，则标记为 `stale`
+3. `stale` 后必须重新走 design 产出新的 decision packet，不能直接沿用旧选择
+4. `confirmed` 到 plan 物化之间若中断，恢复后应能幂等继续，不重复创建多个 plan
+
+单仓库单 pending 的限制，可以避免：
+
+- 多个决策文件互相竞争
+- 多份草稿 plan 并存
+- 宿主在恢复时无法判断该优先处理哪一个 checkpoint
 
 ## 读取优先级建议
 

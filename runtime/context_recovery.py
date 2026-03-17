@@ -29,10 +29,16 @@ def recover_context(
     """
     current_run = state_store.get_current_run()
     current_plan = state_store.get_current_plan()
+    current_decision = state_store.get_current_decision()
     last_route = state_store.get_last_route()
 
     if not decision.should_recover_context:
-        return RecoveredContext(current_run=current_run, current_plan=current_plan, last_route=last_route)
+        return RecoveredContext(
+            current_run=current_run,
+            current_plan=current_plan,
+            current_decision=current_decision,
+            last_route=last_route,
+        )
 
     loaded_files: List[str] = []
     documents: Dict[str, str] = {}
@@ -48,6 +54,7 @@ def recover_context(
         loaded_files=tuple(loaded_files),
         current_run=current_run,
         current_plan=current_plan,
+        current_decision=current_decision,
         last_route=last_route,
         documents=documents,
     )

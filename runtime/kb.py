@@ -26,6 +26,9 @@ def bootstrap_kb(config: RuntimeConfig) -> KbArtifact:
         target.write_text(content, encoding="utf-8")
         created_files.append(str(target.relative_to(config.workspace_root)))
 
+    if _is_real_project_workspace(config.workspace_root):
+        created_files.extend(ensure_blueprint_index(config))
+
     return KbArtifact(
         mode=config.kb_init,
         files=tuple(created_files),
@@ -35,12 +38,42 @@ def bootstrap_kb(config: RuntimeConfig) -> KbArtifact:
 
 def _ensure_directories(root: Path) -> None:
     for relative_dir in (
+        Path("blueprint"),
         Path("wiki"),
         Path("wiki/modules"),
         Path("user"),
         Path("history"),
     ):
         (root / relative_dir).mkdir(parents=True, exist_ok=True)
+
+
+def ensure_blueprint_index(config: RuntimeConfig) -> tuple[str, ...]:
+    """Create the lightweight blueprint index for real project workspaces."""
+    root = config.runtime_root
+    readme = root / "blueprint" / "README.md"
+    if readme.exists():
+        return ()
+    readme.parent.mkdir(parents=True, exist_ok=True)
+    readme.write_text(_blueprint_readme_stub(config), encoding="utf-8")
+    return (str(readme.relative_to(config.workspace_root)),)
+
+
+def ensure_blueprint_scaffold(config: RuntimeConfig) -> tuple[str, ...]:
+    """Populate the full blueprint skeleton once the workspace enters plan lifecycle."""
+    created = list(ensure_blueprint_index(config))
+    root = config.runtime_root / "blueprint"
+    files = {
+        root / "background.md": _blueprint_background_stub(config.language),
+        root / "design.md": _blueprint_design_stub(config.language),
+        root / "tasks.md": _blueprint_tasks_stub(config.language),
+    }
+    for path, content in files.items():
+        if path.exists():
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        created.append(str(path.relative_to(config.workspace_root)))
+    return tuple(created)
 
 
 def _bootstrap_files(config: RuntimeConfig) -> dict[Path, str]:
@@ -216,3 +249,157 @@ def _detect_manifests(workspace_root: Path) -> list[str]:
 def _detect_directories(workspace_root: Path) -> list[str]:
     dir_names = ("src", "app", "lib", "tests", "docs", "scripts")
     return [name for name in dir_names if (workspace_root / name).is_dir()]
+
+
+def _is_real_project_workspace(workspace_root: Path) -> bool:
+    return (
+        (workspace_root / ".git").exists()
+        or bool(_detect_manifests(workspace_root))
+        or bool(_detect_directories(workspace_root))
+    )
+
+
+def _blueprint_readme_stub(config: RuntimeConfig) -> str:
+    project_name = config.workspace_root.name or "project"
+    if config.language == "en-US":
+        return (
+            "# Project Blueprint Index\n\n"
+            "Status: initialized\n"
+            "Maintenance: Sopify refreshes managed sections; free-text notes may be edited manually.\n\n"
+            "## Current Goal\n\n"
+            "<!-- sopify:auto:goal:start -->\n"
+            f"- Build a stable long-lived blueprint for `{project_name}`.\n"
+            "- Keep the active plan and history separate from long-lived docs.\n"
+            "<!-- sopify:auto:goal:end -->\n\n"
+            "## Project Overview\n\n"
+            "<!-- sopify:auto:overview:start -->\n"
+            "- blueprint: tracked long-lived project facts\n"
+            "- plan: active working plan\n"
+            "- history: finalized archives\n"
+            "- replay: optional replay capability\n"
+            "<!-- sopify:auto:overview:end -->\n\n"
+            "## Architecture Map\n\n"
+            "<!-- sopify:auto:architecture:start -->\n"
+            "```text\n"
+            ".sopify-skills/\n"
+            "├── blueprint/\n"
+            "├── plan/\n"
+            "├── history/\n"
+            "├── state/\n"
+            "└── replay/\n"
+            "```\n"
+            "<!-- sopify:auto:architecture:end -->\n\n"
+            "## Key Contracts\n\n"
+            "<!-- sopify:auto:contracts:start -->\n"
+            "- Create `blueprint/README.md` on the first real-project trigger.\n"
+            "- Populate deeper blueprint files on the first plan lifecycle.\n"
+            "- Archive plans into `history/` only during close-out.\n"
+            "<!-- sopify:auto:contracts:end -->\n\n"
+            "## Current Focus\n\n"
+            "<!-- sopify:auto:focus:start -->\n"
+            "- Track stable contracts here and keep task execution inside `plan/`.\n"
+            "<!-- sopify:auto:focus:end -->\n\n"
+            "## Read Next\n\n"
+            "<!-- sopify:auto:read-next:start -->\n"
+            "- [Technical Conventions](../project.md)\n"
+            "- [Project Overview](../wiki/overview.md)\n"
+            "- Active plan: `../plan/`\n"
+            "<!-- sopify:auto:read-next:end -->\n"
+        )
+
+    return (
+        "# 项目蓝图索引\n\n"
+        "状态: 已初始化\n"
+        "维护方式: Sopify 托管自动区块，说明区块允许人工补充。\n\n"
+        "## 当前目标\n\n"
+        "<!-- sopify:auto:goal:start -->\n"
+        f"- 为 `{project_name}` 建立稳定的长期蓝图入口。\n"
+        "- 把活动 plan 与长期蓝图、历史归档分层维护。\n"
+        "<!-- sopify:auto:goal:end -->\n\n"
+        "## 项目概览\n\n"
+        "<!-- sopify:auto:overview:start -->\n"
+        "- blueprint: 长期项目真相，默认入库\n"
+        "- plan: 当前活动方案\n"
+        "- history: 收口后的历史归档\n"
+        "- replay: 可选回放能力\n"
+        "<!-- sopify:auto:overview:end -->\n\n"
+        "## 架构地图\n\n"
+        "<!-- sopify:auto:architecture:start -->\n"
+        "```text\n"
+        ".sopify-skills/\n"
+        "├── blueprint/\n"
+        "├── plan/\n"
+        "├── history/\n"
+        "├── state/\n"
+        "└── replay/\n"
+        "```\n"
+        "<!-- sopify:auto:architecture:end -->\n\n"
+        "## 关键契约\n\n"
+        "<!-- sopify:auto:contracts:start -->\n"
+        "- 首次真实项目触发时创建 `blueprint/README.md`\n"
+        "- 首次进入 plan 生命周期时补齐深层 blueprint 文件\n"
+        "- 仅在任务收口时归档到 `history/`\n"
+        "<!-- sopify:auto:contracts:end -->\n\n"
+        "## 当前焦点\n\n"
+        "<!-- sopify:auto:focus:start -->\n"
+        "- 长期契约写 blueprint，任务执行细节写 plan。\n"
+        "<!-- sopify:auto:focus:end -->\n\n"
+        "## 深入阅读入口\n\n"
+        "<!-- sopify:auto:read-next:start -->\n"
+        "- [项目技术约定](../project.md)\n"
+        "- [项目概览](../wiki/overview.md)\n"
+        "- 当前活动方案: `../plan/`\n"
+        "<!-- sopify:auto:read-next:end -->\n"
+    )
+
+
+def _blueprint_background_stub(language: str) -> str:
+    if language == "en-US":
+        return (
+            "# Blueprint Background\n\n"
+            "## Goals\n"
+            "- Document long-lived goals, constraints, and non-goals.\n\n"
+            "## Scope\n"
+            "- In scope: to be refined.\n"
+            "- Out of scope: to be refined.\n"
+        )
+    return (
+        "# 蓝图背景\n\n"
+        "## 目标\n"
+        "- 记录长期目标、约束与非目标。\n\n"
+        "## 范围\n"
+        "- 范围内：待补充。\n"
+        "- 范围外：待补充。\n"
+    )
+
+
+def _blueprint_design_stub(language: str) -> str:
+    if language == "en-US":
+        return (
+            "# Blueprint Design\n\n"
+            "## Stable Contracts\n"
+            "- Module boundaries: to be refined.\n"
+            "- Host contracts: to be refined.\n"
+            "- Directory contracts: to be refined.\n"
+        )
+    return (
+        "# 蓝图设计\n\n"
+        "## 稳定契约\n"
+        "- 模块边界：待补充。\n"
+        "- 宿主契约：待补充。\n"
+        "- 目录契约：待补充。\n"
+    )
+
+
+def _blueprint_tasks_stub(language: str) -> str:
+    if language == "en-US":
+        return (
+            "# Blueprint Tasks\n\n"
+            "- [ ] Document long-lived contracts.\n"
+            "- [ ] Review blueprint updates at task close-out.\n"
+        )
+    return (
+        "# 蓝图任务\n\n"
+        "- [ ] 补齐长期稳定契约。\n"
+        "- [ ] 在任务收口时回看 blueprint 是否需要更新。\n"
+    )

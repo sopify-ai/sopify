@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Mapping, Sequence
 
+from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .models import KbArtifact, PlanArtifact, RouteDecision, RuntimeHandoff
 
 HANDOFF_SCHEMA_VERSION = "1"
@@ -20,6 +21,8 @@ _ROUTE_HANDOFF_KIND = {
     "quick_fix": "quick_fix",
     "resume_active": "develop",
     "exec_plan": "develop",
+    "decision_pending": "decision",
+    "decision_resume": "decision",
     "compare": "compare",
     "replay": "replay",
     "consult": "consult",
@@ -34,6 +37,7 @@ def build_runtime_handoff(
     kb_artifact: KbArtifact | None,
     replay_session_dir: str | None,
     skill_result: Mapping[str, Any] | None,
+    current_decision: Any | None,
     notes: Sequence[str],
 ) -> RuntimeHandoff | None:
     """Build the structured host handoff for an actionable route."""
@@ -62,6 +66,7 @@ def build_runtime_handoff(
             kb_artifact=kb_artifact,
             replay_session_dir=replay_session_dir,
             skill_result=skill_result,
+            current_decision=current_decision,
         ),
         notes=normalized_notes,
     )
@@ -96,6 +101,8 @@ def _required_host_action(route_name: str, *, skill_result_present: bool) -> str
         return "continue_host_develop"
     if route_name == "quick_fix":
         return "continue_host_quick_fix"
+    if route_name in {"decision_pending", "decision_resume"}:
+        return "confirm_decision"
     if route_name == "compare":
         return "review_compare_results" if skill_result_present else "host_compare_bridge_required"
     if route_name == "replay":
@@ -111,6 +118,7 @@ def _collect_handoff_artifacts(
     kb_artifact: KbArtifact | None,
     replay_session_dir: str | None,
     skill_result: Mapping[str, Any] | None,
+    current_decision: Any | None,
 ) -> Mapping[str, Any]:
     artifacts: dict[str, Any] = {}
     if current_plan is not None and current_plan.files:
@@ -121,4 +129,10 @@ def _collect_handoff_artifacts(
         artifacts["replay_session_dir"] = replay_session_dir
     if skill_result:
         artifacts["skill_result_keys"] = sorted(skill_result.keys())
+    if current_decision is not None:
+        artifacts["decision_file"] = CURRENT_DECISION_RELATIVE_PATH
+        artifacts["decision_id"] = getattr(current_decision, "decision_id", None)
+        artifacts["decision_status"] = getattr(current_decision, "status", None)
+        artifacts["decision_option_ids"] = [getattr(option, "option_id", "") for option in getattr(current_decision, "options", ())]
+        artifacts["recommended_option_id"] = getattr(current_decision, "recommended_option_id", None)
     return artifacts

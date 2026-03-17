@@ -178,6 +178,8 @@ bash scripts/check-runtime-smoke.sh
 - 已提供 `scripts/sync-runtime-assets.sh`，用于把 runtime bundle 同步到目标仓库的 `.sopify-runtime/`
 - bundle 同步后会生成 `.sopify-runtime/manifest.json`，用于描述入口、支持路由、builtin catalog 与 handoff 文件位置
 - runtime 现已真正写入 `.sopify-skills/state/current_handoff.json`，供宿主读取结构化下一步动作
+- runtime 现已在真实项目首次触发时补最小 `blueprint/README.md`，并在首次进入 plan 生命周期时补齐完整 `blueprint/`
+- runtime 现已支持第一版 decision checkpoint：plan 设计阶段命中显式多方案分叉时，会先写入 `.sopify-skills/state/current_decision.json`，待确认后再生成正式 plan
 - `.sopify-runtime/` bundle 内已包含便携 `tests/test_runtime.py` 与 `scripts/check-runtime-smoke.sh`
 - 当前 `P1-A` 已落地：首次运行会 bootstrap 最小 KB 骨架，但还不包含选择性历史回收或 history 归档
 - 当前 KB 快照只读取根配置、manifest 与顶层目录，不做源码级扫描
@@ -197,6 +199,13 @@ bash scripts/check-runtime-smoke.sh
 - 首次在真实项目仓库触发 Sopify 时，应至少拥有 `.sopify-skills/blueprint/README.md`
 - 首次进入 plan 生命周期时，再补齐 `blueprint/background.md / design.md / tasks.md`
 - 当前 plan 到“本轮任务收口、准备交付验证”时再归档到 `history/`
+
+第一版 decision checkpoint 说明：
+
+- 仅在 `~go plan / ~go / 进入 planning 路由` 时生效
+- 当前自动触发基于显式多选分叉，识别符包括 `还是 / vs / or`
+- 命中后会先暂停正式 plan 生成，并输出文本 fallback 供用户直接回复 `1/2` 或 `~decide choose <option_id>`
+- `go_plan_runtime.py` 在 decision pending 时也会返回成功，不会把“等待确认”误判成失败
 
 ---
 

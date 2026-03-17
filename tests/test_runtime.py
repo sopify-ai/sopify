@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from runtime.config import ConfigError, load_runtime_config
+from runtime.decision import confirm_decision
 from runtime.engine import run_runtime
 from runtime.kb import bootstrap_kb
 from runtime.plan_scaffold import create_plan_scaffold
@@ -318,6 +319,19 @@ class KnowledgeBaseBootstrapTests(unittest.TestCase):
             self.assertEqual(second.files, ())
             self.assertEqual(project_path.read_text(encoding="utf-8"), "# custom\n")
 
+    def test_real_project_bootstrap_creates_blueprint_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "package.json").write_text('{"name":"sample-app"}', encoding="utf-8")
+            config = load_runtime_config(workspace)
+
+            artifact = bootstrap_kb(config)
+
+            self.assertIn(".sopify-skills/blueprint/README.md", artifact.files)
+            readme_path = workspace / ".sopify-skills" / "blueprint" / "README.md"
+            self.assertTrue(readme_path.exists())
+            self.assertIn("sopify:auto:goal:start", readme_path.read_text(encoding="utf-8"))
+
 
 class EngineIntegrationTests(unittest.TestCase):
     def test_engine_handles_plan_resume_and_cancel(self) -> None:
@@ -347,6 +361,81 @@ class EngineIntegrationTests(unittest.TestCase):
             store = StateStore(load_runtime_config(workspace))
             self.assertFalse(store.has_active_flow())
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
+
+    def test_engine_populates_blueprint_scaffold_on_first_plan_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            result = run_runtime("~go plan 补 runtime 骨架", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(result.route.route_name, "plan_only")
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "README.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "background.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "design.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "tasks.md").exists())
+
+    def test_engine_creates_decision_checkpoint_before_materializing_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            result = run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            self.assertEqual(result.route.route_name, "decision_pending")
+            self.assertIsNone(result.plan_artifact)
+            self.assertIsNotNone(result.recovered_context.current_decision)
+            self.assertEqual(result.handoff.handoff_kind, "decision")
+            self.assertEqual(result.handoff.required_host_action, "confirm_decision")
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "design.md").exists())
+
+    def test_engine_materializes_plan_after_decision_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            result = run_runtime("1", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(result.route.route_name, "plan_only")
+            self.assertIsNotNone(result.plan_artifact)
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+            tasks_path = workspace / result.plan_artifact.path / "tasks.md"
+            design_path = workspace / result.plan_artifact.path / "design.md"
+            self.assertIn("decision_checkpoint:", tasks_path.read_text(encoding="utf-8"))
+            self.assertIn("## 决策确认", design_path.read_text(encoding="utf-8"))
+
+    def test_confirmed_decision_can_resume_after_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            pending = run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            confirmed = confirm_decision(
+                pending.recovered_context.current_decision,
+                option_id="option_1",
+                source="text",
+                raw_input="1",
+            )
+            store.set_current_decision(confirmed)
+
+            resumed = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(resumed.route.route_name, "plan_only")
+            self.assertIsNotNone(resumed.plan_artifact)
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
 
     def test_engine_handoff_contracts_cover_compare_and_replay(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -393,6 +482,34 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((workspace / ".sopify-skills" / "project.md").exists())
             self.assertIn(".sopify-skills/project.md", rendered)
 
+    def test_go_plan_helper_allows_pending_decision_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            script_path = REPO_ROOT / "scripts" / "go_plan_runtime.py"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "--workspace-root",
+                    str(workspace),
+                    "--no-color",
+                    "payload",
+                    "放",
+                    "host",
+                    "root",
+                    "还是",
+                    "workspace/.sopify-runtime",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertIn("方案设计 ?", completed.stdout)
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
     def test_synced_runtime_bundle_runs_in_another_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
@@ -424,9 +541,13 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(manifest["handoff_file"], ".sopify-skills/state/current_handoff.json")
             self.assertEqual(manifest["capabilities"]["bundle_role"], "control_plane")
             self.assertTrue(manifest["capabilities"]["writes_handoff_file"])
+            self.assertTrue(manifest["capabilities"]["decision_checkpoint"])
+            self.assertTrue(manifest["capabilities"]["writes_decision_file"])
             self.assertIn("plan_only", manifest["limits"]["host_required_routes"])
+            self.assertIn("decision_pending", manifest["limits"]["host_required_routes"])
             self.assertIn("compare", manifest["supported_routes"])
             self.assertIn("exec_plan", manifest["limits"]["host_required_routes"])
+            self.assertEqual(manifest["limits"]["decision_file"], ".sopify-skills/state/current_decision.json")
             self.assertIn("model-compare", manifest["limits"]["runtime_payload_required_skill_ids"])
             self.assertEqual(len(manifest["builtin_skills"]), 7)
             model_compare = next(skill for skill in manifest["builtin_skills"] if skill["skill_id"] == "model-compare")
@@ -448,6 +569,66 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((workspace / ".sopify-skills" / "replay" / "sessions").exists())
             self.assertTrue((workspace / ".sopify-skills" / "project.md").exists())
             self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
+
+    def test_synced_runtime_bundle_supports_decision_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            target_root = temp_root / "target"
+            workspace = temp_root / "workspace"
+            target_root.mkdir()
+            workspace.mkdir()
+
+            sync_script = REPO_ROOT / "scripts" / "sync-runtime-assets.sh"
+            sync_completed = subprocess.run(
+                ["bash", str(sync_script), str(target_root)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(sync_completed.returncode, 0, msg=sync_completed.stderr)
+
+            runtime_script = target_root / ".sopify-runtime" / "scripts" / "sopify_runtime.py"
+            pending = subprocess.run(
+                [
+                    sys.executable,
+                    str(runtime_script),
+                    "--workspace-root",
+                    str(workspace),
+                    "--no-color",
+                    "~go",
+                    "plan",
+                    "payload",
+                    "放",
+                    "host",
+                    "root",
+                    "还是",
+                    "workspace/.sopify-runtime",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(pending.returncode, 0, msg=pending.stderr)
+            self.assertIn("方案设计 ?", pending.stdout)
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
+            confirmed = subprocess.run(
+                [
+                    sys.executable,
+                    str(runtime_script),
+                    "--workspace-root",
+                    str(workspace),
+                    "--no-color",
+                    "1",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(confirmed.returncode, 0, msg=confirmed.stderr)
+            self.assertIn(".sopify-skills/plan/", confirmed.stdout)
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
 
 
 if __name__ == "__main__":
