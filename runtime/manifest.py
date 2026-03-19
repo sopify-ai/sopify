@@ -10,6 +10,15 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Mapping
 
 from .builtin_catalog import load_builtin_skills
+from .checkpoint_request import DEVELOP_RESUME_AFTER_ACTIONS, DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS
+from .entry_guard import (
+    DEFAULT_RUNTIME_ENTRY as ENTRY_GUARD_DEFAULT_ENTRY,
+    ENTRY_GUARD_BYPASS_BLOCKED_COMMANDS,
+    ENTRY_GUARD_DEVELOP_CALLBACK_REASON_CODE,
+    ENTRY_GUARD_PENDING_ACTIONS,
+    ENTRY_GUARD_REASON_CODES,
+    PLAN_ONLY_HELPER_ENTRY as ENTRY_GUARD_PLAN_ONLY_HELPER_ENTRY,
+)
 from .clarification import CURRENT_CLARIFICATION_RELATIVE_PATH
 from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
@@ -18,10 +27,11 @@ from .state import iso_now
 
 MANIFEST_SCHEMA_VERSION = "1"
 DEFAULT_MANIFEST_FILENAME = "manifest.json"
-DEFAULT_ENTRY = "scripts/sopify_runtime.py"
-PLAN_ONLY_ENTRY = "scripts/go_plan_runtime.py"
+DEFAULT_ENTRY = ENTRY_GUARD_DEFAULT_ENTRY
+PLAN_ONLY_ENTRY = ENTRY_GUARD_PLAN_ONLY_HELPER_ENTRY
 DECISION_BRIDGE_ENTRY = "scripts/decision_bridge_runtime.py"
 CLARIFICATION_BRIDGE_ENTRY = "scripts/clarification_bridge_runtime.py"
+DEVELOP_CHECKPOINT_ENTRY = "scripts/develop_checkpoint_runtime.py"
 _SOPIFY_VERSION_RE = re.compile(r"^<!--\s*SOPIFY_VERSION:\s*(?P<version>.+?)\s*-->$", re.MULTILINE)
 _CHANGELOG_VERSION_RE = re.compile(r"^## \[(?P<version>[^\]]+)\]", re.MULTILINE)
 
@@ -44,6 +54,7 @@ class BundleManifest:
         supported_routes: tuple[str, ...],
         builtin_skills: tuple[Mapping[str, Any], ...],
         handoff_file: str,
+        dependency_model: Mapping[str, Any],
         capabilities: Mapping[str, Any],
         limits: Mapping[str, Any],
     ) -> None:
@@ -55,6 +66,7 @@ class BundleManifest:
         self.supported_routes = supported_routes
         self.builtin_skills = builtin_skills
         self.handoff_file = handoff_file
+        self.dependency_model = dependency_model
         self.capabilities = capabilities
         self.limits = limits
 
@@ -68,6 +80,7 @@ class BundleManifest:
             "supported_routes": list(self.supported_routes),
             "builtin_skills": [dict(skill) for skill in self.builtin_skills],
             "handoff_file": self.handoff_file,
+            "dependency_model": dict(self.dependency_model),
             "capabilities": dict(self.capabilities),
             "limits": dict(self.limits),
         }
@@ -102,6 +115,12 @@ def build_bundle_manifest(
         supported_routes=SUPPORTED_ROUTE_NAMES,
         builtin_skills=builtin_skills,
         handoff_file=CURRENT_HANDOFF_RELATIVE_PATH,
+        dependency_model={
+            "mode": "stdlib_only",
+            "python_min": "3.11",
+            "host_env_dir": None,
+            "runtime_dependencies": [],
+        },
         capabilities={
             "bundle_role": "control_plane",
             "manifest_first": True,
@@ -112,7 +131,11 @@ def build_bundle_manifest(
             "decision_bridge": True,
             "clarification_checkpoint": True,
             "clarification_bridge": True,
+            "develop_checkpoint_callback": True,
+            "develop_resume_context": True,
             "execution_gate": True,
+            "planning_mode_orchestrator": True,
+            "runtime_entry_guard": True,
             "replay_capture": True,
             "writes_clarification_file": True,
             "writes_handoff_file": True,
@@ -138,9 +161,19 @@ def build_bundle_manifest(
             ],
             "host_bridge_status": {
                 "develop": "required",
+                "develop_checkpoint": "required",
                 "execution_confirm": "required",
                 "compare": "required",
                 "replay": "required",
+            },
+            "entry_guard": {
+                "strict_runtime_entry": True,
+                "default_runtime_entry": DEFAULT_ENTRY,
+                "plan_only_helper_entry": PLAN_ONLY_ENTRY,
+                "pending_checkpoint_actions": list(ENTRY_GUARD_PENDING_ACTIONS),
+                "bypass_blocked_commands": list(ENTRY_GUARD_BYPASS_BLOCKED_COMMANDS),
+                "reason_codes": dict(ENTRY_GUARD_REASON_CODES),
+                "develop_checkpoint_callback_reason_code": ENTRY_GUARD_DEVELOP_CALLBACK_REASON_CODE,
             },
             "runtime_payload_required_skill_ids": ["model-compare"],
             "clarification_file": CURRENT_CLARIFICATION_RELATIVE_PATH,
@@ -166,6 +199,16 @@ def build_bundle_manifest(
                     "textarea": "multiline_text",
                 },
             },
+            "develop_checkpoint_entry": DEVELOP_CHECKPOINT_ENTRY,
+            "develop_checkpoint_hosts": {
+                "cli": {
+                    "preferred_mode": "structured_callback",
+                    "inspect": "json_contract",
+                    "submit": "json_payload",
+                },
+            },
+            "develop_resume_context_required_fields": list(DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS),
+            "develop_resume_after_actions": list(DEVELOP_RESUME_AFTER_ACTIONS),
         },
     )
 

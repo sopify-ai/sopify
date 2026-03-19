@@ -535,6 +535,7 @@ class DecisionState:
     candidate_skill_ids: tuple[str, ...] = ()
     policy_id: str = ""
     trigger_reason: str = ""
+    resume_context: Mapping[str, Any] = field(default_factory=dict)
     selection: Optional[DecisionSelection] = None
     created_at: str = ""
     updated_at: str = ""
@@ -630,6 +631,7 @@ class DecisionState:
             "candidate_skill_ids": list(self.candidate_skill_ids),
             "policy_id": self.policy_id,
             "trigger_reason": self.trigger_reason,
+            "resume_context": _json_mapping(self.resume_context),
             "selection": self.selection.to_dict() if self.selection else None,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -664,6 +666,7 @@ class DecisionState:
             candidate_skill_ids=tuple(data.get("candidate_skill_ids") or ()),
             policy_id=str(data.get("policy_id") or ""),
             trigger_reason=str(data.get("trigger_reason") or ""),
+            resume_context=_json_mapping(data.get("resume_context")),
             selection=DecisionSelection.from_dict(selection) if isinstance(selection, Mapping) else None,
             created_at=str(data.get("created_at") or ""),
             updated_at=str(data.get("updated_at") or ""),
@@ -689,6 +692,7 @@ class ClarificationState:
     requested_plan_level: Optional[str] = None
     capture_mode: str = "off"
     candidate_skill_ids: tuple[str, ...] = ()
+    resume_context: Mapping[str, Any] = field(default_factory=dict)
     response_text: Optional[str] = None
     response_fields: Mapping[str, Any] = field(default_factory=dict)
     response_source: Optional[str] = None
@@ -737,6 +741,7 @@ class ClarificationState:
             "requested_plan_level": self.requested_plan_level,
             "capture_mode": self.capture_mode,
             "candidate_skill_ids": list(self.candidate_skill_ids),
+            "resume_context": _json_mapping(self.resume_context),
             "response_text": self.response_text,
             "response_fields": _json_mapping(self.response_fields),
             "response_source": self.response_source,
@@ -764,6 +769,7 @@ class ClarificationState:
             requested_plan_level=data.get("requested_plan_level") or None,
             capture_mode=str(data.get("capture_mode") or "off"),
             candidate_skill_ids=tuple(data.get("candidate_skill_ids") or ()),
+            resume_context=_json_mapping(data.get("resume_context")),
             response_text=data.get("response_text") or None,
             response_fields=_json_mapping(data.get("response_fields")),
             response_source=data.get("response_source") or None,

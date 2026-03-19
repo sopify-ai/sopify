@@ -7,9 +7,18 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Mapping, Sequence
 
+from .checkpoint_request import (
+    CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED,
+    checkpoint_request_from_clarification_state,
+    checkpoint_request_from_decision_state,
+    checkpoint_request_from_execution_confirm,
+    normalize_checkpoint_request,
+)
 from .clarification import CURRENT_CLARIFICATION_RELATIVE_PATH, build_scope_clarification_form, clarification_submission_state_payload
 from .compare_decision import build_compare_decision_contract
+from .decision_policy import has_tradeoff_checkpoint_signal
 from .decision import CURRENT_DECISION_RELATIVE_PATH
+from .entry_guard import build_entry_guard_contract
 from .execution_confirm import build_execution_summary
 from .models import KbArtifact, PlanArtifact, RouteDecision, RunState, RuntimeConfig, RuntimeHandoff
 
@@ -59,6 +68,27 @@ def build_runtime_handoff(
     normalized_notes = tuple(note.strip() for note in notes if note and note.strip())
     if not normalized_notes and decision.reason:
         normalized_notes = (decision.reason,)
+    required_host_action = _required_host_action(
+        decision,
+        skill_result_present=bool(skill_result),
+    )
+    artifacts = _collect_handoff_artifacts(
+        config=config,
+        decision=decision,
+        current_run=current_run,
+        current_plan=current_plan,
+        kb_artifact=kb_artifact,
+        replay_session_dir=replay_session_dir,
+        skill_result=skill_result,
+        current_clarification=current_clarification,
+        current_decision=current_decision,
+        required_host_action=required_host_action,
+    )
+    guard_reason_code = str(artifacts.get("entry_guard_reason_code") or "").strip()
+    if guard_reason_code:
+        note = f"entry_guard_reason_code={guard_reason_code}"
+        if note not in normalized_notes:
+            normalized_notes = (*normalized_notes, note)
 
     return RuntimeHandoff(
         schema_version=HANDOFF_SCHEMA_VERSION,
@@ -67,22 +97,9 @@ def build_runtime_handoff(
         plan_id=current_plan.plan_id if current_plan is not None else None,
         plan_path=current_plan.path if current_plan is not None else None,
         handoff_kind=handoff_kind,
-        required_host_action=_required_host_action(
-            decision,
-            skill_result_present=bool(skill_result),
-        ),
+        required_host_action=required_host_action,
         recommended_skill_ids=tuple(decision.candidate_skill_ids),
-        artifacts=_collect_handoff_artifacts(
-            config=config,
-            decision=decision,
-            current_run=current_run,
-            current_plan=current_plan,
-            kb_artifact=kb_artifact,
-            replay_session_dir=replay_session_dir,
-            skill_result=skill_result,
-            current_clarification=current_clarification,
-            current_decision=current_decision,
-        ),
+        artifacts=artifacts,
         notes=normalized_notes,
     )
 
@@ -145,17 +162,25 @@ def _collect_handoff_artifacts(
     skill_result: Mapping[str, Any] | None,
     current_clarification: Any | None,
     current_decision: Any | None,
+    required_host_action: str,
 ) -> Mapping[str, Any]:
     artifacts: dict[str, Any] = {}
+    entry_guard = build_entry_guard_contract(required_host_action=required_host_action)
+    artifacts["entry_guard"] = entry_guard
+    guard_reason_code = str(entry_guard.get("reason_code") or "").strip()
+    if guard_reason_code:
+        artifacts["entry_guard_reason_code"] = guard_reason_code
+    execution_summary_payload = None
     if current_run is not None:
         artifacts["run_stage"] = current_run.stage
         if current_run.execution_gate is not None:
             artifacts["execution_gate"] = current_run.execution_gate.to_dict()
     if current_plan is not None and _should_attach_execution_summary(decision=decision, current_run=current_run):
-        artifacts["execution_summary"] = build_execution_summary(
+        execution_summary_payload = build_execution_summary(
             plan_artifact=current_plan,
             config=config,
-        ).to_dict()
+        )
+        artifacts["execution_summary"] = execution_summary_payload.to_dict()
     if current_plan is not None and current_plan.files:
         artifacts["plan_files"] = list(current_plan.files)
     if kb_artifact is not None and kb_artifact.files:
@@ -172,6 +197,27 @@ def _collect_handoff_artifacts(
             )
             if compare_contract is not None:
                 artifacts["compare_decision_contract"] = compare_contract
+        tradeoff_signal = has_tradeoff_checkpoint_signal(skill_result)
+        raw_checkpoint_request = skill_result.get("checkpoint_request")
+        if isinstance(raw_checkpoint_request, Mapping):
+            try:
+                normalized_request = normalize_checkpoint_request(raw_checkpoint_request)
+                artifacts["checkpoint_request"] = normalized_request.to_dict()
+                _attach_resume_context_artifacts(
+                    artifacts,
+                    resume_context=normalized_request.resume_context,
+                    phase=normalized_request.source_stage,
+                )
+            except ValueError:
+                # Keep the handoff stable even when a skill emits malformed data.
+                error_code = "invalid_skill_checkpoint_request"
+                if tradeoff_signal:
+                    error_code = CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED
+                    artifacts["checkpoint_request_reason_code"] = CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED
+                artifacts["checkpoint_request_error"] = error_code
+        elif tradeoff_signal:
+            artifacts["checkpoint_request_error"] = CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED
+            artifacts["checkpoint_request_reason_code"] = CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED
     if current_clarification is not None:
         artifacts["clarification_file"] = CURRENT_CLARIFICATION_RELATIVE_PATH
         artifacts["clarification_id"] = getattr(current_clarification, "clarification_id", None)
@@ -183,6 +229,16 @@ def _collect_handoff_artifacts(
             language=config.language,
         )
         artifacts["clarification_submission_state"] = clarification_submission_state_payload(current_clarification)
+        artifacts["checkpoint_request"] = checkpoint_request_from_clarification_state(
+            current_clarification,
+            config=config,
+            source_route=decision.route_name,
+        ).to_dict()
+        _attach_resume_context_artifacts(
+            artifacts,
+            resume_context=getattr(current_clarification, "resume_context", None),
+            phase=getattr(current_clarification, "phase", None),
+        )
     if current_decision is not None:
         artifacts["decision_file"] = CURRENT_DECISION_RELATIVE_PATH
         artifacts["decision_id"] = getattr(current_decision, "decision_id", None)
@@ -197,6 +253,21 @@ def _collect_handoff_artifacts(
         if checkpoint is not None and hasattr(checkpoint, "to_dict"):
             artifacts["decision_checkpoint"] = checkpoint.to_dict()
         artifacts["decision_submission_state"] = _decision_submission_state(current_decision)
+        artifacts["checkpoint_request"] = checkpoint_request_from_decision_state(
+            current_decision,
+            source_route=decision.route_name,
+        ).to_dict()
+        _attach_resume_context_artifacts(
+            artifacts,
+            resume_context=getattr(current_decision, "resume_context", None),
+            phase=getattr(current_decision, "phase", None),
+        )
+    elif decision.route_name == "execution_confirm_pending" and current_plan is not None and execution_summary_payload is not None:
+        artifacts["checkpoint_request"] = checkpoint_request_from_execution_confirm(
+            config=config,
+            decision=decision,
+            current_plan=current_plan,
+        ).to_dict()
     if decision.route_name == "execution_confirm_pending" and decision.active_run_action == "revise_execution":
         artifacts["execution_feedback"] = decision.request_text.strip()
     return artifacts
@@ -228,6 +299,20 @@ def _decision_submission_state(current_decision: Any) -> Mapping[str, Any]:
     if message:
         payload["message"] = message
     return payload
+
+
+def _attach_resume_context_artifacts(
+    artifacts: dict[str, Any],
+    *,
+    resume_context: Any,
+    phase: Any,
+) -> None:
+    if not isinstance(resume_context, Mapping) or not resume_context:
+        return
+    normalized = dict(resume_context)
+    artifacts["resume_context"] = normalized
+    if str(phase or "").strip() == "develop":
+        artifacts["develop_resume_context"] = normalized
 
 
 def _should_attach_execution_summary(*, decision: RouteDecision, current_run: RunState | None) -> bool:

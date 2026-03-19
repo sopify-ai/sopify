@@ -7,31 +7,51 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from runtime.config import ConfigError, load_runtime_config
+from runtime.checkpoint_materializer import materialize_checkpoint_request
+from runtime.checkpoint_request import (
+    CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED,
+    CheckpointRequestError,
+    DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS,
+    checkpoint_request_from_clarification_state,
+    checkpoint_request_from_decision_state,
+)
 from runtime.clarification_bridge import (
+    ClarificationBridgeError,
     build_cli_clarification_bridge,
     load_clarification_bridge_context,
     prompt_cli_clarification_submission,
 )
 from runtime.compare_decision import build_compare_decision_contract
+from runtime.develop_checkpoint import DevelopCheckpointError, inspect_develop_checkpoint_context, submit_develop_checkpoint
 from runtime.decision import build_execution_gate_decision_state, confirm_decision, response_from_submission
 from runtime.decision_bridge import (
+    DecisionBridgeError,
     DecisionBridgeContext,
     build_cli_decision_bridge,
+    load_decision_bridge_context,
     prompt_cli_decision_submission,
 )
 from runtime.decision_policy import match_decision_policy
 from runtime.decision_templates import CUSTOM_OPTION_ID, PRIMARY_OPTION_FIELD_ID, build_strategy_pick_template
 from runtime.engine import run_runtime
 from runtime.execution_gate import evaluate_execution_gate
+from runtime.handoff import build_runtime_handoff
 from runtime.kb import bootstrap_kb
 from runtime.plan_scaffold import create_plan_scaffold
 from runtime.output import render_runtime_output
+from runtime.plan_orchestrator import (
+    PLAN_ORCHESTRATOR_CANCELLED_EXIT,
+    PLAN_ORCHESTRATOR_PENDING_EXIT,
+    PlanOrchestratorError,
+    run_plan_loop,
+)
 from runtime.replay import ReplayWriter, build_decision_replay_event
 from runtime.router import Router
 from runtime.skill_registry import SkillRegistry
@@ -49,6 +69,7 @@ from runtime.models import (
     PlanArtifact,
     ReplayEvent,
     RouteDecision,
+    RuntimeHandoff,
     RunState,
 )
 from scripts.model_compare_runtime import make_default_candidate
@@ -144,6 +165,14 @@ def _prepare_ready_plan_state(
         )
     )
     return config, store, plan_artifact
+
+
+def _enter_active_develop_context(workspace: Path) -> None:
+    _prepare_ready_plan_state(workspace)
+    run_runtime("~go exec", workspace_root=workspace, user_home=workspace / "home")
+    result = run_runtime("开始", workspace_root=workspace, user_home=workspace / "home")
+    assert result.handoff is not None
+    assert result.handoff.required_host_action == "continue_host_develop"
 
 
 class RuntimeConfigTests(unittest.TestCase):
@@ -567,6 +596,176 @@ class DecisionContractTests(unittest.TestCase):
         self.assertEqual(restored.fields[1].when[0].operator, "not_in")
         self.assertEqual(restored.recommendation.option_id, "option_1")
 
+    def test_checkpoint_request_roundtrip_materializes_decision_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            rendered = build_strategy_pick_template(
+                checkpoint_id="decision_request_1",
+                question="确认方案",
+                summary="请选择本轮方向",
+                options=(
+                    DecisionOption(option_id="option_1", title="方案一", summary="保守路径", recommended=True),
+                    DecisionOption(option_id="option_2", title="方案二", summary="激进路径"),
+                ),
+                language="zh-CN",
+                recommended_option_id="option_1",
+                default_option_id="option_1",
+            )
+            decision_state = DecisionState(
+                schema_version="2",
+                decision_id="decision_request_1",
+                feature_key="runtime",
+                phase="design",
+                status="pending",
+                decision_type="architecture_choice",
+                question="确认方案",
+                summary="请选择本轮方向",
+                options=rendered.options,
+                checkpoint=rendered.checkpoint,
+                recommended_option_id="option_1",
+                default_option_id="option_1",
+                context_files=("runtime/engine.py",),
+                resume_route="workflow",
+                request_text="确认方案",
+                requested_plan_level="standard",
+                capture_mode="summary",
+                candidate_skill_ids=("design",),
+                policy_id="planning_semantic_split",
+                trigger_reason="explicit_architecture_split",
+                created_at=iso_now(),
+                updated_at=iso_now(),
+            )
+
+            request = checkpoint_request_from_decision_state(decision_state)
+            materialized = materialize_checkpoint_request(request.to_dict(), config=config)
+
+            self.assertEqual(materialized.required_host_action, "confirm_decision")
+            self.assertEqual(materialized.decision_state.decision_id, "decision_request_1")
+            self.assertEqual(materialized.decision_state.active_checkpoint.primary_field_id, "selected_option_id")
+            self.assertEqual(materialized.decision_state.options[0].option_id, "option_1")
+
+    def test_checkpoint_request_roundtrip_materializes_clarification_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            result = run_runtime("~go plan 优化一下", workspace_root=workspace, user_home=workspace / "home")
+            clarification_state = StateStore(load_runtime_config(workspace)).get_current_clarification()
+
+            self.assertEqual(result.route.route_name, "clarification_pending")
+            self.assertIsNotNone(clarification_state)
+
+            request = checkpoint_request_from_clarification_state(clarification_state, config=config)
+            materialized = materialize_checkpoint_request(request.to_dict(), config=config)
+
+            self.assertEqual(materialized.required_host_action, "answer_questions")
+            self.assertEqual(materialized.clarification_state.clarification_id, clarification_state.clarification_id)
+            self.assertEqual(materialized.clarification_state.missing_facts, clarification_state.missing_facts)
+
+    def test_materialize_checkpoint_request_rejects_invalid_decision_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            with self.assertRaises(CheckpointRequestError):
+                materialize_checkpoint_request(
+                    {
+                        "schema_version": "1",
+                        "checkpoint_kind": "decision",
+                        "checkpoint_id": "broken_decision",
+                        "source_stage": "design",
+                        "source_route": "workflow",
+                        "question": "确认方案",
+                        "summary": "缺少 options 和 checkpoint。",
+                    },
+                    config=config,
+                )
+
+    def test_materialize_checkpoint_request_rejects_develop_checkpoint_without_resume_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            with self.assertRaisesRegex(CheckpointRequestError, "resume_context"):
+                materialize_checkpoint_request(
+                    {
+                        "schema_version": "1",
+                        "checkpoint_kind": "decision",
+                        "checkpoint_id": "develop_decision_missing_resume",
+                        "source_stage": "develop",
+                        "source_route": "resume_active",
+                        "question": "继续怎么改？",
+                        "summary": "开发中需要用户确认。",
+                        "options": [
+                            {"id": "option_1", "title": "方案一", "summary": "保守"},
+                            {"id": "option_2", "title": "方案二", "summary": "激进"},
+                        ],
+                    },
+                    config=config,
+                )
+
+    def test_checkpoint_request_roundtrip_preserves_develop_resume_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            rendered = build_strategy_pick_template(
+                checkpoint_id="develop_decision_1",
+                question="认证边界是否移动到 adapter 层？",
+                summary="开发中已经命中实现分叉，需要用户拍板。",
+                options=(
+                    DecisionOption(option_id="option_1", title="保持现状", summary="边界不动", recommended=True),
+                    DecisionOption(option_id="option_2", title="移动边界", summary="改到 adapter 层"),
+                ),
+                language="zh-CN",
+                recommended_option_id="option_1",
+                default_option_id="option_1",
+            )
+            resume_context = {
+                "active_run_stage": "executing",
+                "current_plan_path": ".sopify-skills/plan/20260319_feature",
+                "task_refs": ["2.1", "2.2"],
+                "changed_files": ["runtime/engine.py"],
+                "working_summary": "已经接上 develop callback，需要确认认证边界。",
+                "verification_todo": ["补 checkpoint contract 测试"],
+                "resume_after": "continue_host_develop",
+            }
+            decision_state = DecisionState(
+                schema_version="2",
+                decision_id="develop_decision_1",
+                feature_key="runtime",
+                phase="develop",
+                status="pending",
+                decision_type="develop_choice",
+                question="认证边界是否移动到 adapter 层？",
+                summary="开发中已经命中实现分叉，需要用户拍板。",
+                options=rendered.options,
+                checkpoint=rendered.checkpoint,
+                recommended_option_id="option_1",
+                default_option_id="option_1",
+                context_files=("runtime/engine.py",),
+                resume_route="resume_active",
+                request_text="继续 develop callback",
+                requested_plan_level="standard",
+                capture_mode="summary",
+                candidate_skill_ids=("develop",),
+                policy_id="develop_checkpoint_callback",
+                trigger_reason="host_callback",
+                resume_context=resume_context,
+                created_at=iso_now(),
+                updated_at=iso_now(),
+            )
+
+            request = checkpoint_request_from_decision_state(decision_state)
+            materialized = materialize_checkpoint_request(request.to_dict(), config=config)
+
+            self.assertEqual(materialized.required_host_action, "confirm_decision")
+            self.assertEqual(materialized.decision_state.phase, "develop")
+            self.assertEqual(materialized.decision_state.resume_context["working_summary"], resume_context["working_summary"])
+            self.assertEqual(
+                set(DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS),
+                set(materialized.decision_state.resume_context.keys()) & set(DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS),
+            )
+
     def test_state_store_persists_structured_submission(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -638,7 +837,10 @@ class DecisionContractTests(unittest.TestCase):
                 user_home=workspace / "home",
             )
             self.assertIn("decision_checkpoint", pending.handoff.artifacts)
+            self.assertEqual(pending.handoff.artifacts["checkpoint_request"]["checkpoint_kind"], "decision")
             self.assertEqual(pending.handoff.artifacts["decision_submission_state"]["status"], "empty")
+            self.assertTrue(pending.handoff.artifacts["entry_guard"]["strict_runtime_entry"])
+            self.assertEqual(pending.handoff.artifacts["entry_guard_reason_code"], "entry_guard_decision_pending")
 
             store = StateStore(load_runtime_config(workspace))
             store.set_current_decision_submission(
@@ -655,8 +857,76 @@ class DecisionContractTests(unittest.TestCase):
 
             self.assertEqual(inspected.route.route_name, "decision_pending")
             self.assertEqual(inspected.handoff.artifacts["decision_checkpoint"]["primary_field_id"], "selected_option_id")
+            self.assertEqual(inspected.handoff.artifacts["checkpoint_request"]["checkpoint_id"], inspected.handoff.artifacts["decision_id"])
             self.assertEqual(inspected.handoff.artifacts["decision_submission_state"]["status"], "submitted")
             self.assertEqual(inspected.handoff.artifacts["decision_submission_state"]["answer_keys"], ["selected_option_id"])
+
+    def test_handoff_includes_execution_confirm_checkpoint_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            _prepare_ready_plan_state(workspace)
+
+            result = run_runtime("~go exec", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(result.route.route_name, "execution_confirm_pending")
+            self.assertEqual(result.handoff.required_host_action, "confirm_execute")
+            self.assertEqual(result.handoff.artifacts["checkpoint_request"]["checkpoint_kind"], "execution_confirm")
+            self.assertEqual(result.handoff.artifacts["entry_guard_reason_code"], "entry_guard_execution_confirm_pending")
+            self.assertEqual(
+                result.handoff.artifacts["checkpoint_request"]["execution_summary"]["plan_path"],
+                result.handoff.artifacts["execution_summary"]["plan_path"],
+            )
+
+    def test_handoff_marks_missing_checkpoint_request_when_tradeoff_candidates_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            decision = RouteDecision(
+                route_name="workflow",
+                request_text="确认支付模块改造路径",
+                reason="test",
+                complexity="complex",
+                plan_level="standard",
+            )
+
+            handoff = build_runtime_handoff(
+                config=config,
+                decision=decision,
+                run_id="run-missing-checkpoint",
+                current_run=None,
+                current_plan=None,
+                kb_artifact=None,
+                replay_session_dir=None,
+                skill_result={
+                    "decision_candidates": [
+                        {
+                            "id": "incremental",
+                            "title": "渐进改造",
+                            "summary": "低风险拆分现有支付链路。",
+                            "tradeoffs": ["迁移周期更长"],
+                        },
+                        {
+                            "id": "rewrite",
+                            "title": "整体重写",
+                            "summary": "统一支付边界与数据模型。",
+                            "tradeoffs": ["一次性变更面更大"],
+                        },
+                    ]
+                },
+                current_clarification=None,
+                current_decision=None,
+                notes=("test",),
+            )
+
+            self.assertIsNotNone(handoff)
+            self.assertEqual(
+                handoff.artifacts.get("checkpoint_request_reason_code"),
+                CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED,
+            )
+            self.assertEqual(
+                handoff.artifacts.get("checkpoint_request_error"),
+                CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED,
+            )
 
     def test_cli_text_bridge_collects_submission_and_runtime_can_resume(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -766,6 +1036,52 @@ class DecisionContractTests(unittest.TestCase):
             self.assertIsNotNone(updated)
             self.assertEqual(updated.submission.status, "submitted")
             self.assertEqual(updated.submission.answers["selected_option_id"], "option_1")
+
+    def test_decision_bridge_rejects_handoff_without_strict_entry_guard_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            handoff = store.get_current_handoff()
+            self.assertIsNotNone(handoff)
+
+            payload = handoff.to_dict()
+            artifacts = dict(payload.get("artifacts") or {})
+            artifacts.pop("entry_guard", None)
+            payload["artifacts"] = artifacts
+            store.current_handoff_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(DecisionBridgeError, "decision_bridge_handoff_mismatch"):
+                load_decision_bridge_context(config=config)
+
+    def test_clarification_bridge_rejects_handoff_with_mismatched_clarification_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            run_runtime("~go plan 优化一下", workspace_root=workspace, user_home=workspace / "home")
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            handoff = store.get_current_handoff()
+            self.assertIsNotNone(handoff)
+
+            payload = handoff.to_dict()
+            artifacts = dict(payload.get("artifacts") or {})
+            artifacts["clarification_id"] = "clarification_fake_001"
+            payload["artifacts"] = artifacts
+            store.current_handoff_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ClarificationBridgeError, "clarification_bridge_handoff_mismatch"):
+                load_clarification_bridge_context(config=config)
 
     def test_cli_clarification_bridge_exposes_interactive_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1359,6 +1675,221 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(result.recovered_context.current_run.stage, "executing")
             self.assertEqual(result.handoff.required_host_action, "continue_host_develop")
 
+    def test_develop_checkpoint_helper_writes_decision_checkpoint_and_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            _enter_active_develop_context(workspace)
+            config = load_runtime_config(workspace)
+
+            inspected = inspect_develop_checkpoint_context(config=config)
+            self.assertEqual(inspected["status"], "ready")
+            self.assertEqual(inspected["required_host_action"], "continue_host_develop")
+
+            submission = submit_develop_checkpoint(
+                {
+                    "schema_version": "1",
+                    "checkpoint_kind": "decision",
+                    "question": "认证边界是否移动到 adapter 层？",
+                    "summary": "开发中已经形成两条可执行路径，需要用户拍板。",
+                    "options": [
+                        {"id": "option_1", "title": "保持现状", "summary": "边界继续留在当前层", "recommended": True},
+                        {"id": "option_2", "title": "移动边界", "summary": "把认证边界下推到 adapter 层"},
+                    ],
+                    "resume_context": {
+                        "active_run_stage": "executing",
+                        "current_plan_path": ".sopify-skills/plan/20260319_feature",
+                        "task_refs": ["2.1", "2.2"],
+                        "changed_files": ["runtime/engine.py", "runtime/handoff.py"],
+                        "working_summary": "develop callback 已接入，需要确认认证边界。",
+                        "verification_todo": ["补 develop checkpoint contract 测试"],
+                        "resume_after": "continue_host_develop",
+                    },
+                },
+                config=config,
+            )
+
+            self.assertEqual(submission.handoff.required_host_action, "confirm_decision")
+            self.assertEqual(submission.route.route_name, "decision_pending")
+            store = StateStore(config)
+            current_decision = store.get_current_decision()
+            self.assertIsNotNone(current_decision)
+            self.assertEqual(current_decision.phase, "develop")
+            self.assertEqual(current_decision.resume_context["resume_after"], "continue_host_develop")
+            self.assertEqual(store.get_current_handoff().artifacts["resume_context"]["working_summary"], "develop callback 已接入，需要确认认证边界。")
+
+    def test_develop_checkpoint_missing_kind_with_tradeoff_payload_emits_reason_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            _enter_active_develop_context(workspace)
+            config = load_runtime_config(workspace)
+
+            with self.assertRaisesRegex(DevelopCheckpointError, CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED):
+                submit_develop_checkpoint(
+                    {
+                        "schema_version": "1",
+                        "question": "认证边界是否移动到 adapter 层？",
+                        "summary": "开发中已经形成两条可执行路径，需要用户拍板。",
+                        "options": [
+                            {"id": "option_1", "title": "保持现状", "summary": "边界继续留在当前层"},
+                            {"id": "option_2", "title": "移动边界", "summary": "把认证边界下推到 adapter 层"},
+                        ],
+                        "resume_context": {
+                            "active_run_stage": "executing",
+                            "current_plan_path": ".sopify-skills/plan/20260319_feature",
+                            "task_refs": ["2.1"],
+                            "changed_files": ["runtime/develop_checkpoint.py"],
+                            "working_summary": "发现开发中分叉但 payload 未声明 checkpoint_kind。",
+                            "verification_todo": ["补 develop callback payload 校验"],
+                            "resume_after": "continue_host_develop",
+                        },
+                    },
+                    config=config,
+                )
+
+    def test_develop_decision_resume_returns_continue_host_develop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            _enter_active_develop_context(workspace)
+            config = load_runtime_config(workspace)
+
+            submit_develop_checkpoint(
+                {
+                    "schema_version": "1",
+                    "checkpoint_kind": "decision",
+                    "question": "认证边界是否移动到 adapter 层？",
+                    "summary": "开发中已经形成两条可执行路径，需要用户拍板。",
+                    "options": [
+                        {"id": "option_1", "title": "保持现状", "summary": "边界继续留在当前层", "recommended": True},
+                        {"id": "option_2", "title": "移动边界", "summary": "把认证边界下推到 adapter 层"},
+                    ],
+                    "resume_context": {
+                        "active_run_stage": "executing",
+                        "current_plan_path": ".sopify-skills/plan/20260319_feature",
+                        "task_refs": ["2.1"],
+                        "changed_files": ["runtime/engine.py"],
+                        "working_summary": "认证边界待确认。",
+                        "verification_todo": ["补 bundle contract 测试"],
+                        "resume_after": "continue_host_develop",
+                    },
+                },
+                config=config,
+            )
+
+            resumed = run_runtime("1", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(resumed.route.route_name, "resume_active")
+            self.assertEqual(resumed.handoff.required_host_action, "continue_host_develop")
+            self.assertEqual(resumed.recovered_context.current_run.stage, "executing")
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
+    def test_develop_decision_resume_can_fallback_to_plan_review(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            _enter_active_develop_context(workspace)
+            config = load_runtime_config(workspace)
+
+            submit_develop_checkpoint(
+                {
+                    "schema_version": "1",
+                    "checkpoint_kind": "decision",
+                    "question": "是否扩大本轮改动范围？",
+                    "summary": "用户反馈已经改变本轮 plan 范围，需要退回 plan review。",
+                    "options": [
+                        {"id": "option_1", "title": "维持原范围", "summary": "继续当前 plan", "recommended": True},
+                        {"id": "option_2", "title": "扩大范围", "summary": "回退到 plan review 重新评审"},
+                    ],
+                    "resume_context": {
+                        "active_run_stage": "executing",
+                        "current_plan_path": ".sopify-skills/plan/20260319_feature",
+                        "task_refs": ["3.1"],
+                        "changed_files": ["runtime/engine.py", "README.md"],
+                        "working_summary": "用户反馈超出了当前 plan 边界。",
+                        "verification_todo": ["回到 plan review 后重新整理任务"],
+                        "resume_after": "review_or_execute_plan",
+                    },
+                },
+                config=config,
+            )
+
+            resumed = run_runtime("2", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(resumed.route.route_name, "plan_only")
+            self.assertEqual(resumed.handoff.required_host_action, "review_or_execute_plan")
+            self.assertEqual(resumed.recovered_context.current_run.stage, "plan_generated")
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
+    def test_develop_clarification_resume_returns_continue_host_develop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            _enter_active_develop_context(workspace)
+            config = load_runtime_config(workspace)
+
+            submit_develop_checkpoint(
+                {
+                    "schema_version": "1",
+                    "checkpoint_kind": "clarification",
+                    "summary": "需要补齐验收口径后才能继续开发。",
+                    "missing_facts": ["acceptance_scope"],
+                    "questions": ["本轮是否需要兼容旧版 adapter？"],
+                    "resume_context": {
+                        "active_run_stage": "executing",
+                        "current_plan_path": ".sopify-skills/plan/20260319_feature",
+                        "task_refs": ["4.2"],
+                        "changed_files": ["runtime/develop_checkpoint.py"],
+                        "working_summary": "缺少 adapter 兼容性口径。",
+                        "verification_todo": ["补 compatibility case"],
+                        "resume_after": "continue_host_develop",
+                    },
+                },
+                config=config,
+            )
+
+            resumed = run_runtime("需要兼容旧版 adapter。", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(resumed.route.route_name, "resume_active")
+            self.assertEqual(resumed.handoff.required_host_action, "continue_host_develop")
+            self.assertEqual(resumed.recovered_context.current_run.stage, "executing")
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_clarification.json").exists())
+
+    def test_develop_pending_decision_does_not_bypass_checkpoint_when_resume_bridge_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            _enter_active_develop_context(workspace)
+            config = load_runtime_config(workspace)
+
+            submit_develop_checkpoint(
+                {
+                    "schema_version": "1",
+                    "checkpoint_kind": "decision",
+                    "question": "是否扩大本轮改动范围？",
+                    "summary": "开发中命中范围分叉，需要用户拍板。",
+                    "options": [
+                        {"id": "option_1", "title": "维持范围", "summary": "继续当前改动", "recommended": True},
+                        {"id": "option_2", "title": "扩大范围", "summary": "回退到 plan review"},
+                    ],
+                    "resume_context": {
+                        "active_run_stage": "executing",
+                        "current_plan_path": ".sopify-skills/plan/20260319_feature",
+                        "task_refs": ["3.6"],
+                        "changed_files": ["runtime/engine.py"],
+                        "working_summary": "decision checkpoint 已创建，等待桥接提交。",
+                        "verification_todo": ["确认缺失 bridge 时 fail-closed"],
+                        "resume_after": "continue_host_develop",
+                    },
+                },
+                config=config,
+            )
+
+            still_pending = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home")
+            blocked_exec = run_runtime("~go exec", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(still_pending.route.route_name, "decision_pending")
+            self.assertEqual(still_pending.handoff.required_host_action, "confirm_decision")
+            self.assertEqual(blocked_exec.route.route_name, "decision_pending")
+            self.assertEqual(blocked_exec.handoff.required_host_action, "confirm_decision")
+            self.assertEqual(blocked_exec.recovered_context.current_run.stage, "decision_pending")
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
     def test_execution_confirmation_feedback_routes_back_to_plan_review(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -1793,7 +2324,123 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((workspace / ".sopify-skills" / "project.md").exists())
             self.assertIn(".sopify-skills/project.md", rendered)
 
-    def test_go_plan_helper_allows_pending_decision_checkpoint(self) -> None:
+    def test_run_plan_loop_auto_resolves_decision_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            orchestrated = run_plan_loop(
+                "payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                input_reader=lambda _prompt: "1",
+                output_writer=lambda _message: None,
+                interactive_session_factory=lambda: None,
+            )
+
+            self.assertEqual(orchestrated.exit_code, 0)
+            self.assertEqual(orchestrated.runtime_result.route.route_name, "plan_only")
+            self.assertIsNotNone(orchestrated.runtime_result.plan_artifact)
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
+    def test_run_plan_loop_auto_resolves_clarification_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            answers = iter(("runtime/router.py", "补结构化 clarification bridge。", "."))
+
+            orchestrated = run_plan_loop(
+                "优化一下",
+                workspace_root=workspace,
+                input_reader=lambda _prompt: next(answers),
+                output_writer=lambda _message: None,
+                interactive_session_factory=lambda: None,
+            )
+
+            self.assertEqual(orchestrated.exit_code, 0)
+            self.assertEqual(orchestrated.runtime_result.route.route_name, "plan_only")
+            self.assertIsNotNone(orchestrated.runtime_result.plan_artifact)
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_clarification.json").exists())
+
+    def test_run_plan_loop_fail_closes_repeated_checkpoint_signatures(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            checkpoint_result = run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            self.assertEqual(checkpoint_result.handoff.required_host_action, "confirm_decision")
+
+            with mock.patch("runtime.plan_orchestrator.run_runtime", return_value=checkpoint_result), mock.patch(
+                "runtime.plan_orchestrator._consume_planning_handoff",
+                return_value=None,
+            ):
+                orchestrated = run_plan_loop(
+                    "payload 放 host root 还是 workspace/.sopify-runtime",
+                    workspace_root=workspace,
+                    input_reader=lambda _prompt: "1",
+                    output_writer=lambda _message: None,
+                    interactive_session_factory=lambda: None,
+                )
+
+            self.assertEqual(orchestrated.exit_code, PLAN_ORCHESTRATOR_PENDING_EXIT)
+            self.assertEqual(orchestrated.stopped_reason, "repeated_checkpoint")
+            self.assertEqual(orchestrated.loop_count, 3)
+
+    def test_run_plan_loop_fail_closes_when_bridge_cannot_complete_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            checkpoint_result = run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            with mock.patch("runtime.plan_orchestrator.run_runtime", return_value=checkpoint_result), mock.patch(
+                "runtime.plan_orchestrator._consume_planning_handoff",
+                side_effect=PlanOrchestratorError("bridge missing submit/resume"),
+            ):
+                orchestrated = run_plan_loop(
+                    "payload 放 host root 还是 workspace/.sopify-runtime",
+                    workspace_root=workspace,
+                    input_reader=lambda _prompt: "1",
+                    output_writer=lambda _message: None,
+                    interactive_session_factory=lambda: None,
+                )
+
+            self.assertEqual(orchestrated.exit_code, PLAN_ORCHESTRATOR_CANCELLED_EXIT)
+            self.assertEqual(orchestrated.stopped_reason, "bridge_cancelled")
+            self.assertEqual(orchestrated.runtime_result.handoff.required_host_action, "confirm_decision")
+
+    def test_run_plan_loop_stops_with_max_loops_exceeded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            checkpoint_result = run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            counter = iter(range(1, 10))
+
+            with mock.patch("runtime.plan_orchestrator.run_runtime", return_value=checkpoint_result), mock.patch(
+                "runtime.plan_orchestrator._consume_planning_handoff",
+                return_value=None,
+            ), mock.patch(
+                "runtime.plan_orchestrator._handoff_signature",
+                side_effect=lambda _handoff: f"sig-{next(counter)}",
+            ):
+                orchestrated = run_plan_loop(
+                    "payload 放 host root 还是 workspace/.sopify-runtime",
+                    workspace_root=workspace,
+                    max_loops=2,
+                    input_reader=lambda _prompt: "1",
+                    output_writer=lambda _message: None,
+                    interactive_session_factory=lambda: None,
+                )
+
+            self.assertEqual(orchestrated.exit_code, PLAN_ORCHESTRATOR_PENDING_EXIT)
+            self.assertEqual(orchestrated.stopped_reason, "max_loops_exceeded")
+            self.assertEqual(orchestrated.loop_count, 2)
+
+    def test_go_plan_helper_fail_closes_pending_decision_without_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             script_path = REPO_ROOT / "scripts" / "go_plan_runtime.py"
@@ -1817,11 +2464,11 @@ class EngineIntegrationTests(unittest.TestCase):
                 check=False,
             )
 
-            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertEqual(completed.returncode, PLAN_ORCHESTRATOR_PENDING_EXIT, msg=completed.stderr)
             self.assertIn("方案设计 ?", completed.stdout)
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
 
-    def test_go_plan_helper_allows_pending_clarification_checkpoint(self) -> None:
+    def test_go_plan_helper_debug_bypass_keeps_single_pass_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             script_path = REPO_ROOT / "scripts" / "go_plan_runtime.py"
@@ -1832,6 +2479,7 @@ class EngineIntegrationTests(unittest.TestCase):
                     str(script_path),
                     "--workspace-root",
                     str(workspace),
+                    "--no-bridge-loop",
                     "--no-color",
                     "优化一下",
                 ],
@@ -1866,10 +2514,12 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((bundle_root / "runtime" / "__init__.py").exists())
             self.assertTrue((bundle_root / "runtime" / "clarification_bridge.py").exists())
             self.assertTrue((bundle_root / "runtime" / "cli_interactive.py").exists())
+            self.assertTrue((bundle_root / "runtime" / "develop_checkpoint.py").exists())
             self.assertTrue((bundle_root / "runtime" / "execution_confirm.py").exists())
             self.assertTrue((bundle_root / "runtime" / "decision_bridge.py").exists())
             self.assertTrue((bundle_root / "scripts" / "check-runtime-smoke.sh").exists())
             self.assertTrue((bundle_root / "scripts" / "clarification_bridge_runtime.py").exists())
+            self.assertTrue((bundle_root / "scripts" / "develop_checkpoint_runtime.py").exists())
             self.assertTrue((bundle_root / "scripts" / "decision_bridge_runtime.py").exists())
             self.assertTrue((bundle_root / "tests" / "test_runtime.py").exists())
             self.assertTrue(manifest_path.exists())
@@ -1879,6 +2529,8 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(manifest["default_entry"], "scripts/sopify_runtime.py")
             self.assertEqual(manifest["plan_only_entry"], "scripts/go_plan_runtime.py")
             self.assertEqual(manifest["handoff_file"], ".sopify-skills/state/current_handoff.json")
+            self.assertEqual(manifest["dependency_model"]["mode"], "stdlib_only")
+            self.assertEqual(manifest["dependency_model"]["runtime_dependencies"], [])
             self.assertEqual(manifest["capabilities"]["bundle_role"], "control_plane")
             self.assertTrue(manifest["capabilities"]["writes_handoff_file"])
             self.assertTrue(manifest["capabilities"]["clarification_checkpoint"])
@@ -1886,13 +2538,21 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue(manifest["capabilities"]["writes_clarification_file"])
             self.assertTrue(manifest["capabilities"]["decision_checkpoint"])
             self.assertTrue(manifest["capabilities"]["decision_bridge"])
+            self.assertTrue(manifest["capabilities"]["develop_checkpoint_callback"])
+            self.assertTrue(manifest["capabilities"]["develop_resume_context"])
             self.assertTrue(manifest["capabilities"]["execution_gate"])
+            self.assertTrue(manifest["capabilities"]["planning_mode_orchestrator"])
+            self.assertTrue(manifest["capabilities"]["runtime_entry_guard"])
             self.assertTrue(manifest["capabilities"]["writes_decision_file"])
             self.assertIn("plan_only", manifest["limits"]["host_required_routes"])
             self.assertIn("clarification_pending", manifest["limits"]["host_required_routes"])
             self.assertIn("clarification_resume", manifest["limits"]["host_required_routes"])
             self.assertIn("execution_confirm_pending", manifest["limits"]["host_required_routes"])
             self.assertIn("decision_pending", manifest["limits"]["host_required_routes"])
+            self.assertTrue(manifest["limits"]["entry_guard"]["strict_runtime_entry"])
+            self.assertEqual(manifest["limits"]["entry_guard"]["default_runtime_entry"], "scripts/sopify_runtime.py")
+            self.assertIn("confirm_execute", manifest["limits"]["entry_guard"]["pending_checkpoint_actions"])
+            self.assertIn("~go exec", manifest["limits"]["entry_guard"]["bypass_blocked_commands"])
             self.assertIn("finalize_active", manifest["supported_routes"])
             self.assertIn("compare", manifest["supported_routes"])
             self.assertIn("exec_plan", manifest["limits"]["host_required_routes"])
@@ -1903,6 +2563,10 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(manifest["limits"]["decision_bridge_entry"], "scripts/decision_bridge_runtime.py")
             self.assertEqual(manifest["limits"]["decision_bridge_hosts"]["cli"]["preferred_mode"], "interactive_form")
             self.assertEqual(manifest["limits"]["decision_bridge_hosts"]["cli"]["select"], "interactive_select")
+            self.assertEqual(manifest["limits"]["develop_checkpoint_entry"], "scripts/develop_checkpoint_runtime.py")
+            self.assertEqual(manifest["limits"]["develop_checkpoint_hosts"]["cli"]["preferred_mode"], "structured_callback")
+            self.assertIn("working_summary", manifest["limits"]["develop_resume_context_required_fields"])
+            self.assertIn("continue_host_develop", manifest["limits"]["develop_resume_after_actions"])
             self.assertIn("model-compare", manifest["limits"]["runtime_payload_required_skill_ids"])
             self.assertEqual(len(manifest["builtin_skills"]), 7)
             model_compare = next(skill for skill in manifest["builtin_skills"] if skill["skill_id"] == "model-compare")
@@ -2020,6 +2684,94 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIn(".sopify-skills/plan/", resumed.stdout)
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
+
+    def test_synced_runtime_bundle_supports_develop_checkpoint_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            target_root = temp_root / "target"
+            workspace = temp_root / "workspace"
+            target_root.mkdir()
+            workspace.mkdir()
+
+            sync_script = REPO_ROOT / "scripts" / "sync-runtime-assets.sh"
+            sync_completed = subprocess.run(
+                ["bash", str(sync_script), str(target_root)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(sync_completed.returncode, 0, msg=sync_completed.stderr)
+
+            runtime_script = target_root / ".sopify-runtime" / "scripts" / "sopify_runtime.py"
+            helper_script = target_root / ".sopify-runtime" / "scripts" / "develop_checkpoint_runtime.py"
+
+            _prepare_ready_plan_state(workspace)
+            exec_pending = subprocess.run(
+                [sys.executable, str(runtime_script), "--workspace-root", str(workspace), "--no-color", "~go", "exec"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(exec_pending.returncode, 0, msg=exec_pending.stderr)
+            started = subprocess.run(
+                [sys.executable, str(runtime_script), "--workspace-root", str(workspace), "--no-color", "开始"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(started.returncode, 0, msg=started.stderr)
+            self.assertIn("continue_host_develop", (workspace / ".sopify-skills" / "state" / "current_handoff.json").read_text(encoding="utf-8"))
+
+            inspected = subprocess.run(
+                [sys.executable, str(helper_script), "--workspace-root", str(workspace), "inspect"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(inspected.returncode, 0, msg=inspected.stderr)
+            inspect_payload = json.loads(inspected.stdout)
+            self.assertEqual(inspect_payload["status"], "ready")
+            self.assertEqual(inspect_payload["required_host_action"], "continue_host_develop")
+
+            submitted = subprocess.run(
+                [
+                    sys.executable,
+                    str(helper_script),
+                    "--workspace-root",
+                    str(workspace),
+                    "submit",
+                    "--payload-json",
+                    json.dumps(
+                        {
+                            "schema_version": "1",
+                            "checkpoint_kind": "decision",
+                            "question": "认证边界是否移动到 adapter 层？",
+                            "summary": "开发中已经形成两条可执行路径，需要用户拍板。",
+                            "options": [
+                                {"id": "option_1", "title": "保持现状", "summary": "边界继续留在当前层", "recommended": True},
+                                {"id": "option_2", "title": "移动边界", "summary": "把认证边界下推到 adapter 层"},
+                            ],
+                            "resume_context": {
+                                "active_run_stage": "executing",
+                                "current_plan_path": ".sopify-skills/plan/20260319_feature",
+                                "task_refs": ["5.1"],
+                                "changed_files": ["runtime/develop_checkpoint.py"],
+                                "working_summary": "需要确认认证边界。",
+                                "verification_todo": ["补 bundle helper 测试"],
+                                "resume_after": "continue_host_develop",
+                            },
+                        }
+                    ),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(submitted.returncode, 0, msg=submitted.stderr)
+            submit_payload = json.loads(submitted.stdout)
+            self.assertEqual(submit_payload["status"], "written")
+            self.assertEqual(submit_payload["required_host_action"], "confirm_decision")
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
 
     def test_synced_runtime_bundle_supports_cli_decision_bridge_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

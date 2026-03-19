@@ -23,6 +23,11 @@ from .cli_interactive import (
 )
 
 from .decision import CURRENT_DECISION_RELATIVE_PATH
+from .entry_guard import (
+    DECISION_BRIDGE_ENTRY as ENTRY_GUARD_DECISION_BRIDGE_ENTRY,
+    DECISION_BRIDGE_HANDOFF_MISMATCH_REASON,
+    DEFAULT_RUNTIME_ENTRY as ENTRY_GUARD_DEFAULT_RUNTIME_ENTRY,
+)
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
 from .models import (
     DecisionCheckpoint,
@@ -37,8 +42,8 @@ from .models import (
 from .state import StateStore, iso_now
 
 BRIDGE_SCHEMA_VERSION = "1"
-DEFAULT_RUNTIME_ENTRY = "scripts/sopify_runtime.py"
-DECISION_BRIDGE_ENTRY = "scripts/decision_bridge_runtime.py"
+DECISION_BRIDGE_ENTRY = ENTRY_GUARD_DECISION_BRIDGE_ENTRY
+DEFAULT_RUNTIME_ENTRY = ENTRY_GUARD_DEFAULT_RUNTIME_ENTRY
 _MULTI_SELECT_SPLIT_RE = re.compile(r"[\s,]+")
 _YES_VALUES = {"y", "yes", "true", "1", "ok", "confirm", "是", "确认", "继续"}
 _NO_VALUES = {"n", "no", "false", "0", "cancel", "否", "取消", "停止"}
@@ -71,6 +76,7 @@ def load_decision_bridge_context(*, config: RuntimeConfig) -> DecisionBridgeCont
         raise DecisionBridgeError(f"Decision checkpoint is no longer actionable: {decision_state.status}")
 
     handoff = state_store.get_current_handoff()
+    _validate_decision_handoff(handoff=handoff, decision_state=decision_state)
     checkpoint = _resolve_checkpoint(handoff=handoff, decision_state=decision_state)
     submission_state = _resolve_submission_state(handoff=handoff, decision_state=decision_state)
     return DecisionBridgeContext(
@@ -220,6 +226,7 @@ def _bridge_payload(
         "decision_status": context.decision_state.status,
         "question": context.decision_state.question,
         "summary": context.decision_state.summary,
+        "entry_guard_reason_code": _handoff_reason_code(context.handoff),
         "decision_checkpoint": context.checkpoint.to_dict(),
         "decision_submission_state": dict(context.submission_state),
         "presentation": _presentation(context=context, language=language),
@@ -229,6 +236,37 @@ def _bridge_payload(
             "examples": _text_fallback_examples(language),
         },
     }
+
+
+def _validate_decision_handoff(*, handoff: RuntimeHandoff | None, decision_state: DecisionState) -> None:
+    if handoff is None:
+        raise DecisionBridgeError(
+            f"{DECISION_BRIDGE_HANDOFF_MISMATCH_REASON}: current_handoff.json is required for decision bridge"
+        )
+    if handoff.required_host_action != "confirm_decision":
+        raise DecisionBridgeError(
+            f"{DECISION_BRIDGE_HANDOFF_MISMATCH_REASON}: expected required_host_action=confirm_decision, got {handoff.required_host_action or '<missing>'}"
+        )
+    entry_guard = handoff.artifacts.get("entry_guard")
+    if not isinstance(entry_guard, Mapping) or not bool(entry_guard.get("strict_runtime_entry", False)):
+        raise DecisionBridgeError(
+            f"{DECISION_BRIDGE_HANDOFF_MISMATCH_REASON}: missing strict entry_guard contract in current_handoff.json"
+        )
+    handoff_decision_id = str(handoff.artifacts.get("decision_id") or "").strip()
+    if handoff_decision_id and handoff_decision_id != decision_state.decision_id:
+        raise DecisionBridgeError(
+            f"{DECISION_BRIDGE_HANDOFF_MISMATCH_REASON}: decision_id mismatch between current_handoff.json and current_decision.json"
+        )
+
+
+def _handoff_reason_code(handoff: RuntimeHandoff | None) -> str | None:
+    if handoff is None:
+        return None
+    value = handoff.artifacts.get("entry_guard_reason_code")
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return None
 
 
 def _presentation(*, context: DecisionBridgeContext, language: str) -> Mapping[str, Any]:

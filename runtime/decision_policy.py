@@ -59,6 +59,20 @@ def should_trigger_decision_policy(route: RouteDecision) -> bool:
     return match_decision_policy(route) is not None
 
 
+def has_tradeoff_checkpoint_signal(payload: Mapping[str, Any]) -> bool:
+    """Return True when payload carries an unresolved user-facing tradeoff signal."""
+    if not isinstance(payload, Mapping):
+        return False
+    if _has_candidate_tradeoff_signal(payload):
+        return True
+    if _has_options_tradeoff_signal(payload.get("options")):
+        return True
+    checkpoint = payload.get("checkpoint")
+    if not isinstance(checkpoint, Mapping):
+        checkpoint = payload.get("decision_checkpoint")
+    return isinstance(checkpoint, Mapping) and _checkpoint_has_multiple_select_options(checkpoint)
+
+
 def match_decision_policy(route: RouteDecision) -> DecisionPolicyMatch | None:
     """Match the highest-priority decision policy for the current route."""
     if route.route_name not in PLANNING_DECISION_ROUTES:
@@ -98,18 +112,10 @@ def _match_planning_semantic_split(route: RouteDecision) -> DecisionPolicyMatch 
 def _match_structured_tradeoff_policy(route: RouteDecision) -> DecisionPolicyMatch | None:
     """Prefer structured design tradeoff candidates when the host/runtime provides them."""
     artifacts = route.artifacts
-    raw_candidates = artifacts.get(TRADEOFF_CANDIDATES_ARTIFACT_KEY)
-    if not isinstance(raw_candidates, (list, tuple)):
+    options = _coerce_tradeoff_candidates(artifacts.get(TRADEOFF_CANDIDATES_ARTIFACT_KEY))
+    if len(options) < 2:
         return None
     if _should_suppress_tradeoff_decision(artifacts):
-        return None
-
-    options = tuple(
-        option
-        for index, candidate in enumerate(raw_candidates, start=1)
-        if (option := _coerce_tradeoff_option(candidate, index=index)) is not None
-    )
-    if len(options) < 2:
         return None
     if not _has_significant_tradeoffs(artifacts, options):
         return None
@@ -178,6 +184,49 @@ def _should_suppress_tradeoff_decision(artifacts: Mapping[str, Any]) -> bool:
         "decision_information_only",
     )
     return any(bool(artifacts.get(flag, False)) for flag in suppression_flags)
+
+
+def _has_candidate_tradeoff_signal(payload: Mapping[str, Any]) -> bool:
+    options = _coerce_tradeoff_candidates(payload.get(TRADEOFF_CANDIDATES_ARTIFACT_KEY))
+    if len(options) < 2:
+        return False
+    if _should_suppress_tradeoff_decision(payload):
+        return False
+    explicit = payload.get("decision_tradeoff_significant")
+    if isinstance(explicit, bool):
+        return explicit
+    if _text_value(payload.get("decision_question")) or _text_value(payload.get("decision_summary")):
+        return True
+    return _has_significant_tradeoffs(payload, options)
+
+
+def _has_options_tradeoff_signal(raw_options: Any) -> bool:
+    return len(_coerce_tradeoff_candidates(raw_options)) >= 2
+
+
+def _checkpoint_has_multiple_select_options(checkpoint: Mapping[str, Any]) -> bool:
+    fields = checkpoint.get("fields")
+    if not isinstance(fields, (list, tuple)):
+        return False
+    for field in fields:
+        if not isinstance(field, Mapping):
+            continue
+        field_type = _text_value(field.get("field_type")).lower().replace("-", "_")
+        if field_type not in {"select", "multi_select"}:
+            continue
+        if _has_options_tradeoff_signal(field.get("options")):
+            return True
+    return False
+
+
+def _coerce_tradeoff_candidates(raw_candidates: Any) -> tuple[DecisionOption, ...]:
+    if not isinstance(raw_candidates, (list, tuple)):
+        return ()
+    return tuple(
+        option
+        for index, candidate in enumerate(raw_candidates, start=1)
+        if (option := _coerce_tradeoff_option(candidate, index=index)) is not None
+    )
 
 
 def _has_significant_tradeoffs(artifacts: Mapping[str, Any], options: tuple[DecisionOption, ...]) -> bool:

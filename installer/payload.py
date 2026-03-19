@@ -24,6 +24,12 @@ _REQUIRED_BUNDLE_CAPABILITIES = {
     "bundle_role": "control_plane",
     "manifest_first": True,
     "writes_handoff_file": True,
+    "clarification_bridge": True,
+    "decision_bridge": True,
+    "develop_checkpoint_callback": True,
+    "develop_resume_context": True,
+    "planning_mode_orchestrator": True,
+    "runtime_entry_guard": True,
 }
 
 
@@ -136,6 +142,13 @@ def _write_payload_manifest(*, payload_root: Path, bundle_root: Path, payload_ve
         "bundle_manifest": str(PAYLOAD_BUNDLE_RELATIVE_PATH / "manifest.json"),
         "bundle_template_dir": str(PAYLOAD_BUNDLE_RELATIVE_PATH),
         "helper_entry": str(PAYLOAD_HELPER_RELATIVE_PATH),
+        "dependency_model": bundle_manifest.get("dependency_model")
+        or {
+            "mode": "stdlib_only",
+            "python_min": "3.11",
+            "host_env_dir": None,
+            "runtime_dependencies": [],
+        },
         "capabilities": {
             "manifest_first": True,
             "auto_workspace_bootstrap": True,

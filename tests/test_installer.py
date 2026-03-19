@@ -10,9 +10,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from installer.bootstrap_workspace import _REQUIRED_BUNDLE_FILES, _classify_workspace_bundle
+from installer.hosts.base import install_host_assets
+from installer.hosts.claude import CLAUDE_ADAPTER
 from installer.hosts.codex import CODEX_ADAPTER
 from installer.models import InstallPhaseResult, InstallResult, parse_install_target
-from installer.payload import _payload_is_current, install_global_payload
+from installer.payload import _REQUIRED_BUNDLE_CAPABILITIES, _payload_is_current, install_global_payload
+from installer.validate import validate_bundle_install, validate_host_install
 from scripts.install_sopify import render_result
 
 
@@ -76,7 +80,165 @@ class PayloadInstallTests(unittest.TestCase):
             self.assertEqual(result.action, "updated")
             self.assertEqual(result.root, payload_root)
             self.assertTrue((payload_root / "bundle" / "scripts" / "clarification_bridge_runtime.py").exists())
+            self.assertTrue((payload_root / "bundle" / "scripts" / "develop_checkpoint_runtime.py").exists())
             self.assertTrue((payload_root / "bundle" / "scripts" / "decision_bridge_runtime.py").exists())
+            payload_manifest = json.loads((payload_root / "payload-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload_manifest["dependency_model"]["mode"], "stdlib_only")
+            self.assertTrue(
+                payload_manifest["minimum_workspace_manifest"]["required_capabilities"]["planning_mode_orchestrator"]
+            )
+            self.assertTrue(
+                payload_manifest["minimum_workspace_manifest"]["required_capabilities"]["develop_checkpoint_callback"]
+            )
+            self.assertTrue(payload_manifest["minimum_workspace_manifest"]["required_capabilities"]["runtime_entry_guard"])
+
+
+class WorkspaceBootstrapCompatibilityTests(unittest.TestCase):
+    def test_same_version_bundle_missing_required_bridge_file_is_incompatible(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir)
+            bundle_root = workspace_root / ".sopify-runtime"
+            bundle_root.mkdir(parents=True, exist_ok=True)
+            current_manifest_path = bundle_root / "manifest.json"
+            current_manifest = {
+                "schema_version": "1",
+                "bundle_version": "2026-02-13",
+                "capabilities": dict(_REQUIRED_BUNDLE_CAPABILITIES),
+            }
+            _write_json(current_manifest_path, current_manifest)
+
+            for relative_path in _REQUIRED_BUNDLE_FILES:
+                if relative_path == Path("scripts") / "clarification_bridge_runtime.py":
+                    continue
+                path = bundle_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+
+            state, reason_code, message, from_version = _classify_workspace_bundle(
+                current_manifest=current_manifest,
+                payload_manifest={
+                    "minimum_workspace_manifest": {
+                        "schema_version": "1",
+                        "required_capabilities": dict(_REQUIRED_BUNDLE_CAPABILITIES),
+                    }
+                },
+                bundle_manifest={"schema_version": "1", "bundle_version": "2026-02-13"},
+                current_manifest_path=current_manifest_path,
+                bundle_root=bundle_root,
+            )
+
+            self.assertEqual(state, "INCOMPATIBLE")
+            self.assertEqual(reason_code, "MISSING_REQUIRED_FILE")
+            self.assertIn("scripts/clarification_bridge_runtime.py", message)
+            self.assertEqual(from_version, "2026-02-13")
+
+    def test_same_version_bundle_missing_required_capability_is_incompatible(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir)
+            bundle_root = workspace_root / ".sopify-runtime"
+            bundle_root.mkdir(parents=True, exist_ok=True)
+            current_manifest_path = bundle_root / "manifest.json"
+            current_manifest = {
+                "schema_version": "1",
+                "bundle_version": "2026-02-13",
+                "capabilities": {
+                    "bundle_role": "control_plane",
+                    "manifest_first": True,
+                    "writes_handoff_file": True,
+                    "clarification_bridge": True,
+                },
+            }
+            _write_json(current_manifest_path, current_manifest)
+
+            for relative_path in _REQUIRED_BUNDLE_FILES:
+                path = bundle_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+
+            state, reason_code, message, from_version = _classify_workspace_bundle(
+                current_manifest=current_manifest,
+                payload_manifest={
+                    "minimum_workspace_manifest": {
+                        "schema_version": "1",
+                        "required_capabilities": dict(_REQUIRED_BUNDLE_CAPABILITIES),
+                    }
+                },
+                bundle_manifest={"schema_version": "1", "bundle_version": "2026-02-13"},
+                current_manifest_path=current_manifest_path,
+                bundle_root=bundle_root,
+            )
+
+            self.assertEqual(state, "INCOMPATIBLE")
+            self.assertEqual(reason_code, "MISSING_REQUIRED_CAPABILITY")
+            self.assertIn("decision_bridge", message)
+            self.assertEqual(from_version, "2026-02-13")
+
+    def test_validate_bundle_install_requires_runtime_bridge_modules(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_root = Path(temp_dir) / ".sopify-runtime"
+            bundle_root.mkdir(parents=True, exist_ok=True)
+
+            for relative_path in _REQUIRED_BUNDLE_FILES:
+                path = bundle_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+
+            # Match the old incomplete layout that was slipping through bootstrap.
+            missing_runtime_module = bundle_root / "runtime" / "cli_interactive.py"
+            missing_runtime_module.unlink()
+
+            with self.assertRaisesRegex(Exception, "cli_interactive.py"):
+                validate_bundle_install(bundle_root)
+
+
+class HostPromptContractTests(unittest.TestCase):
+    def test_codex_cn_prompt_install_keeps_workspace_preflight_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_root = Path(temp_dir)
+
+            install_host_assets(
+                CODEX_ADAPTER,
+                repo_root=REPO_ROOT,
+                home_root=home_root,
+                language_directory="CN",
+            )
+            validate_host_install(CODEX_ADAPTER, home_root=home_root)
+
+            prompt = (home_root / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("~/.codex/sopify/payload-manifest.json", prompt)
+            self.assertIn("~/.codex/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>", prompt)
+            self.assertIn("缺少或不满足兼容要求的 `.sopify-runtime/manifest.json`", prompt)
+            self.assertIn("scripts/develop_checkpoint_runtime.py", prompt)
+            self.assertIn("resume_context", prompt)
+            self.assertIn("不得自由追问", prompt)
+            self.assertIn("不得手写 `current_decision.json / current_handoff.json`", prompt)
+            self.assertIn("scripts/develop_checkpoint_runtime.py submit --payload-json ...", prompt)
+            self.assertIn("即使用户显式输入 `~go exec`", prompt)
+            self.assertIn("必须继续遵守对应 checkpoint 的机器契约", prompt)
+
+    def test_claude_en_prompt_install_keeps_workspace_preflight_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_root = Path(temp_dir)
+
+            install_host_assets(
+                CLAUDE_ADAPTER,
+                repo_root=REPO_ROOT,
+                home_root=home_root,
+                language_directory="EN",
+            )
+            validate_host_install(CLAUDE_ADAPTER, home_root=home_root)
+
+            prompt = (home_root / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
+            self.assertIn("~/.claude/sopify/payload-manifest.json", prompt)
+            self.assertIn("~/.claude/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>", prompt)
+            self.assertIn("does not yet have a compatible `.sopify-runtime/manifest.json`", prompt)
+            self.assertIn("scripts/develop_checkpoint_runtime.py", prompt)
+            self.assertIn("resume_context", prompt)
+            self.assertIn("must not ask a free-form question", prompt)
+            self.assertIn("hand-write `current_decision.json / current_handoff.json`", prompt)
+            self.assertIn("scripts/develop_checkpoint_runtime.py submit --payload-json ...", prompt)
+            self.assertIn("Even when the user explicitly types `~go exec`", prompt)
+            self.assertIn("must still honor the machine contract", prompt)
 
 
 class InstallRenderTests(unittest.TestCase):

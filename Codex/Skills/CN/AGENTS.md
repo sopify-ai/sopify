@@ -134,14 +134,15 @@ Next: {下一步提示}
  | `~go finalize` | 对当前 metadata-managed plan 执行收口归档 |
  | `~compare` | 多模型并发对比（默认含当前会话模型；可用模型数不足 2 时降级并给出原因） |
  
-说明：当前仓库若存在 `scripts/sopify_runtime.py`，原始输入应优先走该默认 repo-local runtime 入口；若 runtime 以 bundle 方式接入到其他仓库，则宿主应优先读取 `.sopify-runtime/manifest.json` 决定入口，默认再回退到 `.sopify-runtime/scripts/sopify_runtime.py`；仅在明确只走 `~go plan` 时使用对应的 `go_plan_runtime.py` helper。
-说明：当用户在项目仓库中触发 Sopify，且当前仓库没有可用的 `.sopify-runtime/manifest.json` 时，宿主应先读取 `~/.codex/sopify/payload-manifest.json`，再调用 `~/.codex/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>` 为当前仓库补齐或更新 `.sopify-runtime/`；bootstrap 成功后再继续按 repo-local manifest 选入口。
-说明：runtime 执行后，若存在 `.sopify-skills/state/current_handoff.json`，宿主应优先按其中的 `required_host_action`、`recommended_skill_ids` 与 `artifacts` 决定下一步；`Next:` 行仅作为面向人的摘要提示，不应作为唯一机器依据。
-说明：普通主链路不需要记住 `~go exec`；当 plan 达到 `ready_for_execution` 后，宿主应继续按 `confirm_execute` + 自然语言确认推进。
+说明：当前仓库若存在 `scripts/sopify_runtime.py`，原始输入必须先走该默认 repo-local runtime 入口；若 runtime 以 bundle 方式接入到其他仓库，则宿主必须优先读取 `.sopify-runtime/manifest.json` 决定入口，默认再回退到 `.sopify-runtime/scripts/sopify_runtime.py`；仅在明确只走 `~go plan` 时使用对应的 `go_plan_runtime.py` planning-mode orchestrator。
+说明：当用户在项目仓库中触发 Sopify，且当前仓库没有可用的 `.sopify-runtime/manifest.json` 时，宿主必须先读取 `~/.codex/sopify/payload-manifest.json`，再调用 `~/.codex/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>` 为当前仓库补齐或更新 `.sopify-runtime/`；bootstrap 成功后再继续按 repo-local manifest 选入口。
+说明：runtime 执行后，若存在 `.sopify-skills/state/current_handoff.json`，宿主必须优先按其中的 `required_host_action`、`recommended_skill_ids` 与 `artifacts` 决定下一步；若存在 `artifacts.checkpoint_request`，必须优先消费该标准化 contract，再回退到 route-specific artifact；`Next:` 行仅作为面向人的摘要提示，不应作为唯一机器依据。
+说明：普通主链路不需要记住 `~go exec`；当 plan 达到 `ready_for_execution` 后，宿主必须继续按 `confirm_execute` + 自然语言确认推进。
 说明：若 `current_handoff.json.artifacts.execution_gate` 存在，宿主必须继续读取其中的 `gate_status / blocking_reason / plan_completion / next_required_action`，并结合 `.sopify-skills/state/current_run.json.stage` 判断当前 plan 只是已生成，还是已经达到 `ready_for_execution`。
 说明：当 `current_handoff.json.required_host_action == answer_questions` 时，宿主必须继续读取 `.sopify-skills/state/current_clarification.json`，向用户展示 missing_facts/questions，并等待用户补充事实信息后再恢复默认 runtime 入口；在补充完成前不得自行物化正式 plan 或跳到 `~go exec`。
 说明：当 `current_handoff.json.required_host_action == confirm_decision` 时，宿主必须优先读取 `current_handoff.json.artifacts.decision_checkpoint` 与 `decision_submission_state`；若 handoff 缺失完整 checkpoint，再回退到 `.sopify-skills/state/current_decision.json`。宿主应向用户展示 question/options/recommended_option_id，等待用户确认后再恢复默认 runtime 入口；在确认前不得自行生成正式 plan 或跳到 `~go exec`。
 说明：当 `current_handoff.json.required_host_action == confirm_execute` 时，宿主必须继续读取 `current_handoff.json.artifacts.execution_summary`，至少向用户展示 `plan_path / summary / task_count / risk_level / key_risk / mitigation`，并等待用户通过自然语言 `继续 / next / 开始`（或明确修改意见）恢复默认 runtime 入口；在执行确认前不得自行跳到 develop，也不得把 `~go exec` 当成绕过入口。
+说明：当 `current_handoff.json.required_host_action == continue_host_develop` 时，宿主继续负责真实代码修改；但若开发中再次出现“需要用户补事实 / 拍板选路”的分叉，宿主不得自由追问，也不得手写 `current_decision.json / current_handoff.json`，而必须调用 `scripts/develop_checkpoint_runtime.py submit --payload-json ...`（vendored 对应 `.sopify-runtime/scripts/develop_checkpoint_runtime.py`）回调 runtime。payload 必须包含 `checkpoint_kind` 与 `resume_context`；当前 `resume_context` 至少要求 `active_run_stage / current_plan_path / task_refs / changed_files / working_summary / verification_todo`。
 
 **workflow-learning 主动记录策略：**
 ```yaml
@@ -275,7 +276,7 @@ progressive: 按需创建文件 (默认)
     ↓
 ├─ ~go finalize → 收口当前活动 plan（刷新 blueprint 索引、归档 history、清理活动状态）
 ├─ ~go exec → 进入高级恢复/调试入口（仅在已有活动 plan 或恢复态存在时可用）
-├─ ~go plan → 规划模式 (需求分析 → 方案设计；若存在 scripts/sopify_runtime.py 或 .sopify-runtime/scripts/sopify_runtime.py，则原始输入优先走默认入口，plan-only 场景再使用对应的 go_plan_runtime.py)
+├─ ~go plan → 规划模式 (需求分析 → 方案设计；若存在 scripts/sopify_runtime.py 或 .sopify-runtime/scripts/sopify_runtime.py，则原始输入优先走默认入口，plan-only 场景再使用对应的 go_plan_runtime.py planning-mode orchestrator；默认会自动消化 clarification / decision，直到到达稳定停点)
 ├─ ~go → 全流程模式
 ├─ ~compare → 模型对比（调用 scripts/model_compare_runtime.py 运行时）
 └─ 无前缀 → 语义分析
@@ -303,19 +304,19 @@ progressive: 按需创建文件 (默认)
 **宿主接入约定：**
 - `Codex/Skills` 只承担提示层职责，不作为 vendored runtime 的机器契约来源。
 - 宿主根目录下的 `~/.codex/sopify/payload-manifest.json` 只用于 workspace preflight，不替代 repo-local bundle manifest。
-- 当项目仓库缺少或不满足兼容要求的 `.sopify-runtime/manifest.json` 时，宿主应先调用 `~/.codex/sopify/helpers/bootstrap_workspace.py` 为当前仓库准备 `.sopify-runtime/`。
+- 当项目仓库缺少或不满足兼容要求的 `.sopify-runtime/manifest.json` 时，宿主必须先调用 `~/.codex/sopify/helpers/bootstrap_workspace.py` 为当前仓库准备 `.sopify-runtime/`。
 - vendored runtime 的机器入口以 `.sopify-runtime/manifest.json` 为准。
 - runtime 执行后的机器交接以 `.sopify-skills/state/current_handoff.json` 为准；仅当 handoff 缺失时才回退到输出文案中的 `Next:`。
 - 若 handoff `artifacts.execution_gate` 存在，宿主必须把它与 `.sopify-skills/state/current_run.json.stage` 一起视为 execution gate 的唯一机器事实来源；不要再根据 plan 路径或 `Next:` 文案猜测 plan 是否可执行。
 - 当 `current_handoff.json.required_host_action == answer_questions` 时，宿主必须把 `.sopify-skills/state/current_clarification.json` 视为本轮缺失事实信息的唯一机器事实来源。
 - clarification checkpoint 首选交互是直接展示 `missing_facts` 与 `questions[*]`，等待用户用自然语言补充事实信息；在 clarification pending 期间，宿主不得自行生成正式 plan，也不应跳到 `~go exec`。
-- 用户补充后，宿主应在同一工作区重新调用默认 runtime 入口，让 runtime 负责继续跑 planning；若恢复后 `current_clarification.json` 被清理，视为正常收口。
+- 用户补充后，宿主必须在同一工作区重新调用默认 runtime 入口，让 runtime 负责继续跑 planning；若恢复后 `current_clarification.json` 被清理，视为正常收口。
 - `~go finalize` 仍走默认 runtime 入口，不要求宿主额外 bridge；第一版仅支持 metadata-managed plan，旧遗留 plan 应直接拒绝而不是自动迁移。
 - 当 `current_handoff.json.required_host_action == confirm_decision` 时，宿主必须优先把 `current_handoff.json.artifacts.decision_checkpoint` 与 `decision_submission_state` 视为本轮设计分叉的机器事实来源；`.sopify-skills/state/current_decision.json` 只作为状态兜底与 legacy projection 来源。
 - decision checkpoint 首选交互是直接展示 `question`、按顺序列出 `options[*]`，并标明 `recommended_option_id`；用户可以直接回复 `1/2/...`，也可以显式使用 `~decide choose <option_id>`。
 - `~decide status|choose|cancel` 只作为 debug/override 入口；正常链路仍应由宿主根据 `confirm_decision` handoff 主动进入确认环节。
 - decision pending 期间，宿主不得自行物化 plan、改写 plan 路径，也不应把渲染输出里的 `Next:` 误当成可执行机器指令。
-- 用户确认后，宿主应在同一工作区重新调用默认 runtime 入口，让 runtime 负责将 pending decision 物化为唯一正式 plan；若恢复后 `current_decision.json` 被清理，视为正常收口。
+- 用户确认后，宿主必须在同一工作区重新调用默认 runtime 入口，让 runtime 负责将 pending decision 物化为唯一正式 plan；若恢复后 `current_decision.json` 被清理，视为正常收口。
 - `~go exec` 只应被当作高级恢复入口；若当前没有活动 plan 或恢复态，宿主不应把它当成普通开发入口。
 - 即使用户显式输入 `~go exec`，只要仍处于 `clarification_pending / decision_pending / execution_confirm_pending`，宿主也必须继续遵守对应 checkpoint 的机器契约。
 
@@ -445,21 +446,23 @@ Next: 请验证功能
 ```
 scripts/sopify_runtime.py                    # 当前仓库默认原始输入入口，直接交给 router 分流
 .sopify-runtime/scripts/sopify_runtime.py    # 二次接入后 vendored 默认入口
-scripts/go_plan_runtime.py                   # 当前仓库用于 plan-only slice 的 helper
-.sopify-runtime/scripts/go_plan_runtime.py   # vendored plan-only helper
+scripts/go_plan_runtime.py                   # 当前仓库用于 plan-only slice 的 orchestrator
+.sopify-runtime/scripts/go_plan_runtime.py   # vendored plan-only orchestrator
+scripts/develop_checkpoint_runtime.py        # `continue_host_develop` 中命中用户拍板分叉时的内部 callback helper，提供 inspect / submit
+.sopify-runtime/scripts/develop_checkpoint_runtime.py # vendored develop callback helper，不改变默认 runtime 入口
 scripts/decision_bridge_runtime.py           # `confirm_decision` 的内部宿主桥接 helper，提供 inspect / submit / prompt
 .sopify-runtime/scripts/decision_bridge_runtime.py # vendored decision bridge helper，不改变默认 runtime 入口
 scripts/model_compare_runtime.py             # ~compare 的运行时实现，不是默认通用入口
 ~/.codex/sopify/payload-manifest.json        # Codex 全局 payload 元信息；宿主做 workspace preflight 时优先读取
 ~/.codex/sopify/helpers/bootstrap_workspace.py # Codex 全局 helper；当前仓库缺少 bundle 时由宿主调用
-.sopify-runtime/manifest.json                # vendored bundle 机器契约，宿主应优先读取
-.sopify-skills/state/current_handoff.json    # runtime 写出的结构化交接文件，宿主应优先读取
+.sopify-runtime/manifest.json                # vendored bundle 机器契约，宿主必须优先读取
+.sopify-skills/state/current_handoff.json    # runtime 写出的结构化交接文件，宿主必须优先读取
 .sopify-skills/state/current_run.json        # 活动 run 状态；包含 stage 与 execution_gate 的当前内部状态
 .sopify-skills/state/current_clarification.json # clarification checkpoint 状态文件；仅当 handoff 要求 answer_questions 时读取
 .sopify-skills/state/current_decision.json   # decision checkpoint 状态兜底文件；当 handoff 缺失完整 checkpoint 时读取
 ```
 
-说明：当前默认入口是 `scripts/sopify_runtime.py`；若以 bundle 方式接入，优先按 `.sopify-runtime/manifest.json` 选入口；若当前仓库尚未准备 bundle，则宿主应先按 `~/.codex/sopify/payload-manifest.json` 做 preflight，并在需要时调用 `~/.codex/sopify/helpers/bootstrap_workspace.py`；`go_plan_runtime.py` 只负责 plan-only；`~go finalize` 没有单独 helper，仍由默认 runtime 入口处理；执行结束后宿主应优先读取 `.sopify-skills/state/current_handoff.json` 决定下一步；若 `required_host_action=answer_questions`，继续读取 `.sopify-skills/state/current_clarification.json` 进入补充事实信息环节；若 `required_host_action=confirm_decision`，优先读取 `current_handoff.json.artifacts.decision_checkpoint / decision_submission_state`，缺失时再回退到 `.sopify-skills/state/current_decision.json` 进入确认环节；当前文档范围内，宿主可选调用 `scripts/decision_bridge_runtime.py inspect --host cli`（vendored 对应 `.sopify-runtime/scripts/decision_bridge_runtime.py`）读取 CLI 桥接 contract，再通过 `submit` 或 `prompt` 写回结构化 submission；helper 路径与宿主桥接提示也会暴露在 `.sopify-runtime/manifest.json -> limits.decision_bridge_entry / limits.decision_bridge_hosts`；`~compare` 仍依赖宿主侧专用桥接。
+说明：当前默认入口是 `scripts/sopify_runtime.py`；若以 bundle 方式接入，优先按 `.sopify-runtime/manifest.json` 选入口；若当前仓库尚未准备 bundle，则宿主必须先按 `~/.codex/sopify/payload-manifest.json` 做 preflight，并在需要时调用 `~/.codex/sopify/helpers/bootstrap_workspace.py`；`go_plan_runtime.py` 只负责 plan-only，且默认会自动桥接 clarification / decision，直到到达 `review_or_execute_plan` 或 `confirm_execute` 等稳定停点；若无法继续 prompt/submit/resume，则必须 fail-closed，而不是把 pending checkpoint 伪装成已完成；`~go finalize` 没有单独 helper，仍由默认 runtime 入口处理；执行结束后宿主必须优先读取 `.sopify-skills/state/current_handoff.json` 决定下一步；若存在 `artifacts.checkpoint_request`，必须优先消费该标准化 contract；若 `required_host_action=answer_questions`，继续读取 `.sopify-skills/state/current_clarification.json` 进入补充事实信息环节；若 `required_host_action=confirm_decision`，优先读取 `current_handoff.json.artifacts.decision_checkpoint / decision_submission_state`，缺失时再回退到 `.sopify-skills/state/current_decision.json` 进入确认环节；若 `required_host_action=continue_host_develop` 且开发中再次命中用户拍板分叉，宿主必须改调 `scripts/develop_checkpoint_runtime.py inspect|submit`（vendored 对应 `.sopify-runtime/scripts/develop_checkpoint_runtime.py`），而不是直接自由追问；该 helper 的路径、宿主提示与 `resume_context` 最小字段要求会暴露在 `.sopify-runtime/manifest.json -> limits.develop_checkpoint_entry / limits.develop_checkpoint_hosts / limits.develop_resume_context_required_fields / limits.develop_resume_after_actions`；当前文档范围内，宿主可选调用 `scripts/decision_bridge_runtime.py inspect`（vendored 对应 `.sopify-runtime/scripts/decision_bridge_runtime.py`）读取 CLI 桥接 contract，再通过 `submit` 或 `prompt` 写回结构化 submission；`~compare` 仍依赖宿主侧专用桥接。
 
 **配置文件：** `sopify.config.yaml` (项目根目录)
 

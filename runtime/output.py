@@ -71,6 +71,7 @@ _LABELS = {
         "risk_level": "风险级别",
         "risk": "关键风险",
         "mitigation": "缓解",
+        "entry_guard_reason": "守卫原因码",
         "execution_gate": "门禁",
         "missing_facts": "缺口",
         "missing": "未生成",
@@ -142,6 +143,7 @@ _LABELS = {
         "risk_level": "Risk Level",
         "risk": "Key Risk",
         "mitigation": "Mitigation",
+        "entry_guard_reason": "Entry Guard Reason",
         "execution_gate": "Gate",
         "missing_facts": "Missing Facts",
         "missing": "not generated",
@@ -216,7 +218,7 @@ def render_runtime_output(
     """Render a runtime result into the Sopify summary format."""
     locale = _normalize_language(language)
     labels = _LABELS[locale]
-    phase = _phase_label(result.route.route_name, locale)
+    phase = _phase_label(result, locale)
     status = _status_symbol(result)
     title = _colorize(f"[{brand}] {phase} {status}", title_color=title_color, use_color=use_color)
     changes = _collect_changes(result)
@@ -284,11 +286,13 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
             for index, question in enumerate(current_clarification.questions, start=1)
         )
         missing_facts = ", ".join(current_clarification.missing_facts) or labels["missing"]
-        return [
+        lines = [
             f"{labels['summary']}: {current_clarification.summary}",
             f"{labels['missing_facts']}: {missing_facts}",
             f"{labels['questions']}: {question_text or labels['missing']}",
         ]
+        _append_entry_guard_reason_line(lines, result=result, language=language)
+        return lines
 
     if route_name == "decision_pending" and result.recovered_context.current_decision is not None:
         current_decision = result.recovered_context.current_decision
@@ -297,15 +301,17 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
             f"[{index}] {option.title}"
             for index, option in enumerate(current_decision.options, start=1)
         )
-        return [
+        lines = [
             f"{labels['question']}: {current_decision.question}",
             f"{labels['options']}: {option_text or labels['missing']}",
             f"{labels['status']}: {_decision_pending_status(language, recommended)}",
         ]
+        _append_entry_guard_reason_line(lines, result=result, language=language)
+        return lines
 
     if route_name == "execution_confirm_pending":
         summary = _execution_summary(result)
-        return [
+        lines = [
             f"{labels['plan']}: {summary.get('plan_path') or labels['missing']}",
             f"{labels['summary']}: {summary.get('summary') or labels['missing']}",
             f"{labels['task_count']}: {summary.get('task_count') if summary else 0}",
@@ -313,6 +319,8 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
             f"{labels['risk']}: {summary.get('key_risk') or labels['missing']}",
             f"{labels['mitigation']}: {summary.get('mitigation') or labels['missing']}",
         ]
+        _append_entry_guard_reason_line(lines, result=result, language=language)
+        return lines
 
     if route_name == "finalize_active":
         if result.plan_artifact is not None:
@@ -532,6 +540,25 @@ def _execution_summary(result: RuntimeResult) -> dict[str, object]:
     return {}
 
 
+def _append_entry_guard_reason_line(lines: list[str], *, result: RuntimeResult, language: str) -> None:
+    reason_code = _entry_guard_reason_code(result)
+    if not reason_code:
+        return
+    labels = _LABELS[language]
+    lines.append(f"{labels['entry_guard_reason']}: {reason_code}")
+
+
+def _entry_guard_reason_code(result: RuntimeResult) -> str | None:
+    handoff = result.handoff
+    if handoff is None:
+        return None
+    value = handoff.artifacts.get("entry_guard_reason_code")
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return None
+
+
 def _execution_gate_line(result: RuntimeResult, language: str) -> str:
     labels = _LABELS[language]
     current_gate = _execution_gate(result)
@@ -554,8 +581,17 @@ def _decision_pending_status(language: str, recommended_option_id: str) -> str:
     return f"等待确认（推荐 `{recommended_option_id}`）"
 
 
-def _phase_label(route_name: str, language: str) -> str:
+def _phase_label(result: RuntimeResult, language: str) -> str:
+    route_name = result.route.route_name
     labels = _PHASE_LABELS[language]
+    if route_name in {"clarification_pending", "clarification_resume"}:
+        current_clarification = result.recovered_context.current_clarification
+        if current_clarification is not None and current_clarification.phase == "develop":
+            return labels["resume_active"]
+    if route_name in {"decision_pending", "decision_resume"}:
+        current_decision = result.recovered_context.current_decision
+        if current_decision is not None and current_decision.phase == "develop":
+            return labels["resume_active"]
     return labels.get(route_name, labels["default"])
 
 

@@ -24,7 +24,14 @@ PAYLOAD_MANIFEST_FILENAME = "payload-manifest.json"
 _REQUIRED_BUNDLE_FILES = (
     Path("manifest.json"),
     Path("runtime") / "__init__.py",
+    Path("runtime") / "clarification_bridge.py",
+    Path("runtime") / "cli_interactive.py",
+    Path("runtime") / "develop_checkpoint.py",
+    Path("runtime") / "decision_bridge.py",
     Path("scripts") / "sopify_runtime.py",
+    Path("scripts") / "clarification_bridge_runtime.py",
+    Path("scripts") / "develop_checkpoint_runtime.py",
+    Path("scripts") / "decision_bridge_runtime.py",
     Path("scripts") / "check-runtime-smoke.sh",
     Path("tests") / "test_runtime.py",
 )
@@ -96,6 +103,7 @@ def bootstrap_workspace(workspace_root: Path) -> dict[str, Any]:
         payload_manifest=payload_manifest,
         bundle_manifest=bundle_manifest,
         current_manifest_path=current_manifest_path,
+        bundle_root=bundle_root,
     )
     to_version = _string_or_none(bundle_manifest.get("bundle_version"))
 
@@ -132,6 +140,7 @@ def _classify_workspace_bundle(
     payload_manifest: dict[str, Any],
     bundle_manifest: dict[str, Any],
     current_manifest_path: Path,
+    bundle_root: Path,
 ) -> tuple[str, str, str, str | None]:
     if not current_manifest_path.is_file():
         return ("MISSING", "MISSING_BUNDLE", "Workspace bundle is missing and will be bootstrapped.", None)
@@ -163,6 +172,15 @@ def _classify_workspace_bundle(
             "INCOMPATIBLE",
             "MISSING_REQUIRED_CAPABILITY",
             f"Workspace bundle is missing required capabilities: {', '.join(missing_paths)}.",
+            from_version,
+        )
+
+    missing_files = _find_missing_required_files(bundle_root)
+    if missing_files:
+        return (
+            "INCOMPATIBLE",
+            "MISSING_REQUIRED_FILE",
+            f"Workspace bundle is missing required files: {', '.join(missing_files)}.",
             from_version,
         )
 
@@ -208,6 +226,10 @@ def _find_missing_capabilities(required: dict[str, Any], actual: dict[str, Any],
         if actual_value != value:
             missing.append(path)
     return missing
+
+
+def _find_missing_required_files(bundle_root: Path) -> list[str]:
+    return [str(path) for path in _REQUIRED_BUNDLE_FILES if not (bundle_root / path).exists()]
 
 
 def _sync_bundle(*, bundle_template_root: Path, bundle_root: Path) -> None:

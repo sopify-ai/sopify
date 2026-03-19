@@ -6,6 +6,8 @@ from hashlib import sha1
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from .checkpoint_materializer import materialize_checkpoint_request
+from .checkpoint_request import checkpoint_request_from_clarification_state, checkpoint_request_from_decision_state
 from .clarification import build_clarification_state, has_submitted_clarification, merge_clarification_request, parse_clarification_response, stale_clarification
 from .compare_decision import build_compare_decision_contract
 from .config import load_runtime_config
@@ -20,6 +22,7 @@ from .decision import (
     response_from_submission,
     stale_decision,
 )
+from .develop_checkpoint import develop_resume_after, is_develop_checkpoint_state
 from .execution_confirm import parse_execution_confirm_response
 from .execution_gate import evaluate_execution_gate
 from .finalize import finalize_plan
@@ -170,7 +173,7 @@ def run_runtime(
                     config=config,
                 )
                 if gate.gate_status == "decision_required" and gate.blocking_reason != "unresolved_decision":
-                    gate_decision = build_execution_gate_decision_state(
+                    gate_decision = _build_route_native_gate_decision_state(
                         effective_route,
                         gate=gate,
                         current_plan=current_plan,
@@ -474,6 +477,15 @@ def _handle_clarification_resume(
             return (_clarification_pending_route(decision, reason="Clarification still requires factual details"), None, notes, kb_artifact)
 
         resumed_request = merge_clarification_request(current_clarification, response.text)
+    if is_develop_checkpoint_state(current_clarification):
+        return _resume_from_develop_clarification(
+            state_store=state_store,
+            current_clarification=current_clarification,
+            resumed_request=resumed_request,
+            notes=notes,
+            kb_artifact=kb_artifact,
+        )
+
     resumed_route = RouteDecision(
         route_name=current_clarification.resume_route or "plan_only",
         request_text=resumed_request,
@@ -573,6 +585,15 @@ def _handle_decision_resume(
     if current_decision.status != "confirmed" or current_decision.selection is None:
         notes.append("Decision checkpoint has not reached a confirmed state yet")
         return (_decision_pending_route(decision, reason="Decision checkpoint is still pending"), None, notes, kb_artifact, None)
+
+    if is_develop_checkpoint_state(current_decision):
+        return _resume_from_develop_decision(
+            state_store=state_store,
+            current_decision=current_decision,
+            notes=notes,
+            kb_artifact=kb_artifact,
+        )
+
     confirmed_decision = current_decision
     resumed_route = RouteDecision(
         route_name=current_decision.resume_route or "plan_only",
@@ -607,6 +628,131 @@ def _handle_decision_resume(
     )
     notes.extend(planning_notes)
     return (planning_route, plan_artifact, notes, kb_artifact, confirmed_decision)
+
+
+def _resume_from_develop_clarification(
+    *,
+    state_store: StateStore,
+    current_clarification: ClarificationState,
+    resumed_request: str,
+    notes: list[str],
+    kb_artifact: KbArtifact | None,
+) -> tuple[RouteDecision, PlanArtifact | None, list[str], KbArtifact | None]:
+    current_plan = state_store.get_current_plan()
+    current_run = state_store.get_current_run()
+    if current_plan is None or current_run is None:
+        notes.append("Develop clarification could not resume because the active run context is missing")
+        return (_clarification_pending_route(RouteDecision(route_name="clarification_resume", request_text=resumed_request, reason="missing develop context"), reason="Develop clarification still requires an active plan context"), None, notes, kb_artifact)
+
+    resume_after = develop_resume_after(current_clarification.resume_context)
+    state_store.clear_current_clarification()
+    if resume_after == "review_or_execute_plan":
+        run_state = _copy_run_state(current_run, stage="plan_generated")
+        state_store.set_current_run(run_state)
+        notes.append("Develop clarification answered; host must review the plan before continuing")
+        return (
+            RouteDecision(
+                route_name="plan_only",
+                request_text=resumed_request,
+                reason="Develop clarification changed scope and returned the flow to plan review",
+                complexity="complex",
+                plan_level=current_plan.level,
+                candidate_skill_ids=("design", "develop"),
+                should_recover_context=False,
+                should_create_plan=False,
+                capture_mode=current_clarification.capture_mode,
+            ),
+            current_plan,
+            notes,
+            kb_artifact,
+        )
+
+    run_state = _copy_run_state(
+        current_run,
+        stage=str(current_clarification.resume_context.get("active_run_stage") or "executing"),
+    )
+    state_store.set_current_run(run_state)
+    notes.append("Develop clarification answered; host-side implementation may continue")
+    return (
+        RouteDecision(
+            route_name="resume_active",
+            request_text=resumed_request,
+            reason="Develop clarification answered and host-side implementation may continue",
+            complexity="medium",
+            plan_level=current_plan.level,
+            candidate_skill_ids=current_clarification.candidate_skill_ids or ("develop",),
+            should_recover_context=True,
+            should_create_plan=False,
+            capture_mode=current_clarification.capture_mode,
+            active_run_action="resume",
+        ),
+        current_plan,
+        notes,
+        kb_artifact,
+    )
+
+
+def _resume_from_develop_decision(
+    *,
+    state_store: StateStore,
+    current_decision: DecisionState,
+    notes: list[str],
+    kb_artifact: KbArtifact | None,
+) -> tuple[RouteDecision, PlanArtifact | None, list[str], KbArtifact | None, DecisionState | None]:
+    current_plan = state_store.get_current_plan()
+    current_run = state_store.get_current_run()
+    if current_plan is None or current_run is None:
+        notes.append("Develop decision could not resume because the active run context is missing")
+        return (_decision_pending_route(RouteDecision(route_name="decision_resume", request_text=current_decision.request_text, reason="missing develop context"), reason="Develop decision still requires an active plan context"), None, notes, kb_artifact, None)
+
+    resume_after = develop_resume_after(current_decision.resume_context)
+    _consume_current_decision(state_store, current_decision)
+    if resume_after == "review_or_execute_plan":
+        run_state = _copy_run_state(current_run, stage="plan_generated")
+        state_store.set_current_run(run_state)
+        notes.append("Develop decision confirmed; host must review the plan before continuing")
+        return (
+            RouteDecision(
+                route_name="plan_only",
+                request_text=current_decision.request_text,
+                reason="Develop decision changed scope and returned the flow to plan review",
+                complexity="complex",
+                plan_level=current_plan.level,
+                candidate_skill_ids=("design", "develop"),
+                should_recover_context=False,
+                should_create_plan=False,
+                capture_mode=current_decision.capture_mode,
+            ),
+            current_plan,
+            notes,
+            kb_artifact,
+            current_decision,
+        )
+
+    run_state = _copy_run_state(
+        current_run,
+        stage=str(current_decision.resume_context.get("active_run_stage") or "executing"),
+    )
+    state_store.set_current_run(run_state)
+    notes.append("Develop decision confirmed; host-side implementation may continue")
+    return (
+        RouteDecision(
+            route_name="resume_active",
+            request_text=current_decision.request_text,
+            reason="Develop decision confirmed and host-side implementation may continue",
+            complexity="medium",
+            plan_level=current_plan.level,
+            candidate_skill_ids=current_decision.candidate_skill_ids or ("develop",),
+            should_recover_context=True,
+            should_create_plan=False,
+            capture_mode=current_decision.capture_mode,
+            active_run_action="resume",
+        ),
+        current_plan,
+        notes,
+        kb_artifact,
+        current_decision,
+    )
 
 
 def _handle_execution_confirm(
@@ -707,7 +853,7 @@ def _handle_execution_confirm(
         config=config,
     )
     if gate.gate_status == "decision_required" and gate.blocking_reason != "unresolved_decision":
-        gate_decision = build_execution_gate_decision_state(
+        gate_decision = _build_route_native_gate_decision_state(
             gate_route,
             gate=gate,
             current_plan=current_plan,
@@ -903,7 +1049,7 @@ def _advance_planning_route(
     notes: list[str] = []
     kb_artifact = _merge_kb_artifacts(kb_artifact, ensure_blueprint_scaffold(config), config=config)
 
-    pending_clarification = build_clarification_state(decision, config=config)
+    pending_clarification = _build_route_native_clarification_state(decision, config=config)
     if pending_clarification is not None:
         state_store.set_current_clarification(pending_clarification)
         state_store.clear_current_plan()
@@ -935,7 +1081,7 @@ def _advance_planning_route(
         )
 
     if confirmed_decision is None:
-        pending_decision = build_decision_state(decision, config=config)
+        pending_decision = _build_route_native_decision_state(decision, config=config)
         if pending_decision is not None:
             state_store.set_current_decision(pending_decision)
             state_store.clear_current_plan()
@@ -1004,7 +1150,7 @@ def _apply_execution_gate_to_plan(
         notes.append(f"Decision consumed: {decision_context.decision_id}")
 
     if gate.gate_status == "decision_required" and gate.blocking_reason != "unresolved_decision":
-        gate_decision = build_execution_gate_decision_state(
+        gate_decision = _build_route_native_gate_decision_state(
             decision,
             gate=gate,
             current_plan=plan_artifact,
@@ -1092,3 +1238,62 @@ def _merge_kb_artifacts(kb_artifact: KbArtifact | None, extra_files: tuple[str, 
         files=merged_files,
         created_at=kb_artifact.created_at if kb_artifact is not None else iso_now(),
     )
+
+
+def _build_route_native_clarification_state(
+    decision: RouteDecision,
+    *,
+    config: RuntimeConfig,
+) -> ClarificationState | None:
+    """Route planning-mode clarification through the generic checkpoint contract."""
+    clarification_state = build_clarification_state(decision, config=config)
+    if clarification_state is None:
+        return None
+    request = checkpoint_request_from_clarification_state(
+        clarification_state,
+        config=config,
+        source_route=decision.route_name,
+    )
+    materialized = materialize_checkpoint_request(request.to_dict(), config=config)
+    return materialized.clarification_state
+
+
+def _build_route_native_decision_state(
+    decision: RouteDecision,
+    *,
+    config: RuntimeConfig,
+) -> DecisionState | None:
+    """Route planning-mode design decisions through the generic checkpoint contract."""
+    decision_state = build_decision_state(decision, config=config)
+    if decision_state is None:
+        return None
+    request = checkpoint_request_from_decision_state(
+        decision_state,
+        source_route=decision.route_name,
+    )
+    materialized = materialize_checkpoint_request(request.to_dict(), config=config)
+    return materialized.decision_state
+
+
+def _build_route_native_gate_decision_state(
+    decision: RouteDecision,
+    *,
+    gate: ExecutionGate,
+    current_plan: PlanArtifact,
+    config: RuntimeConfig,
+) -> DecisionState | None:
+    """Normalize execution-gate follow-up decisions through the same contract."""
+    decision_state = build_execution_gate_decision_state(
+        decision,
+        gate=gate,
+        current_plan=current_plan,
+        config=config,
+    )
+    if decision_state is None:
+        return None
+    request = checkpoint_request_from_decision_state(
+        decision_state,
+        source_route=decision.route_name,
+    )
+    materialized = materialize_checkpoint_request(request.to_dict(), config=config)
+    return materialized.decision_state

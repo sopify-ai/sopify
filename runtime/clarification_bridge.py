@@ -26,13 +26,18 @@ from .clarification import (
     normalize_clarification_answers,
     render_clarification_response_text,
 )
+from .entry_guard import (
+    CLARIFICATION_BRIDGE_ENTRY as ENTRY_GUARD_CLARIFICATION_BRIDGE_ENTRY,
+    CLARIFICATION_BRIDGE_HANDOFF_MISMATCH_REASON,
+    DEFAULT_RUNTIME_ENTRY as ENTRY_GUARD_DEFAULT_RUNTIME_ENTRY,
+)
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
 from .models import ClarificationState, RuntimeConfig, RuntimeHandoff
 from .state import StateStore
 
 BRIDGE_SCHEMA_VERSION = "1"
-DEFAULT_RUNTIME_ENTRY = "scripts/sopify_runtime.py"
-CLARIFICATION_BRIDGE_ENTRY = "scripts/clarification_bridge_runtime.py"
+DEFAULT_RUNTIME_ENTRY = ENTRY_GUARD_DEFAULT_RUNTIME_ENTRY
+CLARIFICATION_BRIDGE_ENTRY = ENTRY_GUARD_CLARIFICATION_BRIDGE_ENTRY
 
 PromptReader = Callable[[str], str]
 PromptWriter = Callable[[str], None]
@@ -62,6 +67,7 @@ def load_clarification_bridge_context(*, config: RuntimeConfig) -> Clarification
         raise ClarificationBridgeError(f"Clarification checkpoint is no longer actionable: {clarification_state.status}")
 
     handoff = state_store.get_current_handoff()
+    _validate_clarification_handoff(handoff=handoff, clarification_state=clarification_state)
     clarification_form = _resolve_clarification_form(
         handoff=handoff,
         clarification_state=clarification_state,
@@ -180,12 +186,44 @@ def _bridge_payload(
         "clarification_id": context.clarification_state.clarification_id,
         "clarification_status": context.clarification_state.status,
         "summary": context.clarification_state.summary,
+        "entry_guard_reason_code": _handoff_reason_code(context.handoff),
         "clarification_form": context.clarification_form,
         "clarification_submission_state": dict(context.submission_state),
         "presentation": _presentation(context=context, language=language),
         "steps": list(steps),
         "text_fallback": context.clarification_form.get("text_fallback", {"allowed": True, "examples": []}),
     }
+
+
+def _validate_clarification_handoff(*, handoff: RuntimeHandoff | None, clarification_state: ClarificationState) -> None:
+    if handoff is None:
+        raise ClarificationBridgeError(
+            f"{CLARIFICATION_BRIDGE_HANDOFF_MISMATCH_REASON}: current_handoff.json is required for clarification bridge"
+        )
+    if handoff.required_host_action != "answer_questions":
+        raise ClarificationBridgeError(
+            f"{CLARIFICATION_BRIDGE_HANDOFF_MISMATCH_REASON}: expected required_host_action=answer_questions, got {handoff.required_host_action or '<missing>'}"
+        )
+    entry_guard = handoff.artifacts.get("entry_guard")
+    if not isinstance(entry_guard, Mapping) or not bool(entry_guard.get("strict_runtime_entry", False)):
+        raise ClarificationBridgeError(
+            f"{CLARIFICATION_BRIDGE_HANDOFF_MISMATCH_REASON}: missing strict entry_guard contract in current_handoff.json"
+        )
+    handoff_clarification_id = str(handoff.artifacts.get("clarification_id") or "").strip()
+    if handoff_clarification_id and handoff_clarification_id != clarification_state.clarification_id:
+        raise ClarificationBridgeError(
+            f"{CLARIFICATION_BRIDGE_HANDOFF_MISMATCH_REASON}: clarification_id mismatch between current_handoff.json and current_clarification.json"
+        )
+
+
+def _handoff_reason_code(handoff: RuntimeHandoff | None) -> str | None:
+    if handoff is None:
+        return None
+    value = handoff.artifacts.get("entry_guard_reason_code")
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return None
 
 
 def _presentation(*, context: ClarificationBridgeContext, language: str) -> Mapping[str, Any]:

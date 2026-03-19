@@ -339,3 +339,20 @@
 - runtime 侧不再直接硬编码单选 checkpoint 构造逻辑，而是通过模板与 policy 产出通用 contract
 - CLI 型宿主能稳定消费同一份 `decision_checkpoint`，并在缺少 richer renderer 时回退到纯文本桥接
 - 用户仍按原有一键接入与默认 runtime 入口使用 Sopify，不需要新的安装步骤或新的主入口脚本
+
+## 14. 宿主入口强约束（develop-first）
+
+- [x] 14.1 把“宿主应先走 runtime”升级为“宿主只能先走 runtime”的入口守卫契约
+- [x] 14.2 固化 pending checkpoint 三态（`answer_questions / confirm_decision / confirm_execute`）的不可绕过规则
+- [x] 14.3 固化 `continue_host_develop` 阶段拍板分叉的唯一回调路径：`develop_checkpoint_runtime.py submit --payload-json ...`
+- [x] 14.4 固化 fake-closed-loop 的 fail-closed 规则：不能 prompt/submit/resume 时禁止继续主链路
+- [x] 14.5 增加宿主入口守卫自动化测试：禁止手写 `current_decision.json / current_handoff.json` 作为替代
+- [x] 14.6 增加入口守卫可观测性 reason code，支持宿主 readiness 机器判定
+- [x] 14.7 更新 installer 与 bundle smoke，保证“一次安装 + 项目触发 + 自动 bootstrap/update + 入口守卫”链路一致
+- [x] 14.8 同步 README / AGENTS / CLAUDE 对外口径，明确这是硬约束而非建议
+
+验收标准：
+
+- planning 与 develop 等技能引用阶段不存在“人工分析绕过 runtime”的执行通道
+- 宿主是否“可进入决策环节”能由机器检查判定，不再依赖人工解释
+- 用户体验保持零新增步骤；触发 Sopify 后自动完成 runtime 准备并进入统一 checkpoint 主链

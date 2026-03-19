@@ -11,7 +11,7 @@ This changelog is maintained manually (not auto-generated).
 - Current minimal published runtime slice: `runtime-backed ~go plan`
 - Not part of this slice:
   - generic-entry auto-bridge for `~compare`
-  - standalone `~go exec` develop bridge
+  - runtime-owned develop orchestrator
   - standalone `workflow-learning` runtime helper
 
 ### Added
@@ -35,6 +35,10 @@ This changelog is maintained manually (not auto-generated).
 - Runtime smoke check script `scripts/check-runtime-smoke.sh`.
 - Runtime behavior test coverage in `tests/test_runtime.py`, including vendored bundle validation.
 - Installer test coverage in `tests/test_installer.py` for Codex/Claude sample install paths.
+- Develop-first checkpoint callback support:
+  - `runtime/develop_checkpoint.py`
+  - `scripts/develop_checkpoint_runtime.py`
+  - vendored manifest capability + helper contract for `continue_host_develop`
 
 ### Changed
 
@@ -42,6 +46,12 @@ This changelog is maintained manually (not auto-generated).
   - host prompt-layer install
   - host-local payload install
   - optional current-workspace prewarm through the same bootstrap helper used later by the host
+- Tightened workspace bundle compatibility checks:
+  - bootstrap no longer treats a same-version `.sopify-runtime/` as `READY` when required bridge capabilities are missing
+  - bootstrap now also verifies critical bridge / CLI files before skipping refresh
+  - installer bundle validation now uses the same bridge / CLI file expectations as workspace bootstrap
+- Extended the checkpoint contract to carry `resume_context` for develop-stage callbacks, so confirmation can safely return to `continue_host_develop` or fail back to `review_or_execute_plan`.
+- Extended runtime / bundle docs and host prompts to require `develop_checkpoint_runtime.py` whenever a mid-develop user decision must re-enter runtime.
 - `--workspace` is now optional prewarm input instead of an implicit current-directory sync.
 - Added workspace bootstrap contract:
   - when Sopify is triggered inside a project workspace and `.sopify-runtime/manifest.json` is missing or incompatible, the host should call the installed bootstrap helper first

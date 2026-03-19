@@ -55,6 +55,7 @@ required_paths=(
   "$SCRIPTS_SRC/sopify_runtime.py"
   "$SCRIPTS_SRC/go_plan_runtime.py"
   "$SCRIPTS_SRC/clarification_bridge_runtime.py"
+  "$SCRIPTS_SRC/develop_checkpoint_runtime.py"
   "$SCRIPTS_SRC/decision_bridge_runtime.py"
   "$SCRIPTS_SRC/model_compare_runtime.py"
   "$SCRIPTS_SRC/check-runtime-smoke.sh"
@@ -78,6 +79,7 @@ rsync -a --delete --prune-empty-dirs \
   --include='sopify_runtime.py' \
   --include='go_plan_runtime.py' \
   --include='clarification_bridge_runtime.py' \
+  --include='develop_checkpoint_runtime.py' \
   --include='decision_bridge_runtime.py' \
   --include='model_compare_runtime.py' \
   --include='check-runtime-smoke.sh' \
@@ -101,6 +103,7 @@ chmod +x \
   "$BUNDLE_DIR/scripts/sopify_runtime.py" \
   "$BUNDLE_DIR/scripts/go_plan_runtime.py" \
   "$BUNDLE_DIR/scripts/clarification_bridge_runtime.py" \
+  "$BUNDLE_DIR/scripts/develop_checkpoint_runtime.py" \
   "$BUNDLE_DIR/scripts/decision_bridge_runtime.py" \
   "$BUNDLE_DIR/scripts/model_compare_runtime.py" \
   "$BUNDLE_DIR/scripts/check-runtime-smoke.sh" \
