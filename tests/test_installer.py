@@ -11,7 +11,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from installer.hosts.codex import CODEX_ADAPTER
+from installer.models import InstallPhaseResult, InstallResult, parse_install_target
 from installer.payload import _payload_is_current, install_global_payload
+from scripts.install_sopify import render_result
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -75,6 +77,51 @@ class PayloadInstallTests(unittest.TestCase):
             self.assertEqual(result.root, payload_root)
             self.assertTrue((payload_root / "bundle" / "scripts" / "clarification_bridge_runtime.py").exists())
             self.assertTrue((payload_root / "bundle" / "scripts" / "decision_bridge_runtime.py").exists())
+
+
+class InstallRenderTests(unittest.TestCase):
+    def test_render_result_reports_already_current_for_noop_install(self) -> None:
+        result = _build_install_result(host_action="skipped", payload_action="skipped")
+
+        rendered = render_result(result)
+
+        self.assertTrue(rendered.startswith("Sopify already current:"))
+        self.assertIn("No reinstall needed. Trigger Sopify inside any project workspace to bootstrap `.sopify-runtime/` on demand.", rendered)
+        self.assertNotIn("Installed Sopify successfully:", rendered)
+
+    def test_render_result_keeps_success_title_when_changes_applied(self) -> None:
+        result = _build_install_result(host_action="updated", payload_action="skipped")
+
+        rendered = render_result(result)
+
+        self.assertTrue(rendered.startswith("Installed Sopify successfully:"))
+        self.assertIn("Trigger Sopify inside any project workspace to bootstrap `.sopify-runtime/` on demand.", rendered)
+
+
+def _build_install_result(*, host_action: str, payload_action: str) -> InstallResult:
+    host_root = Path("/tmp/home/.codex")
+    payload_root = host_root / "sopify"
+    return InstallResult(
+        target=parse_install_target("codex:zh-CN"),
+        workspace_root=None,
+        host_root=host_root,
+        payload_root=payload_root,
+        bundle_root=None,
+        host_install=InstallPhaseResult(
+            action=host_action,
+            root=host_root,
+            version="2026-02-13",
+            paths=(host_root / "AGENTS.md",),
+        ),
+        payload_install=InstallPhaseResult(
+            action=payload_action,
+            root=payload_root,
+            version="2026-02-13",
+            paths=(payload_root / "payload-manifest.json",),
+        ),
+        workspace_bootstrap=None,
+        smoke_output="Runtime smoke check passed",
+    )
 
 
 if __name__ == "__main__":

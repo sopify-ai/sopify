@@ -86,8 +86,13 @@ def run_install(*, target_value: str, workspace_value: str | None, repo_root: Pa
 
 
 def render_result(result: InstallResult) -> str:
+    is_noop_install = (
+        result.host_install.action == "skipped"
+        and result.payload_install.action == "skipped"
+        and result.workspace_root is None
+    )
     lines = [
-        "Installed Sopify successfully:",
+        "Sopify already current:" if is_noop_install else "Installed Sopify successfully:",
         f"  target: {result.target.value}",
         f"  host root: {result.host_root}",
         f"  payload root: {result.payload_root}",
@@ -134,7 +139,10 @@ def render_result(result: InstallResult) -> str:
         ]
     )
     if result.workspace_root is None:
-        lines.append("  Trigger Sopify inside any project workspace to bootstrap `.sopify-runtime/` on demand.")
+        if is_noop_install:
+            lines.append("  No reinstall needed. Trigger Sopify inside any project workspace to bootstrap `.sopify-runtime/` on demand.")
+        else:
+            lines.append("  Trigger Sopify inside any project workspace to bootstrap `.sopify-runtime/` on demand.")
     else:
         lines.append("  Reopen the workspace in the selected host and use Sopify commands or plain requests.")
     return "\n".join(lines)
