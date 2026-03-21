@@ -23,6 +23,7 @@ from runtime.checkpoint_request import (
     checkpoint_request_from_clarification_state,
     checkpoint_request_from_decision_state,
 )
+from runtime.clarification import build_clarification_state
 from runtime.clarification_bridge import (
     ClarificationBridgeError,
     build_cli_clarification_bridge,
@@ -31,7 +32,7 @@ from runtime.clarification_bridge import (
 )
 from runtime.compare_decision import build_compare_decision_contract
 from runtime.develop_checkpoint import DevelopCheckpointError, inspect_develop_checkpoint_context, submit_develop_checkpoint
-from runtime.decision import build_execution_gate_decision_state, confirm_decision, response_from_submission
+from runtime.decision import build_decision_state, build_execution_gate_decision_state, confirm_decision, response_from_submission
 from runtime.decision_bridge import (
     DecisionBridgeError,
     DecisionBridgeContext,
@@ -45,7 +46,8 @@ from runtime.engine import run_runtime
 from runtime.entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
 from runtime.execution_gate import evaluate_execution_gate
 from runtime.handoff import build_runtime_handoff
-from runtime.kb import bootstrap_kb
+from runtime.kb import bootstrap_kb, ensure_blueprint_index
+from runtime.knowledge_layout import materialization_stage, resolve_context_profile
 from runtime.plan_scaffold import create_plan_scaffold
 from runtime.output import render_runtime_output
 from runtime.plan_orchestrator import (
@@ -1659,6 +1661,37 @@ class PlanScaffoldTests(unittest.TestCase):
             self.assertTrue((workspace / full.path / "adr").is_dir())
             self.assertTrue((workspace / full.path / "diagrams").is_dir())
 
+    def test_plan_scaffold_writes_knowledge_sync_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            light = create_plan_scaffold("修复登录错误提示", config=config, level="light")
+            standard = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+            full = create_plan_scaffold("设计 runtime architecture plugin bridge", config=config, level="full")
+
+            light_text = (workspace / light.path / "plan.md").read_text(encoding="utf-8")
+            standard_text = (workspace / standard.path / "tasks.md").read_text(encoding="utf-8")
+            full_text = (workspace / full.path / "tasks.md").read_text(encoding="utf-8")
+
+            self.assertIn("knowledge_sync:", light_text)
+            self.assertIn("  project: skip", light_text)
+            self.assertIn("  design: review", light_text)
+            self.assertNotIn("blueprint_obligation:", light_text)
+
+            self.assertIn("knowledge_sync:", standard_text)
+            self.assertIn("  project: review", standard_text)
+            self.assertIn("  background: review", standard_text)
+            self.assertIn("  design: review", standard_text)
+            self.assertIn("  tasks: review", standard_text)
+            self.assertNotIn("blueprint_obligation:", standard_text)
+
+            self.assertIn("knowledge_sync:", full_text)
+            self.assertIn("  background: required", full_text)
+            self.assertIn("  design: required", full_text)
+            self.assertIn("  tasks: review", full_text)
+            self.assertNotIn("blueprint_obligation:", full_text)
+
     def test_plan_scaffold_avoids_directory_collision(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -1728,6 +1761,43 @@ class ExecutionGateTests(unittest.TestCase):
             self.assertEqual(gate.blocking_reason, "none")
             self.assertEqual(gate.plan_completion, "complete")
             self.assertEqual(gate.next_required_action, "confirm_execute")
+
+    def test_execution_gate_rejects_plan_without_knowledge_sync_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            plan_artifact = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+            tasks_path = workspace / plan_artifact.path / "tasks.md"
+            tasks_text = tasks_path.read_text(encoding="utf-8")
+            tasks_text = tasks_text.replace(
+                "knowledge_sync:\n  project: review\n  background: review\n  design: review\n  tasks: review\n",
+                "blueprint_obligation: review_required\n",
+            )
+            tasks_path.write_text(tasks_text, encoding="utf-8")
+            _rewrite_background_scope(
+                workspace,
+                plan_artifact,
+                scope_lines=("runtime/router.py, runtime/engine.py", "runtime/router.py, runtime/engine.py, tests/test_runtime.py"),
+            )
+            route = RouteDecision(
+                route_name="workflow",
+                request_text="实现 runtime skeleton",
+                reason="test",
+                complexity="complex",
+                plan_level="standard",
+            )
+
+            gate = evaluate_execution_gate(
+                decision=route,
+                plan_artifact=plan_artifact,
+                current_clarification=None,
+                current_decision=None,
+                config=config,
+            )
+
+            self.assertEqual(gate.gate_status, "blocked")
+            self.assertEqual(gate.blocking_reason, "missing_info")
+            self.assertEqual(gate.plan_completion, "incomplete")
 
     def test_execution_gate_requires_decision_for_auth_boundary_risk(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2264,6 +2334,7 @@ class KnowledgeBaseBootstrapTests(unittest.TestCase):
     def test_progressive_bootstrap_creates_minimal_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
+            (workspace / "package.json").write_text('{"name":"sample-app"}', encoding="utf-8")
             config = load_runtime_config(workspace)
 
             artifact = bootstrap_kb(config)
@@ -2272,14 +2343,19 @@ class KnowledgeBaseBootstrapTests(unittest.TestCase):
                 set(artifact.files),
                 {
                     ".sopify-skills/project.md",
-                    ".sopify-skills/wiki/overview.md",
                     ".sopify-skills/user/preferences.md",
-                    ".sopify-skills/history/index.md",
+                    ".sopify-skills/blueprint/README.md",
                 },
             )
             self.assertIn("当前暂无已确认的长期偏好", (workspace / ".sopify-skills" / "user" / "preferences.md").read_text(encoding="utf-8"))
-            self.assertIn("变更历史索引", (workspace / ".sopify-skills" / "history" / "index.md").read_text(encoding="utf-8"))
-            self.assertTrue((workspace / ".sopify-skills" / "wiki" / "modules").is_dir())
+            readme = (workspace / ".sopify-skills" / "blueprint" / "README.md").read_text(encoding="utf-8")
+            self.assertIn("状态: L0 bootstrap", readme)
+            self.assertNotIn("wiki/overview.md", readme)
+            self.assertNotIn("./background.md", readme)
+            self.assertNotIn("../history/index.md", readme)
+            self.assertFalse((workspace / ".sopify-skills" / "blueprint" / "background.md").exists())
+            self.assertFalse((workspace / ".sopify-skills" / "history").exists())
+            self.assertFalse((workspace / ".sopify-skills" / "wiki").exists())
 
     def test_full_bootstrap_creates_extended_kb_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2289,10 +2365,24 @@ class KnowledgeBaseBootstrapTests(unittest.TestCase):
 
             artifact = bootstrap_kb(config)
 
-            self.assertIn(".sopify-skills/wiki/arch.md", artifact.files)
-            self.assertIn(".sopify-skills/wiki/api.md", artifact.files)
-            self.assertIn(".sopify-skills/wiki/data.md", artifact.files)
+            self.assertEqual(
+                set(artifact.files),
+                {
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/user/preferences.md",
+                    ".sopify-skills/user/feedback.jsonl",
+                    ".sopify-skills/blueprint/README.md",
+                    ".sopify-skills/blueprint/background.md",
+                    ".sopify-skills/blueprint/design.md",
+                    ".sopify-skills/blueprint/tasks.md",
+                },
+            )
             self.assertIn(".sopify-skills/user/feedback.jsonl", artifact.files)
+            readme = (workspace / ".sopify-skills" / "blueprint" / "README.md").read_text(encoding="utf-8")
+            self.assertIn("状态: L1 blueprint-ready", readme)
+            self.assertIn("./background.md", readme)
+            self.assertFalse((workspace / ".sopify-skills" / "history").exists())
+            self.assertFalse((workspace / ".sopify-skills" / "wiki").exists())
 
     def test_bootstrap_is_idempotent_and_preserves_existing_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2310,6 +2400,37 @@ class KnowledgeBaseBootstrapTests(unittest.TestCase):
             self.assertEqual(second.files, ())
             self.assertEqual(project_path.read_text(encoding="utf-8"), "# custom\n")
 
+    def test_blueprint_index_uses_history_index_for_latest_archive_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "package.json").write_text('{"name":"sample-app"}', encoding="utf-8")
+            config = load_runtime_config(workspace)
+
+            bootstrap_kb(config)
+            blueprint_root = workspace / ".sopify-skills" / "blueprint"
+            for filename in ("background.md", "design.md", "tasks.md"):
+                (blueprint_root / filename).write_text(f"# {filename}\n", encoding="utf-8")
+
+            history_root = workspace / ".sopify-skills" / "history"
+            (history_root / "2026-03" / "20260320_kb_layout_v2").mkdir(parents=True)
+            (history_root / "2026-03" / "20260320_prompt_runtime_gate").mkdir(parents=True)
+            (history_root / "index.md").write_text(
+                (
+                    "# 变更历史索引\n\n"
+                    "记录已归档的方案，便于后续查询。\n\n"
+                    "## 索引\n\n"
+                    "- `2026-03-21` [`20260320_kb_layout_v2`](2026-03/20260320_kb_layout_v2/) - standard - Sopify KB Layout V2\n"
+                    "- `2026-03-20` [`20260320_prompt_runtime_gate`](2026-03/20260320_prompt_runtime_gate/) - standard - Prompt-Level Runtime Gate\n"
+                ),
+                encoding="utf-8",
+            )
+
+            ensure_blueprint_index(config)
+
+            readme = (blueprint_root / "README.md").read_text(encoding="utf-8")
+            self.assertIn("最近归档为 `../history/2026-03/20260320_kb_layout_v2`", readme)
+            self.assertIn("最近归档：`../history/2026-03/20260320_kb_layout_v2`", readme)
+
     def test_real_project_bootstrap_creates_blueprint_index(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -2322,6 +2443,205 @@ class KnowledgeBaseBootstrapTests(unittest.TestCase):
             readme_path = workspace / ".sopify-skills" / "blueprint" / "README.md"
             self.assertTrue(readme_path.exists())
             self.assertIn("sopify:auto:goal:start", readme_path.read_text(encoding="utf-8"))
+            self.assertFalse((workspace / ".sopify-skills" / "history" / "index.md").exists())
+
+
+class KnowledgeLayoutTests(unittest.TestCase):
+    def test_consult_profile_returns_l0_index_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "package.json").write_text('{"name":"sample-app"}', encoding="utf-8")
+            config = load_runtime_config(workspace)
+            bootstrap_kb(config)
+
+            selection = resolve_context_profile(config=config, profile="consult")
+
+            self.assertEqual(selection.materialization_stage, "L0 bootstrap")
+            self.assertEqual(
+                selection.files,
+                (
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/blueprint/README.md",
+                ),
+            )
+
+    def test_plan_profile_fail_opens_when_deep_blueprint_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "package.json").write_text('{"name":"sample-app"}', encoding="utf-8")
+            config = load_runtime_config(workspace)
+            bootstrap_kb(config)
+
+            selection = resolve_context_profile(config=config, profile="plan")
+
+            self.assertEqual(selection.materialization_stage, "L0 bootstrap")
+            self.assertEqual(
+                selection.files,
+                (
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/blueprint/README.md",
+                ),
+            )
+
+    def test_detached_plan_directory_does_not_count_as_l2_active(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "sopify.config.yaml").write_text("advanced:\n  kb_init: full\n", encoding="utf-8")
+            config = load_runtime_config(workspace)
+            bootstrap_kb(config)
+            create_plan_scaffold("重构支付模块", config=config, level="standard")
+
+            selection = resolve_context_profile(config=config, profile="plan")
+
+            self.assertEqual(selection.materialization_stage, "L1 blueprint-ready")
+
+    def test_clarification_profile_fail_opens_under_l0_bootstrap(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "package.json").write_text('{"name":"sample-app"}', encoding="utf-8")
+            config = load_runtime_config(workspace)
+            bootstrap_kb(config)
+
+            selection = resolve_context_profile(config=config, profile="clarification")
+
+            self.assertEqual(selection.materialization_stage, "L0 bootstrap")
+            self.assertEqual(
+                selection.files,
+                (
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/blueprint/README.md",
+                ),
+            )
+
+    def test_decision_profile_includes_active_plan_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "sopify.config.yaml").write_text("advanced:\n  kb_init: full\n", encoding="utf-8")
+            config = load_runtime_config(workspace)
+            bootstrap_kb(config)
+            plan_artifact = create_plan_scaffold("重构支付模块", config=config, level="standard")
+
+            selection = resolve_context_profile(config=config, profile="decision", current_plan=plan_artifact)
+
+            self.assertEqual(selection.materialization_stage, "L2 plan-active")
+            self.assertEqual(
+                selection.files,
+                (
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/blueprint/design.md",
+                    plan_artifact.path,
+                    *plan_artifact.files,
+                ),
+            )
+
+    def test_finalize_profile_resolves_l3_context_without_history_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "sopify.config.yaml").write_text("advanced:\n  kb_init: full\n", encoding="utf-8")
+            config = load_runtime_config(workspace)
+            bootstrap_kb(config)
+            plan_artifact = create_plan_scaffold("重构支付模块", config=config, level="standard")
+            history_index = workspace / ".sopify-skills" / "history" / "index.md"
+            history_index.parent.mkdir(parents=True, exist_ok=True)
+            history_index.write_text("# 变更历史索引\n", encoding="utf-8")
+
+            selection = resolve_context_profile(config=config, profile="finalize", current_plan=plan_artifact)
+
+            self.assertEqual(materialization_stage(config=config, current_plan=plan_artifact), "L3 history-ready")
+            self.assertEqual(selection.materialization_stage, "L3 history-ready")
+            self.assertEqual(
+                selection.files,
+                (
+                    plan_artifact.path,
+                    *plan_artifact.files,
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/blueprint/README.md",
+                    ".sopify-skills/blueprint/background.md",
+                    ".sopify-skills/blueprint/design.md",
+                    ".sopify-skills/blueprint/tasks.md",
+                ),
+            )
+
+    def test_build_decision_state_uses_v2_resolver_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "sopify.config.yaml").write_text("advanced:\n  kb_init: full\n", encoding="utf-8")
+            config = load_runtime_config(workspace)
+            bootstrap_kb(config)
+
+            route = RouteDecision(
+                route_name="workflow",
+                request_text="重构支付模块",
+                reason="test",
+                complexity="complex",
+                plan_level="standard",
+                artifacts={
+                    "decision_question": "确认支付模块改造路径",
+                    "decision_summary": "存在两个可执行方案，需要先确认长期方向。",
+                    "decision_context_files": [
+                        ".sopify-skills/blueprint/design.md",
+                        ".sopify-skills/project.md",
+                    ],
+                    "decision_candidates": [
+                        {
+                            "id": "incremental",
+                            "title": "渐进改造",
+                            "summary": "低风险拆分现有支付链路。",
+                            "tradeoffs": ["迁移周期更长"],
+                            "impacts": ["兼容当前发布节奏"],
+                        },
+                        {
+                            "id": "rewrite",
+                            "title": "整体重写",
+                            "summary": "统一支付边界与数据模型。",
+                            "tradeoffs": ["一次性变更面更大"],
+                            "impacts": ["长期一致性更强"],
+                            "recommended": True,
+                        },
+                    ],
+                },
+            )
+
+            decision_state = build_decision_state(route, config=config)
+
+            self.assertIsNotNone(decision_state)
+            assert decision_state is not None
+            self.assertEqual(
+                decision_state.context_files,
+                (
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/blueprint/design.md",
+                ),
+            )
+            self.assertNotIn(".sopify-skills/wiki/overview.md", decision_state.context_files)
+
+    def test_build_clarification_state_uses_v2_resolver_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "package.json").write_text('{"name":"sample-app"}', encoding="utf-8")
+            config = load_runtime_config(workspace)
+            bootstrap_kb(config)
+
+            route = RouteDecision(
+                route_name="workflow",
+                request_text="帮我优化一下",
+                reason="test",
+                complexity="complex",
+                plan_level="standard",
+            )
+
+            clarification_state = build_clarification_state(route, config=config)
+
+            self.assertIsNotNone(clarification_state)
+            assert clarification_state is not None
+            self.assertEqual(
+                clarification_state.context_files,
+                (
+                    ".sopify-skills/project.md",
+                    ".sopify-skills/blueprint/README.md",
+                ),
+            )
+            self.assertNotIn(".sopify-skills/blueprint/tasks.md", clarification_state.context_files)
 
 
 class PreferencesPreloadTests(unittest.TestCase):
@@ -2740,9 +3060,13 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIsNotNone(first.plan_artifact)
             self.assertIsNotNone(first.replay_session_dir)
             self.assertTrue((workspace / ".sopify-skills" / "project.md").exists())
-            self.assertTrue((workspace / ".sopify-skills" / "wiki" / "overview.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "README.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "background.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "design.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "tasks.md").exists())
             self.assertTrue((workspace / ".sopify-skills" / "user" / "preferences.md").exists())
-            self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
+            self.assertFalse((workspace / ".sopify-skills" / "history" / "index.md").exists())
+            self.assertFalse((workspace / ".sopify-skills" / "wiki").exists())
             self.assertEqual(first.handoff.required_host_action, "review_or_execute_plan")
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
 
@@ -2771,6 +3095,10 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "background.md").exists())
             self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "design.md").exists())
             self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "tasks.md").exists())
+            blueprint_readme = (workspace / ".sopify-skills" / "blueprint" / "README.md").read_text(encoding="utf-8")
+            self.assertIn("状态: L2 plan-active", blueprint_readme)
+            self.assertIn("当前活动方案目录：`../plan/`", blueprint_readme)
+            self.assertNotIn("../history/index.md", blueprint_readme)
 
     def test_engine_finalizes_metadata_managed_plan_into_history(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2786,7 +3114,7 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue(result.plan_artifact.path.startswith(".sopify-skills/history/"))
             self.assertFalse((workspace / first.plan_artifact.path).exists())
             self.assertTrue((workspace / result.plan_artifact.path).exists())
-            self.assertTrue(any("review_required" in note for note in result.notes))
+            self.assertTrue(any("knowledge_sync" in note for note in result.notes))
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_run.json").exists())
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
@@ -2796,9 +3124,10 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertNotIn("当前暂无已归档方案。", history_index)
 
             blueprint_readme = (workspace / ".sopify-skills" / "blueprint" / "README.md").read_text(encoding="utf-8")
-            self.assertIn("sopify:auto:focus:start", blueprint_readme)
-            self.assertIn(result.plan_artifact.path, blueprint_readme)
-            self.assertIn("当前已无活动 plan", blueprint_readme)
+            self.assertIn("状态: L3 history-ready", blueprint_readme)
+            self.assertIn("../history/index.md", blueprint_readme)
+            self.assertIn("最近归档", blueprint_readme)
+            self.assertIn("当前活动 plan：暂无", blueprint_readme)
 
     def test_finalize_blocks_full_plan_without_deep_blueprint_update(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2812,9 +3141,35 @@ class EngineIntegrationTests(unittest.TestCase):
 
             self.assertEqual(result.route.route_name, "finalize_active")
             self.assertIsNone(result.plan_artifact)
-            self.assertTrue(any("design_required" in note for note in result.notes))
+            self.assertTrue(any("knowledge_sync.required" in note for note in result.notes))
             self.assertTrue((workspace / first.plan_artifact.path).exists())
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
+
+    def test_finalize_allows_review_and_blocks_required_by_knowledge_sync(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            review_plan = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+            store.set_current_plan(review_plan)
+            review_result = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
+            self.assertIsNotNone(review_result.plan_artifact)
+            self.assertTrue(any("knowledge_sync" in note for note in review_result.notes))
+            self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            required_plan = create_plan_scaffold("设计 runtime architecture plugin bridge", config=config, level="full")
+            store.set_current_plan(required_plan)
+            required_result = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
+            self.assertIsNone(required_result.plan_artifact)
+            self.assertTrue(any("knowledge_sync.required" in note for note in required_result.notes))
 
     def test_finalize_rejects_legacy_plan_without_front_matter(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3571,6 +3926,53 @@ class EngineIntegrationTests(unittest.TestCase):
 
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["schema_version"], "1")
+            self.assertEqual(manifest["kb_layout_version"], "2")
+            self.assertEqual(
+                manifest["knowledge_paths"],
+                {
+                    "project": ".sopify-skills/project.md",
+                    "blueprint_index": ".sopify-skills/blueprint/README.md",
+                    "blueprint_background": ".sopify-skills/blueprint/background.md",
+                    "blueprint_design": ".sopify-skills/blueprint/design.md",
+                    "blueprint_tasks": ".sopify-skills/blueprint/tasks.md",
+                    "plan_root": ".sopify-skills/plan",
+                    "history_root": ".sopify-skills/history",
+                },
+            )
+            self.assertEqual(
+                manifest["context_profiles"]["consult"],
+                ["project", "blueprint_index"],
+            )
+            self.assertEqual(
+                manifest["context_profiles"]["plan"],
+                ["project", "blueprint_index", "blueprint_background", "blueprint_design"],
+            )
+            self.assertEqual(
+                manifest["context_profiles"]["clarification"],
+                ["project", "blueprint_index", "blueprint_tasks"],
+            )
+            self.assertEqual(
+                manifest["context_profiles"]["decision"],
+                ["project", "blueprint_design", "active_plan"],
+            )
+            self.assertEqual(
+                manifest["context_profiles"]["develop"],
+                ["active_plan", "project", "blueprint_design"],
+            )
+            self.assertEqual(
+                manifest["context_profiles"]["finalize"],
+                [
+                    "active_plan",
+                    "project",
+                    "blueprint_index",
+                    "blueprint_background",
+                    "blueprint_design",
+                    "blueprint_tasks",
+                ],
+            )
+            self.assertEqual(manifest["context_profiles"]["history_lookup"], ["history_root"])
+            self.assertNotIn("history_root", manifest["context_profiles"]["plan"])
+            self.assertNotIn("history_root", manifest["context_profiles"]["develop"])
             self.assertEqual(manifest["default_entry"], "scripts/sopify_runtime.py")
             self.assertEqual(manifest["plan_only_entry"], "scripts/go_plan_runtime.py")
             self.assertEqual(manifest["handoff_file"], ".sopify-skills/state/current_handoff.json")
@@ -3708,7 +4110,14 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
             self.assertTrue((workspace / ".sopify-skills" / "replay" / "sessions").exists())
             self.assertTrue((workspace / ".sopify-skills" / "project.md").exists())
-            self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
+            self.assertTrue((workspace / ".sopify-skills" / "blueprint" / "README.md").exists())
+            self.assertFalse((workspace / ".sopify-skills" / "history" / "index.md").exists())
+            bundle_blueprint_readme = (workspace / ".sopify-skills" / "blueprint" / "README.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("状态: L2 plan-active", bundle_blueprint_readme)
+            self.assertIn("当前活动方案目录：`../plan/`", bundle_blueprint_readme)
+            self.assertNotIn("../history/index.md", bundle_blueprint_readme)
 
     def test_synced_runtime_bundle_supports_decision_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

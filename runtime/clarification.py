@@ -8,6 +8,7 @@ from hashlib import sha1
 import re
 from typing import Any, Mapping, Optional
 
+from .knowledge_layout import resolve_context_profile
 from .models import ClarificationState, RouteDecision, RuntimeConfig
 
 CURRENT_CLARIFICATION_FILENAME = "current_clarification.json"
@@ -101,7 +102,7 @@ def build_clarification_state(route: RouteDecision, *, config: RuntimeConfig) ->
         summary=_summary_for_language(config.language),
         questions=_questions_for_facts(missing_facts, language=config.language),
         missing_facts=tuple(missing_facts),
-        context_files=_context_files(config),
+        context_files=resolve_context_profile(config=config, profile="clarification").files,
         resume_route=route.route_name,
         request_text=route.request_text,
         requested_plan_level=route.plan_level,
@@ -381,19 +382,6 @@ def _clarification_id(request_text: str) -> str:
 def _feature_key(request_text: str) -> str:
     digest = sha1(request_text.encode("utf-8")).hexdigest()[:8]
     return f"clarification-{digest}"
-
-
-def _context_files(config: RuntimeConfig) -> tuple[str, ...]:
-    candidates = (
-        config.runtime_root / "blueprint" / "README.md",
-        config.runtime_root / "blueprint" / "tasks.md",
-        config.runtime_root / "project.md",
-    )
-    return tuple(
-        str(path.relative_to(config.workspace_root))
-        for path in candidates
-        if path.exists()
-    )
 
 
 def iso_now() -> str:

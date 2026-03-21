@@ -1,5 +1,5 @@
 <!-- bootstrap: lang=en-US; encoding=UTF-8 -->
-<!-- SOPIFY_VERSION: 2026-03-20.214138 -->
+<!-- SOPIFY_VERSION: 2026-03-21.151713 -->
 <!-- ARCHITECTURE: Adaptive Workflow + Layered Rules -->
 
 # Sopify (Sop AI) Skills - Adaptive AI Programming Assistant
@@ -212,20 +212,18 @@ Complex: Files > 5, architectural changes, new features
 ```
 .sopify-skills/
 ├── blueprint/               # Project-level long-lived blueprint, tracked by default
-│   ├── README.md            # Project entry index
+│   ├── README.md            # Pure index page with entry-level status only
 │   ├── background.md
 │   ├── design.md
 │   └── tasks.md
 ├── plan/                    # Current plans, ignored by default
 │   └── YYYYMMDD_feature/
 ├── history/                 # Completed plan archives, ignored by default
-├── wiki/                    # Project docs
-│   ├── overview.md
-│   └── modules/
+├── state/                   # Runtime state, always ignored
 ├── user/                    # User preferences and feedback
 │   ├── preferences.md
 │   └── feedback.jsonl
-├── project.md               # Technical conventions
+├── project.md               # Technical conventions, not a duplicate of background/design
 └── replay/                  # Optional replay capability, ignored by default
 ```
 
@@ -383,6 +381,9 @@ Next: Continue to solution design? (Y/n)
 Plan: .sopify-skills/plan/20260115_feature/
 Summary: {one-line technical solution}
 Tasks: {N} items
+Solution quality: {X}/10
+Implementation readiness: {Y}/10
+Scoring rationale: {1 line}
 
 ---
 Changes: 3 files
@@ -418,7 +419,7 @@ Changes: 5 files
   - src/components/xxx.vue
   - src/types/index.ts
   - src/hooks/useXxx.ts
-  - .sopify-skills/wiki/modules/xxx.md
+  - .sopify-skills/blueprint/design.md
   - .sopify-skills/history/2026-01/...
 
 Next: Please verify the functionality

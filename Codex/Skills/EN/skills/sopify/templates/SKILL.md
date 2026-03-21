@@ -5,14 +5,12 @@ description: Document template collection; read when creating docs; includes all
 
 # Document Template Collection
 
-**Template Usage:**
-1. Replace `{...}` content with actual values
-2. Keep or remove optional sections as needed
-3. Follow language settings in config file
+**Usage notes:**
+1. Replace `{...}` with actual content.
+2. Formal plan packages include the scoring block by default.
+3. `blueprint/README.md` stays as a lightweight index only.
 
----
-
-## A1 | Knowledge Base Document Templates
+## A1 | Knowledge Base Templates
 
 ### project.md
 
@@ -22,137 +20,112 @@ description: Document template collection; read when creating docs; includes all
 ## Tech Stack
 - Core: {language version} / {framework version}
 - Build: {build tool}
-- Testing: {test framework}
+- Test: {test framework}
 
-## Development Conventions
-- Code style: {reference standard or brief description}
-- Naming convention: {camelCase/snake_case etc.}
-- Directory structure: {brief description}
+## Working Agreement
+- Keep this file focused on reusable technical conventions.
+- Do not treat one-off implementation choices as project-wide rules.
 
-## Error & Logging
-- Error handling: {strategy}
-- Log format: {format requirements}
-
-## Git Standards
-- Branch strategy: {strategy}
-- Commit message: {format}
+## Document Boundaries
+- `project.md`: reusable conventions
+- `blueprint/background.md`: long-term goals, scope, non-goals
+- `blueprint/design.md`: module / host / directory / consumption contracts
+- `blueprint/tasks.md`: unfinished long-term items and explicit deferrals
 ```
 
----
-
-### wiki/overview.md
+### blueprint/README.md
 
 ```markdown
-# {Project Name}
+# Project Blueprint Index
 
-> Core project information overview. See `modules/` for detailed module docs.
+Status: {current status}
+Maintenance: keep only entry-level index rows; move long explanations into other blueprint files
 
-## Project Overview
-
-### Goals & Background
-{Brief project goals and background}
-
-### Scope
-- In scope: {core features}
-- Out of scope: {explicitly excluded}
-
-## Module Index
-
-| Module Name | Responsibility | Status | Docs |
-|-------------|----------------|--------|------|
-| {module} | {responsibility} | {status} | [link](modules/{module}.md) |
-
-## Quick Links
-- [Technical Conventions](../project.md)
-- [Change History](../history/index.md)
+| Entry | Meaning | Status |
+|-----|------|------|
+| `../project.md` | Project-level technical conventions | active |
+| `./background.md` | Long-term goals, scope, non-goals | active |
+| `./design.md` | Module / host / directory / consumption contracts | active |
+| `./tasks.md` | Unfinished long-term items and explicit deferrals | active |
+| `../plan/` | Current active plan | on-demand |
+| `../history/index.md` | Archive index | on-demand |
 ```
 
----
-
-### wiki/modules/{module}.md
+### blueprint/background.md
 
 ```markdown
-# {Module Name}
+# Blueprint Background
 
-## Purpose
-{One-line module purpose}
+## Long-Term Goals
+- {goal1}
+- {goal2}
 
-## Module Overview
-- Responsibility: {detailed responsibility}
-- Status: ✅Stable / 🚧In Development / 📝Planned
-- Last Updated: {YYYY-MM-DD}
+## Scope
+- In scope: {content}
+- Out of scope: {content}
 
-## Core Features
-
-### {Feature 1}
-{Feature description}
-
-### {Feature 2}
-{Feature description}
-
-## API Interfaces
-{If applicable}
-
-## Dependencies
-- {dependency module list}
-
-## Change History
-- [{YYYYMMDD}_feature](../../history/...) - {change summary}
+## Non-Goals
+- {content}
 ```
 
----
+### blueprint/design.md
+
+```markdown
+# Blueprint Design
+
+## Formal Contracts
+- `knowledge_sync` is the only formal sync contract.
+- `active_plan = current_plan.path + current_plan.files`.
+
+## Consumption Contract
+
+| Context Profile | Reads | Fail-open Rule | Notes |
+|-----|------|------|------|
+| `consult` | `project.md`, `preferences.md`, `blueprint/README.md` | missing deep blueprint does not fail | do not force plan materialization |
+| `plan` | `L1` + `active_plan` | materialize deep blueprint by lifecycle when missing | history is not default context |
+| `finalize` | `active_plan`, `knowledge_sync`, `blueprint/*`, `history/index.md` | create `history/index.md` on demand when missing | block when `required` sync is not satisfied |
+```
+
+### blueprint/tasks.md
+
+```markdown
+# Blueprint Tasks
+
+## Unfinished Long-Term Items
+- [ ] {long-term item}
+
+## Explicit Deferrals
+- [-] {deferred item}
+```
 
 ### history/index.md
 
 ```markdown
 # Change History Index
 
-Records all completed changes for traceability.
-
-## Index
-
-| Timestamp | Feature Name | Type | Status | Plan Package |
-|-----------|--------------|------|--------|--------------|
-| {YYYYMMDD} | {feature} | {type} | ✓ | [link](YYYY-MM/...) |
-
-## Monthly Archive
-
-### {YYYY-MM}
-- [{YYYYMMDD}_feature](...) - {description}
+| Timestamp | Feature | Status | Plan Package |
+|-----------|---------|--------|--------------|
+| {YYYYMMDD} | {feature} | ✓ | [Link](YYYY-MM/...) |
 ```
-
----
 
 ### user/preferences.md
 
 ```markdown
 # Long-Term User Preferences
 
-> Record only explicitly stated long-term preferences; do not store one-off instructions.
+> Record only explicitly stated long-term preferences. One-off instructions stay out of this file.
 
-## Preference List
-
-| ID | Category | Preference | Scope | Source Date | Status |
-|----|----------|------------|-------|-------------|--------|
-| pref-001 | Output format | Keep title concise and limit core info to 3 lines | Project-wide | 2026-01-15 | active |
-
-## Notes
-- Priority: explicit requirement in current task > preference file > default rules
-- Update policy: new preference must be restatable, verifiable, and reversible
+No confirmed long-term preferences yet.
 ```
-
----
 
 ### user/feedback.jsonl
 
 ```json
-{"timestamp":"2026-01-15T10:30:00Z","source":"chat","message":"Use a minimal change list by default next time","scope":"planning","promote_to_preference":true,"preference_id":"pref-002"}
-{"timestamp":"2026-01-15T11:10:00Z","source":"chat","message":"Make this response more detailed","scope":"current_task","promote_to_preference":false}
+{"timestamp":"2026-01-15T10:30:00Z","source":"chat","message":"Use the smallest change list by default going forward","scope":"planning","promote_to_preference":true,"preference_id":"pref-002"}
+{"timestamp":"2026-01-15T11:10:00Z","source":"chat","message":"Make the output more detailed for this task","scope":"current_task","promote_to_preference":false}
 ```
 
----
-
-## A2 | Plan File Templates
+## A2 | Plan Package Templates
 
 ### Light Level - plan.md
 
@@ -160,24 +133,28 @@ Records all completed changes for traceability.
 # {Feature Name}
 
 ## Background
-{1-2 sentences describing requirement background}
+{1-2 sentences describing the requirement background}
+
+Scoring:
+- Solution quality: {X}/10
+- Implementation readiness: {Y}/10
+
+Scoring rationale:
+- Strengths: {1 line}
+- Deductions: {1 line}
 
 ## Solution
-- {technical solution point 1}
-- {technical solution point 2}
-- {technical solution point 3}
+- {technical point 1}
+- {technical point 2}
 
 ## Tasks
-- [ ] {task 1}
-- [ ] {task 2}
-- [ ] {task 3}
+- [ ] {task1}
+- [ ] {task2}
 
 ## Changed Files
 - {file1}
 - {file2}
 ```
-
----
 
 ### Standard Level - background.md
 
@@ -185,7 +162,15 @@ Records all completed changes for traceability.
 # Change Proposal: {Feature Name}
 
 ## Requirement Background
-{Describe current state, pain points, and change drivers}
+{Describe the current state, pain points, and change drivers}
+
+Scoring:
+- Solution quality: {X}/10
+- Implementation readiness: {Y}/10
+
+Scoring rationale:
+- Strengths: {1 line}
+- Deductions: {1 line}
 
 ## Change Content
 1. {change point 1}
@@ -196,12 +181,9 @@ Records all completed changes for traceability.
 - Files: {list}
 
 ## Risk Assessment
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| {risk description} | {impact level} | {measures} |
+- Risk: {description}
+- Mitigation: {measures}
 ```
-
----
 
 ### Standard Level - design.md
 
@@ -209,24 +191,18 @@ Records all completed changes for traceability.
 # Technical Design: {Feature Name}
 
 ## Technical Solution
-- Core Technology: {language/framework/library}
-- Implementation Points:
-  - {point 1}
-  - {point 2}
+- Core technology: {language/framework/library}
+- Implementation points:
+  - {point1}
+  - {point2}
 
 ## Architecture Design
-{If architectural changes}
+{Include a mermaid diagram when the architecture changes}
 
-## Security & Performance
+## Security and Performance
 - Security: {measures}
 - Performance: {optimizations}
-
-## Testing Strategy
-- Unit tests: {scope}
-- Integration tests: {scope}
 ```
-
----
 
 ### Standard Level - tasks.md
 
@@ -235,21 +211,16 @@ Records all completed changes for traceability.
 
 Directory: `.sopify-skills/plan/{YYYYMMDD}_{feature}/`
 
-## 1. {Core Feature Module}
+## 1. {Module Name}
 - [ ] 1.1 Implement {feature} in `{file path}`
 - [ ] 1.2 Implement {feature} in `{file path}`
 
-## 2. {Supporting Features}
-- [ ] 2.1 {task description}
+## 2. Testing
+- [ ] 2.1 {test task}
 
-## 3. Testing
-- [ ] 3.1 Write {test type} tests
-
-## 4. Documentation Update
-- [ ] 4.1 Update {knowledge base file}
+## 3. Documentation Update
+- [ ] 3.1 Update `project.md / blueprint/background.md / blueprint/design.md / blueprint/tasks.md`
 ```
-
----
 
 ### Full Level - adr/{NNN}-{title}.md
 
@@ -257,36 +228,21 @@ Directory: `.sopify-skills/plan/{YYYYMMDD}_{feature}/`
 # ADR-{NNN}: {Decision Title}
 
 ## Status
-Accepted | Proposed | Deprecated
+Adopted | Pending | Deprecated
 
 ## Date
 {YYYY-MM-DD}
 
 ## Context
-{Background and problem description}
+{Background and problem statement}
 
 ## Decision
 {Core decision content}
-
-## Rationale
-{Reasons for this decision}
-
-## Alternatives
-| Option | Description | Rejection Reason |
-|--------|-------------|------------------|
-| {Option A} | {description} | {reason} |
-
-## Consequences
-- Pros: {list}
-- Cons: {list}
-- Risks: {list}
 ```
 
----
+## A3 | Task Markers
 
-## A3 | Task Status Symbols
-
-| Symbol | Meaning |
+| Marker | Meaning |
 |--------|---------|
 | `[ ]` | Pending |
 | `[x]` | Completed |

@@ -28,7 +28,7 @@ from .execution_confirm import parse_execution_confirm_response
 from .execution_gate import evaluate_execution_gate
 from .finalize import finalize_plan
 from .handoff import build_runtime_handoff
-from .kb import bootstrap_kb, ensure_blueprint_scaffold
+from .kb import bootstrap_kb, ensure_blueprint_index, ensure_blueprint_scaffold
 from .models import ClarificationState, DecisionState, ExecutionGate, KbArtifact, PlanArtifact, ReplayEvent, RouteDecision, RunState, RuntimeHandoff, RuntimeResult, SkillActivation, SkillMeta
 from .plan_scaffold import create_plan_scaffold
 from .replay import ReplayWriter, build_compare_replay_event, build_decision_replay_event
@@ -1203,6 +1203,7 @@ def _advance_planning_route(
         decision_state=confirmed_decision,
     )
     state_store.set_current_plan(plan_artifact)
+    kb_artifact = _merge_kb_artifacts(kb_artifact, ensure_blueprint_index(config), config=config)
     notes.append(f"Plan scaffold created at {plan_artifact.path}")
 
     routed_decision, plan_artifact, gate_notes = _apply_execution_gate_to_plan(

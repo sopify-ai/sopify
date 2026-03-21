@@ -24,6 +24,13 @@
 - `light`：生成 `plan.md`。
 - `standard`：生成 `background.md + design.md + tasks.md`。
 - `full`：在 standard 基础上补 `adr/` 与 `diagrams/`。
+- 正式 plan 包默认带评分区块：
+  - `light`：写入 `plan.md`
+  - `standard/full`：写入 `background.md`
+- 方案摘要也必须显式输出：
+  - `方案质量`
+  - `落地就绪`
+  - `评分理由`
 
 模板来源统一使用 `assets/` 目录：
 
@@ -47,7 +54,7 @@
 2. 辅助功能
 3. 安全检查
 4. 测试
-5. 文档更新
+5. 文档更新（`project.md / blueprint/*`）
 
 任务状态符号：
 

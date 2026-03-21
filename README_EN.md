@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![Version](https://img.shields.io/badge/version-2026--03--20.214138-orange.svg)](#version-history)
+[![Version](https://img.shields.io/badge/version-2026--03--21.151713-orange.svg)](#version-history)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 [English](./README_EN.md) · [简体中文](./README.md) · [Quick Start](#quick-start) · [Configuration](#configuration)
@@ -214,12 +214,18 @@ bash scripts/check-runtime-smoke.sh
 
 Expected result:
 
-- first run bootstraps the minimum KB skeleton:
+- on the first real-project trigger, only the minimum long-lived KB skeleton is created:
   - `.sopify-skills/project.md`
-  - `.sopify-skills/wiki/overview.md`
   - `.sopify-skills/user/preferences.md`
+  - `.sopify-skills/blueprint/README.md`
+- on the first plan lifecycle, Sopify materializes on demand:
+  - `.sopify-skills/blueprint/background.md`
+  - `.sopify-skills/blueprint/design.md`
+  - `.sopify-skills/blueprint/tasks.md`
+  - `.sopify-skills/plan/YYYYMMDD_feature/`
+- on the first explicit `~go finalize`, Sopify materializes on demand:
   - `.sopify-skills/history/index.md`
-- generate `.sopify-skills/plan/`
+  - `.sopify-skills/history/YYYY-MM/...`
 - update `.sopify-skills/state/`
 - write `.sopify-skills/replay/` only when proactive capture applies
 - print the unified Sopify summary instead of a raw structured object
@@ -265,14 +271,33 @@ This section defines the outward-facing documentation contract; runtime automati
 
 Projects integrated with Sopify follow this default documentation model:
 
+- `blueprint/README.md` is a pure index page and keeps only entry-level descriptions plus status
 - `blueprint/` is the project-level long-lived blueprint and is tracked by default
-- `plan/` is the current active plan and is local-only by default
+- `plan/` stores working plan packages and is local-only by default; only the plan bound by `current_plan.path + current_plan.files` is machine-active
 - `history/` is the finalized archive and is local-only by default
+- `state/` is runtime checkpoint / handoff state and is always ignored
 - `replay/` is an optional capability and is not part of the baseline documentation contract
 - the first Sopify trigger in a real project repository should at least land `.sopify-skills/blueprint/README.md`
 - the first plan lifecycle should then populate `blueprint/background.md / design.md / tasks.md`
 - the active plan is archived into `history/` only when explicit `~go finalize` runs the close-out transaction
 - first-version finalize only supports metadata-managed plans; legacy plans are rejected instead of being auto-migrated
+- the formal `active_plan` resolution is `current_plan.path + current_plan.files`
+- `knowledge_sync` is the only formal sync contract; `blueprint_obligation` remains legacy-only for reject / projection behavior
+
+### KB Responsibility Matrix
+
+| Path | Layer | Responsibility | Created When | Default Consumer | Git Default |
+|-----|------|------|------|------|------|
+| `.sopify-skills/blueprint/README.md` | L0 index | Project entry index and stage status | First real-project trigger | host, LLM, humans | tracked |
+| `.sopify-skills/project.md` | L1 stable | Reusable technical conventions | First bootstrap | runtime, planning, humans | tracked |
+| `.sopify-skills/blueprint/background.md` | L1 stable | Long-term goals, scope, non-goals | First plan lifecycle or `kb_init: full` | planning, humans | tracked |
+| `.sopify-skills/blueprint/design.md` | L1 stable | Module, host, directory, and consumption contracts | First plan lifecycle or `kb_init: full` | planning, develop, humans | tracked |
+| `.sopify-skills/blueprint/tasks.md` | L1 stable | Unfinished long-term items and explicit deferrals | First plan lifecycle or `kb_init: full` | finalize, humans | tracked |
+| `.sopify-skills/plan/YYYYMMDD_feature/` | L2 active | Working plan package; only the plan bound by `current_plan` is machine-active | Every formal planning run | host, develop, execution gate | ignored |
+| `.sopify-skills/history/index.md` | L3 archive | Archive lookup index only | First explicit `~go finalize` | humans | ignored |
+| `.sopify-skills/history/YYYY-MM/...` | L3 archive | Finalized plan archive | Every explicit `~go finalize` | humans, audit | ignored |
+| `.sopify-skills/state/*.json` | runtime | Handoff, checkpoint, and gate machine truth | During runtime execution | host, runtime | ignored |
+| `.sopify-skills/replay/` | optional | Replay summaries and learning records | When proactive capture applies | humans | ignored |
 
 First decision-checkpoint slice:
 
@@ -626,26 +651,24 @@ Next: ~go exec to execute or reply with feedback
 ```
 .sopify-skills/                        # Knowledge base root
 ├── blueprint/                 # Project-level long-lived blueprint, tracked by default
-│   ├── README.md              # Project entry index
-│   ├── background.md          # Long-term goals, boundaries, constraints, non-goals
-│   ├── design.md              # Module boundaries, host contracts, directory contracts
-│   └── tasks.md               # Long-term evolution items and architecture debt
-├── project.md                  # Project technical conventions
-├── wiki/
-│   ├── overview.md            # Project overview
-│   └── modules/               # Module documentation
+│   ├── README.md              # Pure index page with entry-level status only
+│   ├── background.md          # Long-term goals, scope, non-goals
+│   ├── design.md              # Module / host / directory / consumption contracts
+│   └── tasks.md               # Unfinished long-term items and explicit deferrals
+├── project.md                 # Project technical conventions (not a duplicate of background/design)
 ├── user/
 │   ├── preferences.md         # Long-term user preferences
 │   └── feedback.jsonl         # Raw feedback events
-├── plan/                       # Current active plans, ignored by default
+├── plan/                      # Current active plans, ignored by default
 │   └── YYYYMMDD_feature/
 │       ├── background.md      # Requirement background (formerly why.md)
 │       ├── design.md          # Technical design (formerly how.md)
 │       └── tasks.md           # Task list (formerly task.md)
-├── history/                    # Finalized archives, ignored by default
+├── history/                   # Finalized archives, ignored by default
 │   ├── index.md
 │   └── YYYY-MM/
-└── replay/                     # Optional replay capability, ignored by default
+├── state/                     # Runtime state, always ignored
+└── replay/                    # Optional replay capability, ignored by default
 ```
 
 Default Git strategy:

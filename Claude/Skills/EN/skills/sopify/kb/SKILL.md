@@ -3,176 +3,136 @@ name: kb
 description: Knowledge base management skill; read during KB operations; includes init, update, sync strategies
 ---
 
-# Knowledge Base Management - Detailed Rules
+# Knowledge Base Management - V2 Rules
 
-**Goal:** Manage project knowledge base, keep docs in sync with code
-
-**Knowledge Base Directory:** `.sopify-skills/`
-
----
+**Goal:** manage the V2 layers in `.sopify-skills/` so long-lived knowledge, the active plan, and finalized archives stay clearly separated.
 
 ## Knowledge Base Structure
 
-```
+```text
 .sopify-skills/
+├── blueprint/
+│   ├── README.md           # Pure index page with entry-level status only
+│   ├── background.md       # Long-term goals, scope, non-goals
+│   ├── design.md           # Module / host / directory / consumption contracts
+│   └── tasks.md            # Unfinished long-term items and explicit deferrals
 ├── project.md              # Project technical conventions
-├── wiki/
-│   ├── overview.md         # Project overview
-│   ├── arch.md             # Architecture design (optional)
-│   ├── api.md              # API reference (optional)
-│   ├── data.md             # Data models (optional)
-│   └── modules/            # Module documentation
-│       └── {module}.md
 ├── user/
 │   ├── preferences.md      # Long-term user preferences
 │   └── feedback.jsonl      # Raw feedback events
-├── plan/                   # Current plans
-│   └── YYYYMMDD_feature/
-└── history/                # Historical plans
-    ├── index.md            # Index
-    └── YYYY-MM/
-        └── YYYYMMDD_feature/
+├── plan/
+│   └── YYYYMMDD_feature/   # Current active plan
+├── history/
+│   ├── index.md            # Archive index
+│   └── YYYY-MM/
+└── state/                  # Runtime machine truth
 ```
 
----
+## Initialization Strategy
 
-## Initialization Strategies
+### Full mode (`kb_init: full`)
 
-### Full Mode (kb_init: full)
+Create on the first bootstrap:
 
-Create all template files at once:
 ```yaml
-Create files:
+Create:
   - .sopify-skills/project.md
-  - .sopify-skills/wiki/overview.md
-  - .sopify-skills/wiki/arch.md
-  - .sopify-skills/wiki/api.md
-  - .sopify-skills/wiki/data.md
   - .sopify-skills/user/preferences.md
   - .sopify-skills/user/feedback.jsonl
-  - .sopify-skills/wiki/modules/.gitkeep
-  - .sopify-skills/plan/.gitkeep
-  - .sopify-skills/history/index.md
-```
-
-### Progressive Mode (kb_init: progressive) [Default]
-
-Create files as needed:
-```yaml
-Initial setup:
-  - .sopify-skills/project.md (required)
-  - .sopify-skills/wiki/overview.md
-  - .sopify-skills/user/preferences.md (an empty file may exist first; real preferences are written only after explicit long-term statements)
-  - .sopify-skills/history/index.md
-
-First plan:
-  - .sopify-skills/plan/ directory
-
-First module documentation:
-  - .sopify-skills/wiki/modules/{module}.md
-
-First API documentation:
-  - .sopify-skills/wiki/api.md
-
-First data model documentation:
-  - .sopify-skills/wiki/data.md
-
-First explicit "long-term preference" statement:
-  - .sopify-skills/user/feedback.jsonl
+  - .sopify-skills/blueprint/README.md
+  - .sopify-skills/blueprint/background.md
+  - .sopify-skills/blueprint/design.md
+  - .sopify-skills/blueprint/tasks.md
 ```
 
 Notes:
-- The current runtime already lands a minimum KB bootstrap, so `project.md / overview.md / preferences.md / history/index.md` are created on the first run
-- `preferences.md` may be created as an empty skeleton first, but actual preferences should still be written only for explicit long-term statements
 
----
+- Do not pre-create `plan/` content.
+- Do not pre-create `history/index.md` or any archive.
 
-## Project Context Acquisition
+### Progressive mode (`kb_init: progressive`) [default]
 
-**Acquisition Flow:**
-```
-1. Check if .sopify-skills/ exists
-2. Exists → Read knowledge base files
-3. Doesn't exist or insufficient → Scan code
-```
+Materialize by lifecycle:
 
-**Code Scanning Strategy:**
 ```yaml
-Tech stack identification:
-  - package.json → Node/Frontend project
-  - requirements.txt / pyproject.toml → Python project
-  - go.mod → Go project
-  - Cargo.toml → Rust project
-  - pom.xml / build.gradle → Java project
+First real-project trigger:
+  - .sopify-skills/project.md
+  - .sopify-skills/user/preferences.md
+  - .sopify-skills/blueprint/README.md
 
-Project structure:
-  - src/ directory structure
-  - Config file locations
-  - Test directory locations
+First plan lifecycle:
+  - .sopify-skills/blueprint/background.md
+  - .sopify-skills/blueprint/design.md
+  - .sopify-skills/blueprint/tasks.md
+  - .sopify-skills/plan/YYYYMMDD_feature/
 
-Key modules:
-  - Entry files
-  - Core business modules
-  - Common utility modules
+First explicit ~go finalize:
+  - .sopify-skills/history/index.md
+  - .sopify-skills/history/YYYY-MM/YYYYMMDD_feature/
+
+First explicit long-term preference:
+  - .sopify-skills/user/feedback.jsonl
 ```
 
----
+## Read Order
+
+1. `project.md`
+2. `user/preferences.md`
+3. `blueprint/README.md`
+4. `blueprint/background.md`
+5. `blueprint/design.md`
+6. `blueprint/tasks.md`
+7. `active_plan = current_plan.path + current_plan.files`
+
+Rules:
+
+- consult / clarification routes prefer `L0/L1` and must not require deep blueprint files
+- planning / develop may enter `L2 active plan`
+- `history/` is not the default long-lived context source; read it only for finalize lookups or human traceability
 
 ## Update Rules
 
-### When to Update Knowledge Base
+### Must update
+
+- `project.md`: reusable technical conventions changed
+- `blueprint/background.md`: long-term goals, scope, or non-goals changed
+- `blueprint/design.md`: module, host, directory, or consumption contracts changed
+- `blueprint/tasks.md`: unfinished long-term items or explicit deferrals changed
+- `user/preferences.md`: the user explicitly stated a long-term preference
+
+### Must not be written into long-lived knowledge
+
+- one-off implementation details
+- short-term task breakdown from the current plan
+- temporary tradeoffs that belong only to this task
+- copying history body text back into blueprint
+
+## `knowledge_sync` Sync Contract
 
 ```yaml
-Must update:
-  - New module added
-  - Module responsibility changed
-  - API interface changed
-  - Data model changed
-  - Technical convention changed
-  - User explicitly states a long-term preference (e.g. "use this by default")
-
-No update needed:
-  - Bug fixes (no interface changes)
-  - Internal implementation optimization
-  - Code formatting adjustments
-  - One-off temporary requests (not long-term preference)
+knowledge_sync:
+  project: skip|review|required
+  background: skip|review|required
+  design: skip|review|required
+  tasks: skip|review|required
 ```
 
-### Update Priority
+Execution rules:
 
-```yaml
-1. Documentation tasks marked in tasks.md
-2. Module docs for changed code
-3. Overall architecture description (if architectural changes)
-```
-
----
+- `skip`: no sync required for this round
+- `review`: at least review before finalize
+- `required`: finalize must block until updated
 
 ## Conflict Handling
 
-**When code conflicts with docs:**
-```yaml
-Principle: Code is the single source of truth
-Handling:
-  1. Defer to actual code behavior
-  2. Update docs to match code
-  3. Mark update timestamp
-```
-
-**When task requirements conflict with preferences:**
-```yaml
-Priority:
-  1. Explicit requirement in the current task
-  2. Long-term preference in user/preferences.md
-  3. Default rules
-```
-
----
+- code vs docs: code is the source of truth, then update docs
+- current task vs long-term preference: current explicit task > `user/preferences.md` > default rules
 
 ## Output Format
 
-**Initialization Complete:**
-```
+**Initialization complete:**
+
+```text
 [{BRAND_NAME}] Knowledge Base Init ✓
 
 Created: {N} files
@@ -181,38 +141,24 @@ Strategy: {full/progressive}
 ---
 Changes: {N} files
   - .sopify-skills/project.md
-  - .sopify-skills/wiki/overview.md
+  - .sopify-skills/blueprint/README.md
   - ...
 
-Next: Knowledge base ready
+Next: KB is ready
 ```
 
-**Sync Complete:**
-```
+**Sync complete:**
+
+```text
 [{BRAND_NAME}] Knowledge Base Sync ✓
 
 Updated: {N} files
 
 ---
 Changes: {N} files
-  - .sopify-skills/wiki/modules/xxx.md
+  - .sopify-skills/project.md
+  - .sopify-skills/blueprint/design.md
   - ...
 
-Next: Documentation updated
-```
-
----
-
-## Quick Decision Tree
-
-```
-Need project context?
-    │
-    ├─ .sopify-skills/ exists?
-    │   ├─ Yes → Read knowledge base files
-    │   └─ No → Scan code + Ask if init needed
-    │
-    └─ Sufficient info?
-        ├─ Yes → Return context
-        └─ No → Additional code scanning
+Next: Docs updated
 ```

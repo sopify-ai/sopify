@@ -6,6 +6,82 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-03-21.151713] - 2026-03-21
+
+### Changed
+
+- Updated release-relevant files:
+  - `.sopify-skills/blueprint/README.md`
+  - `.sopify-skills/blueprint/background.md`
+  - `.sopify-skills/blueprint/design.md`
+  - `.sopify-skills/blueprint/tasks.md`
+  - `.sopify-skills/project.md`
+  - `.sopify-skills/wiki/overview.md`
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/CN/skills/sopify/design/SKILL.md`
+  - `Claude/Skills/CN/skills/sopify/design/assets/background-template.md`
+  - `Claude/Skills/CN/skills/sopify/design/assets/output-summary.md`
+  - `Claude/Skills/CN/skills/sopify/design/assets/plan-light-template.md`
+  - `Claude/Skills/CN/skills/sopify/design/assets/tasks-template.md`
+  - `Claude/Skills/CN/skills/sopify/design/references/design-rules.md`
+  - `Claude/Skills/CN/skills/sopify/develop/SKILL.md`
+  - `Claude/Skills/CN/skills/sopify/develop/assets/output-success.md`
+  - `Claude/Skills/CN/skills/sopify/develop/references/develop-rules.md`
+  - `Claude/Skills/CN/skills/sopify/kb/SKILL.md`
+  - `Claude/Skills/CN/skills/sopify/templates/SKILL.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Claude/Skills/EN/skills/sopify/design/SKILL.md`
+  - `Claude/Skills/EN/skills/sopify/design/assets/background-template.md`
+  - `Claude/Skills/EN/skills/sopify/design/assets/output-summary.md`
+  - `Claude/Skills/EN/skills/sopify/design/assets/plan-light-template.md`
+  - `Claude/Skills/EN/skills/sopify/design/assets/tasks-template.md`
+  - `Claude/Skills/EN/skills/sopify/design/references/design-rules.md`
+  - `Claude/Skills/EN/skills/sopify/develop/SKILL.md`
+  - `Claude/Skills/EN/skills/sopify/develop/assets/output-success.md`
+  - `Claude/Skills/EN/skills/sopify/develop/references/develop-rules.md`
+  - `Claude/Skills/EN/skills/sopify/kb/SKILL.md`
+  - `Claude/Skills/EN/skills/sopify/templates/SKILL.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/CN/skills/sopify/design/SKILL.md`
+  - `Codex/Skills/CN/skills/sopify/design/assets/background-template.md`
+  - `Codex/Skills/CN/skills/sopify/design/assets/output-summary.md`
+  - `Codex/Skills/CN/skills/sopify/design/assets/plan-light-template.md`
+  - `Codex/Skills/CN/skills/sopify/design/assets/tasks-template.md`
+  - `Codex/Skills/CN/skills/sopify/design/references/design-rules.md`
+  - `Codex/Skills/CN/skills/sopify/develop/assets/output-success.md`
+  - `Codex/Skills/CN/skills/sopify/develop/references/develop-rules.md`
+  - `Codex/Skills/CN/skills/sopify/kb/SKILL.md`
+  - `Codex/Skills/CN/skills/sopify/templates/SKILL.md`
+  - `Codex/Skills/EN/AGENTS.md`
+  - `Codex/Skills/EN/skills/sopify/design/SKILL.md`
+  - `Codex/Skills/EN/skills/sopify/design/assets/background-template.md`
+  - `Codex/Skills/EN/skills/sopify/design/assets/output-summary.md`
+  - `Codex/Skills/EN/skills/sopify/design/assets/plan-light-template.md`
+  - `Codex/Skills/EN/skills/sopify/design/assets/tasks-template.md`
+  - `Codex/Skills/EN/skills/sopify/design/references/design-rules.md`
+  - `Codex/Skills/EN/skills/sopify/develop/assets/output-success.md`
+  - `Codex/Skills/EN/skills/sopify/develop/references/develop-rules.md`
+  - `Codex/Skills/EN/skills/sopify/kb/SKILL.md`
+  - `Codex/Skills/EN/skills/sopify/templates/SKILL.md`
+  - `README.md`
+  - `README_EN.md`
+  - `runtime/clarification.py`
+  - `runtime/decision.py`
+  - `runtime/engine.py`
+  - `runtime/execution_gate.py`
+  - `runtime/finalize.py`
+  - `runtime/kb.py`
+  - `runtime/knowledge_layout.py`
+  - `runtime/knowledge_sync.py`
+  - `runtime/manifest.py`
+  - `runtime/plan_scaffold.py`
+  - `scripts/check-runtime-smoke.sh`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_runtime.py`
+
 ## [2026-03-20.214138] - 2026-03-20
 
 ### Changed

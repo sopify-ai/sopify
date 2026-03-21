@@ -2,13 +2,13 @@
 
 ## Goal
 
-Implement the task list, maintain task state, sync the knowledge base, and finish plan migration.
+Implement the task list, maintain task state, sync V2 long-lived knowledge through `knowledge_sync`, and archive the plan.
 
 ## Overall flow
 
 1. Read the task list.
 2. Execute tasks and update markers.
-3. Sync KB and preference data.
+3. Sync KB and preference data through `knowledge_sync`.
 4. Move the completed plan into `history/`.
 5. Render the execution summary.
 
@@ -56,11 +56,18 @@ Sync timing:
 
 Sync targets:
 
-- `wiki/modules/{module}.md`
-- `wiki/overview.md`
 - `project.md`
+- `blueprint/background.md`
+- `blueprint/design.md`
+- `blueprint/tasks.md`
 - `user/preferences.md` (long-term preferences only)
 - `user/feedback.jsonl`
+
+Formal rule:
+
+- `knowledge_sync.skip`: no sync required
+- `knowledge_sync.review`: at least review before finalize
+- `knowledge_sync.required`: finalize must block until updated
 
 Conservative preference writes:
 
@@ -83,7 +90,7 @@ Migration path:
   -> .sopify-skills/history/YYYY-MM/YYYYMMDD_feature/
 ```
 
-Update `.sopify-skills/history/index.md` with a new record.
+Create and update `.sopify-skills/history/index.md` on demand during the first explicit finalize.
 
 ## Output templates
 

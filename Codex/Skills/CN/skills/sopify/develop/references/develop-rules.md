@@ -2,13 +2,13 @@
 
 ## 目标
 
-按任务清单实施开发，维护任务状态，同步知识库并完成方案迁移。
+按任务清单实施开发，维护任务状态，按 `knowledge_sync` 同步 V2 长期知识，并完成方案归档。
 
 ## 总流程
 
 1. 读取任务清单。
 2. 执行任务并更新状态。
-3. 同步知识库与偏好信息。
+3. 按 `knowledge_sync` 同步知识库与偏好信息。
 4. 迁移方案包到 `history/`。
 5. 输出执行结果摘要。
 
@@ -56,11 +56,18 @@
 
 同步目标：
 
-- `wiki/modules/{module}.md`
-- `wiki/overview.md`
 - `project.md`
+- `blueprint/background.md`
+- `blueprint/design.md`
+- `blueprint/tasks.md`
 - `user/preferences.md`（仅长期偏好）
 - `user/feedback.jsonl`
+
+正式判断口径：
+
+- `knowledge_sync.skip`：本轮不要求同步。
+- `knowledge_sync.review`：finalize 前至少复核。
+- `knowledge_sync.required`：未更新则 finalize 阻断。
 
 偏好写入（保守策略）：
 
@@ -83,7 +90,7 @@
   -> .sopify-skills/history/YYYY-MM/YYYYMMDD_feature/
 ```
 
-索引更新：在 `.sopify-skills/history/index.md` 新增一行记录。
+索引更新：在首次显式 finalize 时按需创建并更新 `.sopify-skills/history/index.md`。
 
 ## 输出模板
 

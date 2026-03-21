@@ -22,6 +22,7 @@ from .entry_guard import (
 from .clarification import CURRENT_CLARIFICATION_RELATIVE_PATH
 from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
+from .knowledge_layout import CONTEXT_PROFILES, KB_LAYOUT_VERSION, KNOWLEDGE_PATHS
 from .preferences import PREFERENCES_PRELOAD_STATUSES
 from .router import SUPPORTED_ROUTE_NAMES, build_runtime_first_hints
 from .state import iso_now
@@ -52,6 +53,9 @@ class BundleManifest:
         schema_version: str,
         bundle_version: str,
         generated_at: str,
+        kb_layout_version: str,
+        knowledge_paths: Mapping[str, str],
+        context_profiles: Mapping[str, tuple[str, ...] | list[str]],
         default_entry: str,
         plan_only_entry: str,
         supported_routes: tuple[str, ...],
@@ -65,6 +69,9 @@ class BundleManifest:
         self.schema_version = schema_version
         self.bundle_version = bundle_version
         self.generated_at = generated_at
+        self.kb_layout_version = kb_layout_version
+        self.knowledge_paths = dict(knowledge_paths)
+        self.context_profiles = {name: tuple(entries) for name, entries in context_profiles.items()}
         self.default_entry = default_entry
         self.plan_only_entry = plan_only_entry
         self.supported_routes = supported_routes
@@ -80,6 +87,9 @@ class BundleManifest:
             "schema_version": self.schema_version,
             "bundle_version": self.bundle_version,
             "generated_at": self.generated_at,
+            "kb_layout_version": self.kb_layout_version,
+            "knowledge_paths": dict(self.knowledge_paths),
+            "context_profiles": {name: list(entries) for name, entries in self.context_profiles.items()},
             "default_entry": self.default_entry,
             "plan_only_entry": self.plan_only_entry,
             "supported_routes": list(self.supported_routes),
@@ -116,6 +126,9 @@ def build_bundle_manifest(
             explicit_version=bundle_version,
         ),
         generated_at=iso_now(),
+        kb_layout_version=KB_LAYOUT_VERSION,
+        knowledge_paths=_knowledge_paths(),
+        context_profiles=_context_profiles(),
         default_entry=DEFAULT_ENTRY,
         plan_only_entry=PLAN_ONLY_ENTRY,
         supported_routes=SUPPORTED_ROUTE_NAMES,
@@ -230,6 +243,14 @@ def build_bundle_manifest(
             ],
         },
     )
+
+
+def _knowledge_paths() -> dict[str, str]:
+    return dict(KNOWLEDGE_PATHS)
+
+
+def _context_profiles() -> dict[str, list[str]]:
+    return {name: list(entries) for name, entries in CONTEXT_PROFILES.items()}
 
 
 def write_bundle_manifest(

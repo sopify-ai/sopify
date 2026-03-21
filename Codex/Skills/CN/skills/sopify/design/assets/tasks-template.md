@@ -10,4 +10,4 @@
 - [ ] 2.1 {测试任务}
 
 ## 3. 文档更新
-- [ ] 3.1 更新 {知识库文件}
+- [ ] 3.1 更新 `project.md / blueprint/background.md / blueprint/design.md / blueprint/tasks.md`

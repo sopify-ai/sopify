@@ -74,9 +74,13 @@ DECISION_BRIDGE_ENTRY="$BUNDLE_ROOT/scripts/decision_bridge_runtime.py"
 DEVELOP_CHECKPOINT_ENTRY="$BUNDLE_ROOT/scripts/develop_checkpoint_runtime.py"
 REPLAY_DIR="$WORK_DIR/.sopify-skills/replay/sessions"
 PROJECT_FILE="$WORK_DIR/.sopify-skills/project.md"
-OVERVIEW_FILE="$WORK_DIR/.sopify-skills/wiki/overview.md"
+BLUEPRINT_INDEX="$WORK_DIR/.sopify-skills/blueprint/README.md"
+BLUEPRINT_BACKGROUND="$WORK_DIR/.sopify-skills/blueprint/background.md"
+BLUEPRINT_DESIGN="$WORK_DIR/.sopify-skills/blueprint/design.md"
+BLUEPRINT_TASKS="$WORK_DIR/.sopify-skills/blueprint/tasks.md"
 PREFERENCES_FILE="$WORK_DIR/.sopify-skills/user/preferences.md"
 HISTORY_INDEX="$WORK_DIR/.sopify-skills/history/index.md"
+WIKI_OVERVIEW="$WORK_DIR/.sopify-skills/wiki/overview.md"
 
 if [[ ! -d "$PLAN_DIR" ]]; then
   echo "Smoke check failed: missing plan directory: $PLAN_DIR" >&2
@@ -123,12 +127,28 @@ if [[ ! -d "$REPLAY_DIR" ]]; then
   exit 1
 fi
 
-for file in "$PROJECT_FILE" "$OVERVIEW_FILE" "$PREFERENCES_FILE" "$HISTORY_INDEX"; do
+for file in \
+  "$PROJECT_FILE" \
+  "$BLUEPRINT_INDEX" \
+  "$BLUEPRINT_BACKGROUND" \
+  "$BLUEPRINT_DESIGN" \
+  "$BLUEPRINT_TASKS" \
+  "$PREFERENCES_FILE"; do
   if [[ ! -f "$file" ]]; then
     echo "Smoke check failed: missing KB bootstrap file: $file" >&2
     exit 1
   fi
 done
+
+if [[ -f "$WIKI_OVERVIEW" ]]; then
+  echo "Smoke check failed: legacy wiki overview should not be created: $WIKI_OVERVIEW" >&2
+  exit 1
+fi
+
+if [[ -f "$HISTORY_INDEX" ]]; then
+  echo "Smoke check failed: history index should not exist before explicit finalize: $HISTORY_INDEX" >&2
+  exit 1
+fi
 
 if ! grep -q '"runtime_entry_guard": true' "$MANIFEST_FILE"; then
   echo "Smoke check failed: manifest is missing runtime_entry_guard capability: $MANIFEST_FILE" >&2

@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from .decision_policy import match_decision_policy, should_trigger_decision_policy
 from .decision_templates import PRIMARY_OPTION_FIELD_ID, build_strategy_pick_template
+from .knowledge_layout import resolve_context_profile
 from .models import (
     DecisionOption,
     DecisionSelection,
@@ -83,7 +84,8 @@ def build_decision_state(route: RouteDecision, *, config: RuntimeConfig) -> Deci
         recommended_option_id=recommended_option_id,
         default_option_id=default_option_id,
     )
-    context_files = tuple(dict.fromkeys((*_context_files(config), *match.context_files)))
+    selection = resolve_context_profile(config=config, profile="decision")
+    context_files = tuple(dict.fromkeys((*selection.files, *match.context_files)))
 
     return DecisionState(
         schema_version="2",
@@ -151,7 +153,11 @@ def build_execution_gate_decision_state(
         checkpoint=rendered.checkpoint,
         recommended_option_id=rendered.recommended_option_id,
         default_option_id=rendered.default_option_id,
-        context_files=(current_plan.path, *current_plan.files),
+        context_files=resolve_context_profile(
+            config=config,
+            profile="decision",
+            current_plan=current_plan,
+        ).files,
         resume_route=route.route_name,
         request_text=route.request_text,
         requested_plan_level=current_plan.level,
@@ -326,19 +332,6 @@ def _feature_key(request_text: str) -> str:
     if not normalized:
         return "decision"
     return normalized[:48].rstrip("-")
-
-
-def _context_files(config: RuntimeConfig) -> tuple[str, ...]:
-    candidates = (
-        config.runtime_root / "project.md",
-        config.runtime_root / "blueprint" / "README.md",
-        config.runtime_root / "wiki" / "overview.md",
-    )
-    found: list[str] = []
-    for candidate in candidates:
-        if candidate.exists():
-            found.append(str(candidate.relative_to(config.workspace_root)))
-    return tuple(found)
 
 
 def _summary_for_language(language: str) -> str:

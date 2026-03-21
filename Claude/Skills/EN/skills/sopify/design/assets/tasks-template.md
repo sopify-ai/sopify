@@ -10,4 +10,4 @@ Directory: `.sopify-skills/plan/YYYYMMDD_{feature}/`
 - [ ] 2.1 {test task}
 
 ## 3. Documentation Update
-- [ ] 3.1 Update {knowledge base file}
+- [ ] 3.1 Update `project.md / blueprint/background.md / blueprint/design.md / blueprint/tasks.md`

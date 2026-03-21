@@ -1,173 +1,37 @@
-# 文档治理蓝图背景
+# 知识布局 V2 蓝图背景
 
-状态: 文档已收口，部分已实现
-创建日期: 2026-03-17
+状态: 已与 runtime V2 目录契约对齐
 
-## 需求背景
+## 背景
 
-当前 Sopify 已具备以下基础能力：
+Sopify 的知识资产已经从“散落的文档集合”收敛为固定分层：
 
-- runtime 可在项目内生成最小知识库与活动 plan
-- `plan/`、`history/`、`state/`、`replay/` 均已有基本约定
-- 宿主可通过 vendored runtime 进入 plan / develop / compare / replay 等链路
+1. `L0 index`: `blueprint/README.md`
+2. `L1 stable`: `project.md + blueprint/{background,design,tasks}`
+3. `L2 active`: `plan/YYYYMMDD_feature/`
+4. `L3 archive`: `history/index.md + history/YYYY-MM/...`
+5. `runtime`: `state/*.json + replay/`
 
-但当前文档资产仍存在明显断层：
+本轮的目标不是再引入新层，而是把对外文档、skills、templates 与 runtime 的世界观一次性切到同一套 V2 口径。
 
-1. 仓库内长期蓝图与单次 plan 的职责边界不稳定
-2. `CHANGELOG` 更适合发布记录，不适合沉淀长期架构真相
-3. 下游项目即使接入 Sopify，也缺一个默认存在、可快速理解项目的全局入口索引
-4. 文档更新更多依赖语义触发和人工记忆，缺少稳定的生命周期收口点
-5. `plan` 与 `history` 的落点、时机、是否进 git 目前没有统一默认策略
-6. 普通开发请求与 `~go` 主链路在生成 plan 后停点偏早，容易让用户误以为还必须记住 `~go exec`
-7. “plan 已生成”与“plan 已可执行”当前没有被清晰区分，缺少统一的机器执行门禁与执行前确认
+## 主要问题
 
-## 当前 runtime 基线
+旧口径存在以下问题：
 
-本蓝图已吸收原 `20260313_sopify_runtime_blueprint` 的有效结论，后续不再双维护旧目录。
+1. 仍把 `wiki/*` 作为默认长期知识结构，对外说明与 runtime 实现不一致。
+2. `blueprint/README.md` 容易膨胀成长说明书，不再像入口索引。
+3. plan 输出没有把评分块固定为默认结构，方案评审口径不稳定。
+4. `blueprint_obligation` 仍在部分文档中被当成主要概念，和 `knowledge_sync` 的正式语义冲突。
 
-当前 runtime 的已收口基线是：
+## 本轮目标
 
-- 最小对外 runtime 发布切片仍是 `runtime-backed ~go plan`
-- 当前默认 repo-local 原始输入入口是 `scripts/sopify_runtime.py`
-- `scripts/go_plan_runtime.py` 仅保留为 plan-only helper
-- runtime 已可写入 `plan / state / current_handoff`
-- 最小 KB bootstrap 已落地，当前最小文件集包括：
-  - `project.md`
-  - `wiki/overview.md`
-  - `user/preferences.md`
-  - `history/index.md`
-- `workflow-learning` 的 replay 能力仍保留为可选扩展，不纳入基础文档治理契约；但 runtime replay 摘要已能记录 decision / compare 的关键结论
-- metadata-managed plan 的 `~go finalize -> history` 收口归档已落地
-- `~compare` 仍依赖宿主专用桥接，但 handoff 已可输出 `compare_decision_contract` facade，clarification 也已可输出 `clarification_form`；二者都复用同一套“默认入口不变”的桥接原则
+1. 切掉旧 `wiki/*` 主结构描述，不再对外承诺双轨。
+2. 把 `blueprint/README.md` 收缩成纯索引页。
+3. 用 `knowledge_sync` 固定 finalize 前的长期知识同步责任。
+4. 把“方案质量 / 落地就绪 / 评分理由”固定纳入正式 plan 包输出。
 
-当前不变的工程原则：
+## 非目标
 
-- 默认无配置也能跑主路径
-- 命令路由、状态落盘、最小上下文恢复优先代码化
-- 禁止全量自动加载 `.sopify-skills/`
-- 先收口核心流程，再考虑外围产品层
-
-## 宿主偏好预载入要解决的问题
-
-当前 `user/preferences.md` 已经是最小 KB bootstrap 的标准文件，但它仍然只是“长期偏好存储位”，还不是稳定的 LLM 输入源。
-
-这会带来四个直接问题：
-
-1. 即使偏好已经写入文件，宿主若不主动读取，LLM 本轮仍可能完全看不到
-2. `preferences.md` 的真实路径受 `workspace_root + plan.directory` 共同决定，若宿主硬编码默认路径，配置变更后就会失效
-3. 长期偏好属于 workspace-scope 协作规则，而不是 active-flow runtime state；若直接混入 `RecoveredContext`，会污染上下文层级语义
-4. 偏好缺失或文件异常不应阻断主链路，否则会把“协作风格”错误升级为“执行门禁”
-
-因此，`preferences-preload-v1` 的第一目标不是做更复杂的偏好系统，而是：
-
-- 让宿主在每次进入 Sopify 前稳定尝试读取当前工作区的 `preferences.md`
-- 让偏好以固定优先级进入 LLM，而不是依赖人工记忆
-- 保持 `fail-open with visibility`，缺失偏好不打断主链路
-- 不改变 runtime 主链路、不新增 checkpoint、也不扩大 `.sopify-skills/` 的自动加载范围
-
-## 目标
-
-### 1. 零配置开箱即用
-
-- 用户不需要增加额外配置、开关或 commit hook
-- 首次触发 Sopify 时，只要当前目录是“真实项目仓库”，就能自动建立项目入口索引
-
-### 2. 统一文档分层
-
-- `blueprint/` 负责项目级长期真相
-- `plan/` 负责当前活动方案
-- `history/` 负责收口后的归档
-- `replay/` 保持为可选能力，不纳入基础治理契约
-
-### 3. 工程化约束优先
-
-- 用固定生命周期和机器字段约束文档更新
-- 尽量避免“模型自己判断应该写什么”的纯语义化触发
-
-### 4. 支持后续决策确认能力
-
-- 设计阶段若出现多方案分叉，应能先进入决策确认，再生成唯一正式 plan
-- 决策结果能稳定落到 plan 与 blueprint，而不是散落在聊天上下文中
-
-### 5. 主链路默认自动推进，但代码执行前仍有人类确认
-
-- 普通开发请求与 `~go` 应自动推进到“执行前确认”这一关
-- `~go plan` 明确只到 plan，不进入执行确认
-- `~go exec` 只作为恢复、调试、高级显式入口
-- 任何代码执行前，都应先通过机器执行门禁，再由用户确认继续
-
-## 决策确认能力要解决的问题
-
-当前设计阶段还缺一段明确的“用户拍板”链路，导致以下问题会反复出现：
-
-1. 多个可行方案经常只在聊天里比较，没有稳定状态落盘
-2. plan 若在用户确认前就生成，后续改向会带来 plan 抖动与任务重排
-3. 设计层面的长期契约选择，不能复用 `analyze` 阶段的 `auto_decide`
-4. 下游宿主未必具备复杂 UI，决策确认必须同时支持交互式选择与纯文本回退
-5. 用户自由输入应被完整记录到 plan，但不应直接污染 blueprint 这类长期索引
-
-因此，决策确认能力的第一目标不是“让 AI 自动替用户拍板”，而是：
-
-- 在真正需要用户拍板时稳定暂停
-- 用结构化状态保留候选方案与推荐项
-- 在确认后只生成一份正式 plan
-- 让长期结论在收口时再按规则进入 blueprint
-
-## 执行门禁要解决的问题
-
-当前主链路如果只根据“plan 文件已经写出来”就进入 develop，会留下两个明显问题：
-
-1. plan 可能仍缺关键事实信息，此时应继续澄清，而不是执行
-2. plan 可能仍存在长期契约分叉或未消解风险，此时应先进入决策确认，而不是执行
-3. 即便机器判断 plan 已可执行，代码真正落地前仍应由用户做一次轻量确认
-
-因此，第二阶段的目标不是“让 runtime 自动写代码”，而是：
-
-- 先用机器规则判断当前 plan 是否达到可执行状态
-- 若未达到，则稳定分流到 `clarification_pending` 或 `decision_pending`
-- 若达到，则进入统一的执行前确认，而不是直接进入 develop
-
-## 范围
-
-### 范围内
-
-- `.sopify-skills/blueprint/` 的正式目录与模板
-- `plan -> 收口 -> history` 的生命周期规则
-- `blueprint/README.md` 作为项目全局索引的强约束模板
-- 首次触发与首次进入 plan 生命周期时的默认文档行为
-- 与 decision checkpoint 的衔接规则
-- 主链路的机器执行门禁、执行前用户确认与高级恢复入口边界
-
-### 范围外
-
-- 不在本轮实现新的用户配置项
-- 不在本轮依赖 commit 阶段强校验
-- 不在本轮让 `history/` 或 `replay/` 成为默认入库资产
-- 不在本轮引入多份 draft plan 或并发 plan 模型
-
-## 关键约束
-
-- 必须保持当前“单活动 plan”模型，避免新增复杂目录层级
-- 必须适配接入 Sopify 的下游项目，不能只为当前源仓库定制
-- 必须允许用户保留对 `.gitignore` 的自主修改权，但默认行为应自洽
-- `blueprint/README.md` 要可被人和 LLM 快速扫描，不能退化成冗长设计文档
-
-## 成功标准
-
-满足以下条件，可认为文档治理闭环成立：
-
-1. 首次触发 Sopify 时，真实项目仓库会自动得到 `blueprint/README.md`
-2. 首次进入 plan 生命周期时，项目会补齐完整 `blueprint/` 骨架
-3. 当前任务只维护一份活动 plan，不产生额外草稿目录
-4. 任务收口时能稳定刷新 README 索引区块，并在需要时同步深层 blueprint
-5. 任务收口后能归档到 `history/`，同时更新索引
-6. 决策确认能力后续可直接复用这套文档与状态契约
-
-若进一步细化到决策确认能力本身，还应满足：
-
-7. design 多方案分叉时，能在正式 plan 生成前进入明确的 pending decision 状态
-8. 用户确认结果会完整写入 plan，但 blueprint 只保留稳定长期结论
-9. 中断后再次进入同一仓库时，宿主能恢复未完成的 decision checkpoint，而不是重新丢给模型猜测
-10. 普通开发请求与 `~go` 默认自动推进到执行前确认，而不是要求普通用户记住 `~go exec`
-11. 只有当 plan 通过机器执行门禁时，才允许进入执行确认
-12. `~go exec` 只作为恢复/调试入口，不能绕过决策确认或执行前确认
+- 不新增新的知识层。
+- 不在本轮重做 runtime 的主链路实现。
+- 不把 history 正文纳入默认长期上下文。

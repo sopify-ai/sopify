@@ -9,6 +9,7 @@ import re
 from typing import Iterable, List, Sequence
 
 from .decision import option_by_id
+from .knowledge_sync import render_knowledge_sync_front_matter
 from .models import DecisionState, PlanArtifact, RuntimeConfig
 from .state import iso_now
 
@@ -212,14 +213,13 @@ def _render_plan_front_matter(
     level: str,
     decision_state: DecisionState | None,
 ) -> str:
-    obligation = _blueprint_obligation(level)
     lines = [
         "---",
         f"plan_id: {plan_id}",
         f"feature_key: {feature_key}",
         f"level: {level}",
         "lifecycle_state: active",
-        f"blueprint_obligation: {obligation}",
+        *render_knowledge_sync_front_matter(level),
         "archive_ready: false",
     ]
     if decision_state is not None:
@@ -235,14 +235,6 @@ def _render_plan_front_matter(
         )
     lines.extend(["---", "", ""])
     return "\n".join(lines)
-
-
-def _blueprint_obligation(level: str) -> str:
-    if level == "light":
-        return "index_only"
-    if level == "full":
-        return "design_required"
-    return "review_required"
 
 
 def _render_decision_section(decision_state: DecisionState | None) -> str:

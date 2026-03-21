@@ -24,6 +24,13 @@ Auto-detection rules (`plan.level=auto`):
 - `light`: generate `plan.md`.
 - `standard`: generate `background.md + design.md + tasks.md`.
 - `full`: extend standard with `adr/` and `diagrams/`.
+- formal plan packages include the scoring block by default:
+  - `light`: write it into `plan.md`
+  - `standard/full`: write it into `background.md`
+- the plan summary must also surface:
+  - `Solution quality`
+  - `Implementation readiness`
+  - `Scoring rationale`
 
 Template sources live in `assets/`:
 
@@ -47,7 +54,7 @@ Suggested categories:
 2. Supporting work
 3. Security checks
 4. Testing
-5. Documentation updates
+5. Documentation updates (`project.md / blueprint/*`)
 
 Task markers:
 

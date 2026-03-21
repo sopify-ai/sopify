@@ -9,6 +9,10 @@ import shutil
 from pathlib import Path
 from typing import Mapping
 
+from ._yaml import YamlParseError, load_yaml
+from .kb import ensure_blueprint_index
+from .knowledge_layout import resolve_path
+from .knowledge_sync import KNOWLEDGE_SYNC_KEYS, knowledge_sync_targets, parse_knowledge_sync
 from .models import KbArtifact, PlanArtifact, RuntimeConfig
 from .state import StateStore, iso_now
 
@@ -17,12 +21,11 @@ _REQUIRED_METADATA_KEYS = (
     "feature_key",
     "level",
     "lifecycle_state",
-    "blueprint_obligation",
+    "knowledge_sync",
     "archive_ready",
 )
 _SUPPORTED_LEVELS = {"light", "standard", "full"}
 _SUPPORTED_LIFECYCLE_STATES = {"active", "ready_for_verify"}
-_SUPPORTED_BLUEPRINT_OBLIGATIONS = {"index_only", "review_required", "design_required"}
 _FRONT_MATTER_RE = re.compile(r"\A---\n(?P<front>.*?)\n---\n(?P<body>.*)\Z", re.DOTALL)
 @dataclass(frozen=True)
 class ManagedPlanDocument:
@@ -36,7 +39,7 @@ class ManagedPlanDocument:
     feature_key: str
     level: str
     lifecycle_state: str
-    blueprint_obligation: str
+    knowledge_sync: Mapping[str, str]
     archive_ready: bool
     front_matter: str
     body: str
@@ -53,7 +56,7 @@ class FinalizeResult:
 
 
 @dataclass(frozen=True)
-class _BlueprintObligationStatus:
+class _KnowledgeSyncStatus:
     blocked_reason: str | None
     notes: tuple[str, ...]
 
@@ -108,16 +111,16 @@ def finalize_plan(
             ),
         )
 
-    obligation = _evaluate_blueprint_obligation(
+    contract_status = _evaluate_knowledge_sync(
         config=config,
         managed_plan=managed_plan,
         created_at=current_plan.created_at,
     )
-    if obligation.blocked_reason is not None:
+    if contract_status.blocked_reason is not None:
         return FinalizeResult(
             archived_plan=None,
             kb_artifact=None,
-            notes=(*obligation.notes, obligation.blocked_reason),
+            notes=(*contract_status.notes, contract_status.blocked_reason),
         )
 
     archive_dir = _archive_target_dir(config=config, plan_id=managed_plan.plan_id)
@@ -161,7 +164,8 @@ def finalize_plan(
     )
 
     history_index_path = _update_history_index(config=config, archived_plan=archived_plan)
-    readme_path = _refresh_blueprint_readme(config=config, archived_plan=archived_plan)
+    ensure_blueprint_index(config)
+    readme_path = resolve_path(config=config, key="blueprint_index")
 
     state_store.reset_active_flow()
 
@@ -173,7 +177,7 @@ def finalize_plan(
         )
     )
     notes = (
-        *obligation.notes,
+        *contract_status.notes,
         _text(config.language, "archived", path=archived_plan.path),
         _text(config.language, "state_cleared"),
     )
@@ -196,16 +200,21 @@ def _load_managed_plan(plan_dir: Path, *, config: RuntimeConfig) -> ManagedPlanD
 
     front_matter = match.group("front")
     body = match.group("body")
-    metadata = _parse_top_level_metadata(front_matter)
+    try:
+        metadata = load_yaml(front_matter)
+    except YamlParseError:
+        return None
+    if not isinstance(metadata, Mapping):
+        return None
     if any(key not in metadata for key in _REQUIRED_METADATA_KEYS):
         return None
-
-    level = metadata["level"]
-    lifecycle_state = metadata["lifecycle_state"]
-    blueprint_obligation = metadata["blueprint_obligation"]
-    if level not in _SUPPORTED_LEVELS or lifecycle_state not in _SUPPORTED_LIFECYCLE_STATES:
+    knowledge_sync = parse_knowledge_sync(metadata.get("knowledge_sync"))
+    if knowledge_sync is None:
         return None
-    if blueprint_obligation not in _SUPPORTED_BLUEPRINT_OBLIGATIONS:
+
+    level = str(metadata["level"])
+    lifecycle_state = str(metadata["lifecycle_state"])
+    if level not in _SUPPORTED_LEVELS or lifecycle_state not in _SUPPORTED_LIFECYCLE_STATES:
         return None
 
     return ManagedPlanDocument(
@@ -217,8 +226,8 @@ def _load_managed_plan(plan_dir: Path, *, config: RuntimeConfig) -> ManagedPlanD
         feature_key=metadata["feature_key"],
         level=level,
         lifecycle_state=lifecycle_state,
-        blueprint_obligation=blueprint_obligation,
-        archive_ready=_parse_bool(metadata["archive_ready"]),
+        knowledge_sync=knowledge_sync,
+        archive_ready=_parse_bool(str(metadata["archive_ready"])),
         front_matter=front_matter,
         body=body,
         raw_text=raw_text,
@@ -231,16 +240,6 @@ def _pick_metadata_file(plan_dir: Path) -> Path | None:
         if candidate.exists() and candidate.is_file():
             return candidate
     return None
-
-
-def _parse_top_level_metadata(front_matter: str) -> dict[str, str]:
-    metadata: dict[str, str] = {}
-    for line in front_matter.splitlines():
-        if not line or line.startswith(" ") or ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        metadata[key.strip()] = value.strip()
-    return metadata
 
 
 def _parse_bool(value: str) -> bool:
@@ -267,46 +266,50 @@ def _render_document(front_matter: str, body: str) -> str:
     return f"---\n{front_matter}\n---\n{body}"
 
 
-def _evaluate_blueprint_obligation(
+def _evaluate_knowledge_sync(
     *,
     config: RuntimeConfig,
     managed_plan: ManagedPlanDocument,
     created_at: str,
-) -> _BlueprintObligationStatus:
-    if managed_plan.blueprint_obligation == "index_only":
-        return _BlueprintObligationStatus(
-            blocked_reason=None,
-            notes=(_text(config.language, "index_only_satisfied"),),
-        )
-
+) -> _KnowledgeSyncStatus:
     plan_created_at = _parse_created_at(created_at)
     plan_document_time = datetime.fromtimestamp(managed_plan.metadata_path.stat().st_mtime, tz=plan_created_at.tzinfo)
     reference_time = max(plan_created_at, plan_document_time)
-    deep_files = (
-        config.runtime_root / "blueprint" / "background.md",
-        config.runtime_root / "blueprint" / "design.md",
-        config.runtime_root / "blueprint" / "tasks.md",
-    )
-    changed_files = tuple(
-        str(path.relative_to(config.workspace_root))
-        for path in deep_files
-        if path.exists() and datetime.fromtimestamp(path.stat().st_mtime, tz=reference_time.tzinfo) > reference_time
-    )
+    targets = knowledge_sync_targets(config=config)
+    changed_files: list[str] = []
+    review_pending: list[str] = []
+    required_missing: list[str] = []
+
+    for key in KNOWLEDGE_SYNC_KEYS:
+        mode = managed_plan.knowledge_sync[key]
+        if mode == "skip":
+            continue
+        path = targets[key]
+        updated = path.exists() and datetime.fromtimestamp(path.stat().st_mtime, tz=reference_time.tzinfo) > reference_time
+        relative_path = str(path.relative_to(config.workspace_root))
+        if updated:
+            changed_files.append(relative_path)
+            continue
+        if mode == "required":
+            required_missing.append(relative_path)
+        else:
+            review_pending.append(relative_path)
+
+    if required_missing:
+        return _KnowledgeSyncStatus(
+            blocked_reason=_text(config.language, "knowledge_sync_required_blocked", paths=", ".join(required_missing)),
+            notes=(),
+        )
+
+    notes: list[str] = []
     if changed_files:
-        return _BlueprintObligationStatus(
-            blocked_reason=None,
-            notes=(_text(config.language, "deep_blueprint_updated", paths=", ".join(changed_files)),),
-        )
+        notes.append(_text(config.language, "knowledge_sync_updated", paths=", ".join(changed_files)))
+    if review_pending:
+        notes.append(_text(config.language, "knowledge_sync_review_warning", paths=", ".join(review_pending)))
 
-    if managed_plan.blueprint_obligation == "review_required":
-        return _BlueprintObligationStatus(
-            blocked_reason=None,
-            notes=(_text(config.language, "review_required_warning"),),
-        )
-
-    return _BlueprintObligationStatus(
-        blocked_reason=_text(config.language, "design_required_blocked"),
-        notes=(),
+    return _KnowledgeSyncStatus(
+        blocked_reason=None,
+        notes=tuple(notes),
     )
 
 
@@ -318,7 +321,7 @@ def _parse_created_at(value: str) -> datetime:
 
 def _archive_target_dir(*, config: RuntimeConfig, plan_id: str) -> Path:
     archive_month = datetime.now().strftime("%Y-%m")
-    return config.runtime_root / "history" / archive_month / plan_id
+    return resolve_path(config=config, key="history_root") / archive_month / plan_id
 
 
 def _archived_files(*, current_plan: PlanArtifact, archive_dir: Path, workspace_root: Path) -> tuple[str, ...]:
@@ -333,118 +336,8 @@ def _archived_files(*, current_plan: PlanArtifact, archive_dir: Path, workspace_
     return tuple(archived_files)
 
 
-def _refresh_blueprint_readme(*, config: RuntimeConfig, archived_plan: PlanArtifact) -> Path:
-    readme_path = config.runtime_root / "blueprint" / "README.md"
-    readme_path.parent.mkdir(parents=True, exist_ok=True)
-    if not readme_path.exists():
-        # Keep the refresh path resilient even if the workspace skipped the initial bootstrap.
-        from .kb import _blueprint_readme_stub  # local import avoids widening kb.py dependencies
-
-        readme_path.write_text(_blueprint_readme_stub(config), encoding="utf-8")
-
-    content = readme_path.read_text(encoding="utf-8")
-    updated = content
-    for section, block in _readme_blocks(config=config, archived_plan=archived_plan).items():
-        updated = _replace_managed_block(updated, section=section, block=block)
-    if updated != content:
-        readme_path.write_text(updated, encoding="utf-8")
-    return readme_path
-
-
-def _replace_managed_block(content: str, *, section: str, block: str) -> str:
-    start = f"<!-- sopify:auto:{section}:start -->"
-    end = f"<!-- sopify:auto:{section}:end -->"
-    pattern = re.compile(rf"{re.escape(start)}.*?{re.escape(end)}", re.DOTALL)
-    replacement = f"{start}\n{block}\n{end}"
-    if pattern.search(content) is None:
-        return content
-    return pattern.sub(replacement, content, count=1)
-
-
-def _readme_blocks(*, config: RuntimeConfig, archived_plan: PlanArtifact) -> dict[str, str]:
-    archive_link = _archive_link_for_blueprint(archived_plan.path)
-    if config.language == "en-US":
-        return {
-            "goal": (
-                f"- Keep `{config.workspace_root.name or 'project'}` discoverable through a long-lived blueprint index.\n"
-                "- Use the finalize transaction to close the active metadata-managed plan before the next planning round."
-            ),
-            "overview": (
-                "- blueprint: tracked long-lived project facts\n"
-                "- plan: active working plan created per task\n"
-                "- history: finalized archives produced by `~go finalize`\n"
-                "- replay: optional replay capability"
-            ),
-            "architecture": (
-                "```text\n"
-                ".sopify-skills/\n"
-                "├── blueprint/\n"
-                "├── plan/\n"
-                "├── history/\n"
-                "├── state/\n"
-                "└── replay/\n"
-                "```"
-            ),
-            "contracts": (
-                "- Create `blueprint/README.md` on the first real-project trigger.\n"
-                "- Populate deeper blueprint files on the first plan lifecycle.\n"
-                "- Finalize only metadata-managed plans generated by the new runtime.\n"
-                "- `review_required` warns when deep blueprint updates are missing; `design_required` blocks finalize."
-            ),
-            "focus": (
-                f"- Latest finalized plan: `{archived_plan.title}` -> `{archived_plan.path}`\n"
-                "- There is no active plan after finalize; the next planning round will create a fresh one."
-            ),
-            "read-next": (
-                "- [Technical Conventions](../project.md)\n"
-                "- [Project Overview](../wiki/overview.md)\n"
-                "- [Blueprint Design](./design.md)\n"
-                f"- Latest archive: `{archive_link}`"
-            ),
-        }
-
-    return {
-        "goal": (
-            f"- 持续把 `{config.workspace_root.name or 'project'}` 的长期事实收口到蓝图索引。\n"
-            "- 通过 finalize 事务完成活动 metadata-managed plan 的正式收口，再进入下一轮规划。"
-        ),
-        "overview": (
-            "- blueprint: 长期项目真相，默认入库\n"
-            "- plan: 每轮任务生成的活动方案\n"
-            "- history: 由 `~go finalize` 产出的历史归档\n"
-            "- replay: 可选回放能力"
-        ),
-        "architecture": (
-            "```text\n"
-            ".sopify-skills/\n"
-            "├── blueprint/\n"
-            "├── plan/\n"
-            "├── history/\n"
-            "├── state/\n"
-            "└── replay/\n"
-            "```"
-        ),
-        "contracts": (
-            "- 首次真实项目触发时创建 `blueprint/README.md`\n"
-            "- 首次进入 plan 生命周期时补齐深层 blueprint 文件\n"
-            "- 只有新 runtime 生成的 metadata-managed plan 支持 finalize\n"
-            "- `review_required` 缺少深层 blueprint 更新时仅警告；`design_required` 会阻断收口"
-        ),
-        "focus": (
-            f"- 最近收口方案：`{archived_plan.title}` -> `{archived_plan.path}`\n"
-            "- 当前已无活动 plan；下一轮规划会重新创建新的活动方案。"
-        ),
-        "read-next": (
-            "- [项目技术约定](../project.md)\n"
-            "- [项目概览](../wiki/overview.md)\n"
-            "- [蓝图设计](./design.md)\n"
-            f"- 最近归档: `{archive_link}`"
-        ),
-    }
-
-
 def _update_history_index(*, config: RuntimeConfig, archived_plan: PlanArtifact) -> Path:
-    history_index = config.runtime_root / "history" / "index.md"
+    history_index = resolve_path(config=config, key="history_root") / "index.md"
     history_index.parent.mkdir(parents=True, exist_ok=True)
     existing = history_index.read_text(encoding="utf-8") if history_index.exists() else _history_index_stub(config.language)
     updated = _render_history_index(existing, archived_plan=archived_plan, language=config.language)
@@ -485,11 +378,6 @@ def _history_index_stub(language: str) -> str:
         return "# Change History Index\n\nRecords completed plan archives for future lookup.\n\n## Index\n\nNo archived plans yet.\n"
     return "# 变更历史索引\n\n记录已归档的方案，便于后续查询。\n\n## 索引\n\n当前暂无已归档方案。\n"
 
-
-def _archive_link_for_blueprint(archived_plan_path: str) -> str:
-    return "../" + archived_plan_path.removeprefix(".sopify-skills/")
-
-
 def _text(language: str, key: str, **kwargs: str) -> str:
     messages = {
         "en-US": {
@@ -500,10 +388,9 @@ def _text(language: str, key: str, **kwargs: str) -> str:
             "archive_exists": "Archive target already exists: {path}",
             "archived": "Plan archived to {path}",
             "state_cleared": "Active runtime state cleared",
-            "index_only_satisfied": "Blueprint obligation satisfied: index_only",
-            "deep_blueprint_updated": "Deep blueprint updated after plan creation: {paths}",
-            "review_required_warning": "Blueprint review warning: no deep blueprint update detected; finalize proceeds because obligation is review_required",
-            "design_required_blocked": "Finalize blocked: full/design_required plans must update blueprint/background.md, blueprint/design.md, or blueprint/tasks.md after plan creation",
+            "knowledge_sync_updated": "Detected knowledge_sync document updates after plan creation: {paths}",
+            "knowledge_sync_review_warning": "Knowledge_sync review reminder: review items were not updated after plan creation: {paths}",
+            "knowledge_sync_required_blocked": "Finalize blocked: required knowledge_sync documents were not updated after plan creation: {paths}",
         },
         "zh-CN": {
             "no_active_plan": "当前没有可收口的 metadata-managed 活动方案",
@@ -513,10 +400,9 @@ def _text(language: str, key: str, **kwargs: str) -> str:
             "archive_exists": "归档目标已存在：{path}",
             "archived": "方案已归档到 {path}",
             "state_cleared": "已清理活动运行时状态",
-            "index_only_satisfied": "blueprint obligation 已满足：index_only",
-            "deep_blueprint_updated": "已检测到 plan 创建后的深层 blueprint 更新：{paths}",
-            "review_required_warning": "blueprint 审核提醒：未检测到深层 blueprint 更新，但当前 obligation=review_required，允许继续收口",
-            "design_required_blocked": "收口被阻断：full/design_required 方案要求在 plan 创建后更新 blueprint/background.md、blueprint/design.md 或 blueprint/tasks.md",
+            "knowledge_sync_updated": "已检测到 plan 创建后的 knowledge_sync 文档更新：{paths}",
+            "knowledge_sync_review_warning": "knowledge_sync 复核提醒：以下 review 文档在 plan 创建后尚未更新：{paths}",
+            "knowledge_sync_required_blocked": "收口被阻断：以下 knowledge_sync.required 文档在 plan 创建后尚未更新：{paths}",
         },
     }
     locale = "en-US" if language == "en-US" else "zh-CN"

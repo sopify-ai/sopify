@@ -8,6 +8,7 @@ import re
 from typing import Any, Mapping
 
 from ._yaml import YamlParseError, load_yaml
+from .knowledge_sync import parse_knowledge_sync
 from .models import ClarificationState, DecisionState, ExecutionGate, PlanArtifact, RouteDecision, RuntimeConfig
 
 _FRONT_MATTER_RE = re.compile(r"\A---\n(?P<front>.*?)\n---\n(?P<body>.*)\Z", re.DOTALL)
@@ -16,7 +17,7 @@ _REQUIRED_METADATA_KEYS = (
     "feature_key",
     "level",
     "lifecycle_state",
-    "blueprint_obligation",
+    "knowledge_sync",
     "archive_ready",
 )
 _PLACEHOLDER_TOKENS = (
@@ -58,6 +59,7 @@ class _ManagedPlanDocument:
     plan_dir: Path
     metadata_path: Path
     metadata: Mapping[str, Any]
+    knowledge_sync: Mapping[str, str]
     body: str
     documents: Mapping[str, str]
 
@@ -159,6 +161,9 @@ def _load_managed_plan(*, plan_artifact: PlanArtifact, config: RuntimeConfig) ->
         return None
     if not isinstance(metadata, Mapping):
         return None
+    knowledge_sync = parse_knowledge_sync(metadata.get("knowledge_sync"))
+    if knowledge_sync is None:
+        return None
 
     documents: dict[str, str] = {
         metadata_path.name: raw_text,
@@ -172,6 +177,7 @@ def _load_managed_plan(*, plan_artifact: PlanArtifact, config: RuntimeConfig) ->
         plan_dir=plan_dir,
         metadata_path=metadata_path,
         metadata=metadata,
+        knowledge_sync=knowledge_sync,
         body=match.group("body"),
         documents=documents,
     )
@@ -189,6 +195,8 @@ def _evaluate_plan_completeness(managed_plan: _ManagedPlanDocument, *, language:
     metadata = managed_plan.metadata
     if any(key not in metadata for key in _REQUIRED_METADATA_KEYS):
         return _CompletenessStatus("incomplete", (_text(language, "missing_metadata"),))
+    if parse_knowledge_sync(metadata.get("knowledge_sync")) is None:
+        return _CompletenessStatus("incomplete", (_text(language, "invalid_knowledge_sync"),))
 
     level = str(metadata.get("level") or "")
     if level not in {"light", "standard", "full"}:
@@ -315,6 +323,7 @@ def _text(language: str, key: str, **values: str) -> str:
             "missing_plan": "当前没有可评估的活动 plan。",
             "invalid_plan_metadata": "当前 plan 缺少可评估的 metadata-managed 结构。",
             "missing_metadata": "plan 元数据不完整，尚不能进入执行门禁。",
+            "invalid_knowledge_sync": "plan 的 knowledge_sync 契约非法，尚不能进入执行门禁。",
             "invalid_level": "plan level 非法，尚不能进入执行门禁。",
             "decision_not_persisted": "决策结果尚未稳定写入 plan metadata。",
             "missing_tasks": "plan 缺少可执行任务清单。",
@@ -329,6 +338,7 @@ def _text(language: str, key: str, **values: str) -> str:
             "missing_plan": "No active plan is available for execution-gate evaluation.",
             "invalid_plan_metadata": "The current plan is not a valid metadata-managed plan package.",
             "missing_metadata": "The plan metadata is incomplete and cannot pass the execution gate yet.",
+            "invalid_knowledge_sync": "The plan knowledge_sync contract is invalid and cannot pass the execution gate yet.",
             "invalid_level": "The plan level is invalid and cannot pass the execution gate yet.",
             "decision_not_persisted": "The confirmed decision has not been persisted into the plan metadata yet.",
             "missing_tasks": "The plan does not contain an actionable task list yet.",

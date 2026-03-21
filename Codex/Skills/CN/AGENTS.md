@@ -1,5 +1,5 @@
 <!-- bootstrap: lang=zh-CN; encoding=UTF-8 -->
-<!-- SOPIFY_VERSION: 2026-03-20.214138 -->
+<!-- SOPIFY_VERSION: 2026-03-21.151713 -->
 <!-- ARCHITECTURE: Adaptive Workflow + Layered Rules -->
 
 # Sopify (Sop AI) Skills - 自适应 AI 编程助手
@@ -212,20 +212,18 @@ workflow:
 ```
 .sopify-skills/
 ├── blueprint/               # 项目级长期蓝图，默认进入版本管理
-│   ├── README.md            # 项目入口索引
+│   ├── README.md            # 纯索引页，只保留入口与状态
 │   ├── background.md
 │   ├── design.md
 │   └── tasks.md
 ├── plan/                    # 当前方案，默认忽略
 │   └── YYYYMMDD_feature/
 ├── history/                 # 已完成方案归档，默认忽略
-├── wiki/                    # 项目文档
-│   ├── overview.md
-│   └── modules/
+├── state/                   # 运行态状态，始终忽略
 ├── user/                    # 用户偏好与反馈
 │   ├── preferences.md
 │   └── feedback.jsonl
-├── project.md               # 技术约定
+├── project.md               # 技术约定，不与 background/design 重复
 └── replay/                  # 可选回放能力，默认忽略
 ```
 
@@ -383,6 +381,9 @@ Next: 继续方案设计？(Y/n)
 方案: .sopify-skills/plan/20260115_feature/
 概要: {一句话技术方案}
 任务: {N} 项
+方案质量: {X}/10
+落地就绪: {Y}/10
+评分理由: {1 行}
 
 ---
 Changes: 3 files
@@ -418,7 +419,7 @@ Changes: 5 files
   - src/components/xxx.vue
   - src/types/index.ts
   - src/hooks/useXxx.ts
-  - .sopify-skills/wiki/modules/xxx.md
+  - .sopify-skills/blueprint/design.md
   - .sopify-skills/history/2026-01/...
 
 Next: 请验证功能

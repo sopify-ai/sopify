@@ -16,7 +16,7 @@ description: Design phase entry; routes plan grading, task breakdown, and plan p
 2. Decide `light/standard/full` from explicit change signals.
 3. Generate the plan files from the matching templates in `assets/`.
 4. Produce the task list and validate task granularity.
-5. Render the plan summary with `assets/output-summary.md`.
+5. Add the scoring block to the formal plan package and render the scored summary with `assets/output-summary.md`.
 
 ## Resource navigation
 
