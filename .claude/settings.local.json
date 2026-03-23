@@ -12,7 +12,10 @@
       "Bash(python3.11 -m unittest tests.test_runtime.PlanReuseRuntimeTests tests.test_runtime.EngineIntegrationTests -v)",
       "WebSearch",
       "WebFetch(domain:nio.feishu.cn)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(find /Users/weixin.li/Desktop/Sopify/sopify-skills -name *.json -path */.sopify-skills/state/* -type f)",
+      "Bash(python3.11 -m unittest tests.test_runtime.EngineIntegrationTests.test_session_review_state_is_isolated_between_sessions tests.test_runtime.EngineIntegrationTests.test_session_review_plan_promotes_to_global_execution_truth_on_exec tests.test_runtime.EngineIntegrationTests.test_cancel_active_clears_global_execution_before_session_review tests.test_runtime_gate.RuntimeGateTests.test_gate_generates_session_id_and_session_scoped_state_paths tests.test_runtime_gate.RuntimeGateTests.test_gate_cleans_expired_session_dirs_on_entry tests.test_runtime.DecisionContractTests.test_session_scoped_decision_bridge_reads_and_writes_review_state tests.test_runtime.DecisionContractTests.test_session_scoped_clarification_bridge_reads_and_writes_review_state -v)",
+      "Bash(find /Users/weixin.li/Desktop/Sopify/sopify-skills -type f \\\\\\(-name *registry* -o -name _registry.yaml -o -name _registry.yml \\\\\\))"
     ]
   }
 }
