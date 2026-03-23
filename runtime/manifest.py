@@ -34,6 +34,7 @@ PLAN_ONLY_ENTRY = ENTRY_GUARD_PLAN_ONLY_HELPER_ENTRY
 DECISION_BRIDGE_ENTRY = "scripts/decision_bridge_runtime.py"
 CLARIFICATION_BRIDGE_ENTRY = "scripts/clarification_bridge_runtime.py"
 DEVELOP_CHECKPOINT_ENTRY = "scripts/develop_checkpoint_runtime.py"
+PLAN_REGISTRY_ENTRY = "scripts/plan_registry_runtime.py"
 PREFERENCES_PRELOAD_ENTRY = "scripts/preferences_preload_runtime.py"
 RUNTIME_GATE_ENTRY = "scripts/runtime_gate.py"
 _SOPIFY_VERSION_RE = re.compile(r"^<!--\s*SOPIFY_VERSION:\s*(?P<version>.+?)\s*-->$", re.MULTILINE)
@@ -153,6 +154,8 @@ def build_bundle_manifest(
             "develop_checkpoint_callback": True,
             "develop_resume_context": True,
             "execution_gate": True,
+            "plan_registry": True,
+            "plan_registry_priority_confirm": True,
             "planning_mode_orchestrator": True,
             "preferences_preload": True,
             "runtime_gate": True,
@@ -231,6 +234,65 @@ def build_bundle_manifest(
             },
             "develop_resume_context_required_fields": list(DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS),
             "develop_resume_after_actions": list(DEVELOP_RESUME_AFTER_ACTIONS),
+            "plan_registry_entry": PLAN_REGISTRY_ENTRY,
+            "plan_registry_hosts": {
+                "cli": {
+                    "preferred_mode": "inspect_only_summary",
+                    "trigger_points": [
+                        "post_plan_review",
+                        "manual_plan_registry_review",
+                    ],
+                    "mount_scope": "review_only",
+                    "blocked_scopes": [
+                        "develop",
+                        "execute",
+                    ],
+                    "inspect": "json_contract",
+                    "confirm_priority": "json_payload",
+                    "confirm_priority_trigger": "explicit_user_action",
+                    "default_surface": "inspect_contract",
+                    "display_fields": [
+                        "current_plan",
+                        "selected_plan",
+                        "recommendations",
+                        "drift_notice",
+                        "execution_truth",
+                    ],
+                    "allowed_actions": [
+                        "confirm_suggested",
+                        "set_p1",
+                        "set_p2",
+                        "set_p3",
+                        "dismiss",
+                    ],
+                    "note_optional": True,
+                    "confirm_payload_fields": [
+                        "plan_id",
+                        "priority",
+                        "note",
+                    ],
+                    "success_behavior": {
+                        "refresh_scope": "selected_card",
+                        "stay_in_context": "review",
+                        "auto_execute": False,
+                        "auto_switch_current_plan": False,
+                    },
+                    "failure_behavior": {
+                        "inspect_failure": "hide_card_non_blocking",
+                        "confirm_failure": "show_retryable_error",
+                    },
+                    "copy": {
+                        "title": "Plan 优先级建议",
+                        "summary": "当前 active plan、当前评审 plan 与建议优先级",
+                        "boundary_notice": "确认优先级只会更新 registry，不会切换 current_plan",
+                        "success_notice": "已记录到 plan registry",
+                        "pending_notice": "已保留系统建议，暂未写入最终优先级",
+                    },
+                    "raw_registry_visibility": "advanced_only",
+                    "execution_truth": "current_plan",
+                    "observe_only": True,
+                },
+            },
             "preferences_preload_entry": PREFERENCES_PRELOAD_ENTRY,
             "preferences_preload_contract_version": "1",
             "preferences_preload_statuses": list(PREFERENCES_PRELOAD_STATUSES),

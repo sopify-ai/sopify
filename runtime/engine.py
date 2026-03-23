@@ -35,6 +35,13 @@ from .finalize import finalize_plan
 from .handoff import build_runtime_handoff
 from .kb import bootstrap_kb, ensure_blueprint_index, ensure_blueprint_scaffold
 from .models import ClarificationState, DecisionState, ExecutionGate, KbArtifact, PlanArtifact, ReplayEvent, RouteDecision, RunState, RuntimeHandoff, RuntimeResult, SkillActivation, SkillMeta
+from .plan_registry import (
+    PlanRegistryError,
+    encode_priority_note_event,
+    get_plan_entry,
+    priority_note_for_plan,
+    registry_relative_path,
+)
 from .plan_scaffold import (
     create_plan_scaffold,
     find_plan_by_request_reference,
@@ -102,6 +109,7 @@ def run_runtime(
     replay_events: list[ReplayEvent] = []
     effective_route = classified_route
     confirmed_decision_for_replay: DecisionState | None = None
+    registry_changed_hint = False
 
     current_clarification = state_store.get_current_clarification()
     if (
@@ -139,6 +147,7 @@ def run_runtime(
             current_plan=state_store.get_current_plan() or recovered.current_plan,
         )
         plan_artifact = finalized.archived_plan
+        registry_changed_hint = finalized.registry_updated
         if finalized.kb_artifact is not None:
             kb_artifact = finalized.kb_artifact
         notes.extend(finalized.notes)
@@ -393,6 +402,14 @@ def run_runtime(
         else:
             state_store.clear_current_handoff()
 
+    generated_files = _augment_generated_files(
+        generated_files,
+        config=config,
+        route_name=effective_route.route_name,
+        plan_artifact=plan_artifact,
+        notes=tuple(notes),
+        registry_changed_hint=registry_changed_hint,
+    )
     latest_context = recover_context(effective_route, config=config, state_store=state_store)
     return RuntimeResult(
         route=effective_route,
@@ -413,6 +430,52 @@ def _default_plan_level(decision: RouteDecision) -> str:
     if decision.complexity == "medium":
         return "light"
     return "standard"
+
+
+def _augment_generated_files(
+    generated_files: tuple[str, ...],
+    *,
+    config: RuntimeConfig,
+    route_name: str,
+    plan_artifact: PlanArtifact | None,
+    notes: tuple[str, ...],
+    registry_changed_hint: bool = False,
+) -> tuple[str, ...]:
+    items = list(generated_files)
+    if _registry_file_should_be_reported(
+        config=config,
+        route_name=route_name,
+        plan_artifact=plan_artifact,
+        notes=notes,
+        registry_changed_hint=registry_changed_hint,
+    ):
+        registry_file = registry_relative_path(config)
+        if registry_file not in items:
+            items.append(registry_file)
+    return tuple(items)
+
+
+def _registry_file_should_be_reported(
+    *,
+    config: RuntimeConfig,
+    route_name: str,
+    plan_artifact: PlanArtifact | None,
+    notes: tuple[str, ...],
+    registry_changed_hint: bool,
+) -> bool:
+    if route_name == "finalize_active":
+        return registry_changed_hint
+    if plan_artifact is None:
+        return False
+    if not any(note.startswith("Plan scaffold created at ") for note in notes):
+        return False
+    try:
+        # Only surface the registry as a changed artifact when the new plan entry
+        # is actually observable after the scaffold step.
+        entry_result = get_plan_entry(config=config, plan_id=plan_artifact.plan_id)
+    except PlanRegistryError:
+        return False
+    return entry_result.entry is not None
 
 
 def _make_run_state(
@@ -1368,7 +1431,11 @@ def _select_plan_for_request(
                     level=level,
                     decision_state=confirmed_decision,
                 )
-                return created, [f"Plan scaffold created at {created.path} after active-plan routing confirmation"]
+                return created, _created_plan_notes(
+                    created,
+                    config=config,
+                    base_note=f"Plan scaffold created at {created.path} after active-plan routing confirmation",
+                )
 
         if current_plan is not None:
             return current_plan, [f"Reused active plan {current_plan.path} after decision confirmation"]
@@ -1378,7 +1445,11 @@ def _select_plan_for_request(
             level=level,
             decision_state=confirmed_decision,
         )
-        return created, [f"Plan scaffold created at {created.path}"]
+        return created, _created_plan_notes(
+            created,
+            config=config,
+            base_note=f"Plan scaffold created at {created.path}",
+        )
 
     explicit_new_plan = request_explicitly_wants_new_plan(decision.request_text)
     explicit_plan = find_plan_by_request_reference(decision.request_text, config=config)
@@ -1390,7 +1461,11 @@ def _select_plan_for_request(
             level=level,
             decision_state=None,
         )
-        return created, [f"Plan scaffold created at {created.path} (selected new-plan routing)"]
+        return created, _created_plan_notes(
+            created,
+            config=config,
+            base_note=f"Plan scaffold created at {created.path} (selected new-plan routing)",
+        )
 
     if explicit_new_plan:
         created = create_plan_scaffold(
@@ -1399,7 +1474,11 @@ def _select_plan_for_request(
             level=level,
             decision_state=None,
         )
-        return created, [f"Plan scaffold created at {created.path} (explicit new-plan request)"]
+        return created, _created_plan_notes(
+            created,
+            config=config,
+            base_note=f"Plan scaffold created at {created.path} (explicit new-plan request)",
+        )
 
     if explicit_plan is not None:
         if current_plan is not None and explicit_plan.plan_id == current_plan.plan_id:
@@ -1419,7 +1498,23 @@ def _select_plan_for_request(
         level=level,
         decision_state=None,
     )
-    return created, [f"Plan scaffold created at {created.path}"]
+    return created, _created_plan_notes(
+        created,
+        config=config,
+        base_note=f"Plan scaffold created at {created.path}",
+    )
+
+
+def _created_plan_notes(created: PlanArtifact, *, config: RuntimeConfig, base_note: str) -> list[str]:
+    notes = [base_note]
+    priority_note = priority_note_for_plan(
+        config=config,
+        plan_id=created.plan_id,
+        language=config.language,
+    )
+    if priority_note:
+        notes.append(encode_priority_note_event(priority_note))
+    return notes
 
 
 def _should_create_active_plan_binding_decision(

@@ -9,6 +9,7 @@ from .clarification import CURRENT_CLARIFICATION_RELATIVE_PATH
 from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
 from .models import RuntimeResult
+from .plan_registry import extract_priority_note_event
 from .state import local_display_now
 
 _PHASE_LABELS = {
@@ -281,14 +282,22 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
     if route_name == "plan_only" and result.plan_artifact is not None:
         replay_value = result.replay_session_dir or labels["missing"]
         current_run = result.recovered_context.current_run
-        return [
+        lines = [
             f"{labels['plan']}: {result.plan_artifact.path}",
             f"{labels['summary']}: {result.plan_artifact.summary}",
-            f"{labels['stage']}: {current_run.stage if current_run is not None else labels['missing']}",
-            _execution_gate_line(result, language),
-            f"{labels['handoff']}: {_handoff_label(result, language)}",
-            f"{labels['replay']}: {replay_value}",
         ]
+        priority_note = _priority_note(result)
+        if priority_note is not None:
+            lines.append(priority_note)
+        lines.extend(
+            [
+                f"{labels['stage']}: {current_run.stage if current_run is not None else labels['missing']}",
+                _execution_gate_line(result, language),
+                f"{labels['handoff']}: {_handoff_label(result, language)}",
+                f"{labels['replay']}: {replay_value}",
+            ]
+        )
+        return lines
 
     if route_name == "clarification_pending" and result.recovered_context.current_clarification is not None:
         current_clarification = result.recovered_context.current_clarification
@@ -353,13 +362,21 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
 
     if route_name in {"workflow", "light_iterate"} and result.plan_artifact is not None:
         current_run = result.recovered_context.current_run
-        return [
+        lines = [
             f"{labels['plan']}: {result.plan_artifact.path}",
             f"{labels['summary']}: {result.plan_artifact.summary}",
-            f"{labels['stage']}: {current_run.stage if current_run is not None else labels['missing']}",
-            _execution_gate_line(result, language),
-            f"{labels['status']}: {_status_message(result, language)}",
         ]
+        priority_note = _priority_note(result)
+        if priority_note is not None:
+            lines.append(priority_note)
+        lines.extend(
+            [
+                f"{labels['stage']}: {current_run.stage if current_run is not None else labels['missing']}",
+                _execution_gate_line(result, language),
+                f"{labels['status']}: {_status_message(result, language)}",
+            ]
+        )
+        return lines
 
     if route_name in {"resume_active", "exec_plan"} and result.recovered_context.current_run is not None:
         current_plan = result.recovered_context.current_plan
@@ -566,6 +583,16 @@ def _execution_summary(result: RuntimeResult) -> dict[str, object]:
         if isinstance(summary, dict):
             return summary
     return {}
+
+
+def _priority_note(result: RuntimeResult) -> str | None:
+    for note in result.notes:
+        structured = extract_priority_note_event(note)
+        if structured is not None:
+            return structured
+        if note.startswith("优先级:") or note.startswith("Priority:"):
+            return note
+    return None
 
 
 def _append_entry_guard_reason_line(lines: list[str], *, result: RuntimeResult, language: str) -> None:

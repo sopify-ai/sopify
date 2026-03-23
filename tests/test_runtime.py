@@ -47,9 +47,19 @@ from runtime.daily_summary import render_daily_summary_markdown
 from runtime.engine import run_runtime
 from runtime.entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
 from runtime.execution_gate import evaluate_execution_gate
+from runtime.finalize import finalize_plan
 from runtime.handoff import build_runtime_handoff
 from runtime.kb import bootstrap_kb, ensure_blueprint_index
 from runtime.knowledge_layout import materialization_stage, resolve_context_profile
+from runtime.plan_registry import (
+    PlanRegistryError,
+    confirm_plan_priority,
+    get_plan_entry,
+    inspect_plan_registry,
+    read_plan_registry,
+    recommend_plan_candidates,
+    registry_relative_path,
+)
 from runtime.plan_scaffold import create_plan_scaffold, request_explicitly_wants_new_plan
 from runtime.output import render_runtime_output
 from runtime.plan_orchestrator import (
@@ -121,6 +131,13 @@ class _FakeInteractiveSession:
 
     def confirm(self, *, title: str, yes_label: str, no_label: str, default_value=None, instructions: str) -> bool:
         return self.confirm_value
+
+
+def _plan_dir_count(workspace: Path) -> int:
+    plan_root = workspace / ".sopify-skills" / "plan"
+    if not plan_root.exists():
+        return 0
+    return sum(1 for path in plan_root.iterdir() if path.is_dir())
 
 
 def _rewrite_background_scope(
@@ -1429,6 +1446,19 @@ class DecisionContractTests(unittest.TestCase):
             self.assertEqual(submission.answers["selected_option_id"], "option_2")
             self.assertEqual(submission.source, "cli_interactive")
 
+    def test_fake_interactive_session_confirm_is_available_for_confirm_fields(self) -> None:
+        session = _FakeInteractiveSession(confirm_value=False)
+
+        self.assertFalse(
+            session.confirm(
+                title="确认方案",
+                yes_label="是",
+                no_label="否",
+                default_value=True,
+                instructions="请选择",
+            )
+        )
+
     def test_decision_bridge_script_inspect_and_submit_for_cli(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -1874,6 +1904,295 @@ class PlanScaffoldTests(unittest.TestCase):
         self.assertTrue(request_explicitly_wants_new_plan("请新建一个 plan 处理这个问题"))
 
 
+class PlanRegistryTests(unittest.TestCase):
+    def test_plan_scaffold_auto_upserts_registry_with_suggested_priority(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            artifact = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+
+            registry_file = workspace / registry_relative_path(config)
+            self.assertTrue(registry_file.exists())
+
+            read_result = read_plan_registry(config)
+            self.assertEqual(read_result.payload["mode"], "observe_only")
+            self.assertEqual(read_result.payload["selection_policy"], "explicit_only")
+            self.assertEqual(read_result.payload["priority_policy"], "heuristic_v1")
+
+            entry_result = get_plan_entry(config=config, plan_id=artifact.plan_id)
+            self.assertIsNotNone(entry_result.entry)
+            assert entry_result.entry is not None
+            self.assertEqual(entry_result.entry["snapshot"]["path"], artifact.path)
+            self.assertEqual(entry_result.entry["snapshot"]["title"], artifact.title)
+            self.assertIsNone(entry_result.entry["governance"]["priority"])
+            self.assertIsNone(entry_result.entry["governance"]["priority_source"])
+            self.assertEqual(entry_result.entry["governance"]["status"], "todo")
+            self.assertEqual(entry_result.entry["advice"]["suggested_priority"], "p2")
+            self.assertTrue(entry_result.entry["advice"]["suggested_reason"])
+
+    def test_missing_registry_backfills_existing_plan_dirs_on_next_create(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            first = create_plan_scaffold("补 runtime 骨架", config=config, level="standard")
+            registry_file = workspace / registry_relative_path(config)
+            registry_file.unlink()
+
+            second = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+
+            read_result = read_plan_registry(config)
+            plan_ids = {entry["plan_id"] for entry in read_result.payload["plans"]}
+            self.assertEqual(plan_ids, {first.plan_id, second.plan_id})
+
+    def test_reconcile_updates_snapshot_without_overwriting_confirmed_governance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            artifact = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+            confirm_plan_priority(
+                config=config,
+                plan_id=artifact.plan_id,
+                priority="p1",
+                note="用户确认先做",
+            )
+
+            plan_dir = workspace / artifact.path
+            renamed_dir = plan_dir.with_name(f"{plan_dir.name}-renamed")
+            plan_dir.rename(renamed_dir)
+            tasks_path = renamed_dir / "tasks.md"
+            tasks_text = tasks_path.read_text(encoding="utf-8")
+            tasks_text = tasks_text.replace("level: standard", "level: full")
+            tasks_text = tasks_text.replace("feature_key: runtime-skeleton", "feature_key: runtime-renamed")
+            tasks_text = tasks_text.replace("# 任务清单: 实现 runtime skeleton", "# 任务清单: 重命名后的方案标题")
+            tasks_path.write_text(tasks_text, encoding="utf-8")
+
+            entry_result = get_plan_entry(config=config, plan_id=artifact.plan_id, reconcile=True)
+            self.assertIsNotNone(entry_result.entry)
+            assert entry_result.entry is not None
+            self.assertTrue(entry_result.drift_notice)
+            self.assertEqual(
+                entry_result.entry["snapshot"]["path"],
+                str(renamed_dir.relative_to(workspace)),
+            )
+            self.assertEqual(entry_result.entry["snapshot"]["title"], "重命名后的方案标题")
+            self.assertEqual(entry_result.entry["snapshot"]["level"], "full")
+            self.assertEqual(entry_result.entry["snapshot"]["topic_key"], "runtime-renamed")
+            self.assertEqual(entry_result.entry["governance"]["priority"], "p1")
+            self.assertEqual(entry_result.entry["governance"]["priority_source"], "user_confirmed")
+            self.assertEqual(entry_result.entry["governance"]["note"], "用户确认先做")
+
+    def test_finalize_removes_entry_from_active_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            artifact = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+            store.set_current_plan(artifact)
+
+            result = finalize_plan(
+                config=config,
+                state_store=store,
+                current_plan=artifact,
+            )
+
+            self.assertIsNotNone(result.archived_plan)
+            self.assertTrue(result.registry_updated)
+            read_result = read_plan_registry(config)
+            plan_ids = {entry["plan_id"] for entry in read_result.payload["plans"]}
+            self.assertNotIn(artifact.plan_id, plan_ids)
+
+    def test_readonly_recommendations_keep_current_plan_and_explain_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            current_plan = create_plan_scaffold("第一性原理协作规则分层落地", config=config, level="standard")
+            store.set_current_plan(current_plan)
+            backlog_plan = create_plan_scaffold("补 runtime 骨架", config=config, level="standard")
+
+            recommendations = recommend_plan_candidates(config=config)
+
+            self.assertTrue(recommendations)
+            self.assertEqual(recommendations[0].plan_id, current_plan.plan_id)
+            self.assertEqual(store.get_current_plan().plan_id, current_plan.plan_id)
+            backlog = next(item for item in recommendations if item.plan_id == backlog_plan.plan_id)
+            self.assertEqual(backlog.suggested_priority, "p3")
+            self.assertTrue(any("不建议直接切换" in reason for reason in backlog.reasons))
+
+    def test_recommendations_prefer_user_confirmed_priority_over_unconfirmed_suggestion(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            suggested_plan = create_plan_scaffold("紧急修 runtime blocker", config=config, level="standard")
+            confirmed_plan = create_plan_scaffold("补 runtime 骨架", config=config, level="standard")
+            confirm_plan_priority(
+                config=config,
+                plan_id=confirmed_plan.plan_id,
+                priority="p2",
+                note="用户确认先做",
+            )
+
+            recommendations = recommend_plan_candidates(config=config, request_text="紧急修 runtime blocker")
+
+            self.assertEqual(recommendations[0].plan_id, confirmed_plan.plan_id)
+            self.assertEqual(recommendations[0].priority_source, "user_confirmed")
+            self.assertEqual(recommendations[1].plan_id, suggested_plan.plan_id)
+            self.assertEqual(recommendations[1].suggested_priority, "p1")
+
+    def test_inspect_plan_registry_does_not_rewrite_registry_when_advice_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            artifact = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+
+            registry_file = workspace / registry_relative_path(config)
+            before = registry_file.read_text(encoding="utf-8")
+
+            with mock.patch("runtime.plan_registry.iso_now", return_value="2099-01-01T00:00:00+00:00"):
+                payload = inspect_plan_registry(config=config, plan_id=artifact.plan_id)
+
+            after = registry_file.read_text(encoding="utf-8")
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(before, after)
+
+    def test_runtime_output_shows_suggested_priority_and_registry_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            result = run_runtime(
+                "~go plan 实现 runtime skeleton",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            output = render_runtime_output(
+                result,
+                brand="test-ai",
+                language="zh-CN",
+                title_color="none",
+                use_color=False,
+            )
+
+            self.assertIn("优先级: 建议 p2（待用户确认）", output)
+            self.assertIn(".sopify-skills/plan/_registry.yaml", output)
+
+    def test_runtime_output_does_not_report_registry_when_registry_sync_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            with mock.patch("runtime.plan_scaffold.upsert_plan_entry", side_effect=PlanRegistryError("boom")):
+                result = run_runtime(
+                    "~go plan 实现 runtime skeleton",
+                    workspace_root=workspace,
+                    user_home=workspace / "home",
+                )
+
+            output = render_runtime_output(
+                result,
+                brand="test-ai",
+                language="zh-CN",
+                title_color="none",
+                use_color=False,
+            )
+
+            self.assertNotIn(".sopify-skills/plan/_registry.yaml", result.generated_files)
+            self.assertNotIn(".sopify-skills/plan/_registry.yaml", output)
+
+    def test_plan_registry_script_inspect_and_confirm_priority_for_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            artifact = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
+            script_path = REPO_ROOT / "scripts" / "plan_registry_runtime.py"
+
+            inspected = subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "--workspace-root",
+                    str(workspace),
+                    "inspect",
+                    "--plan-id",
+                    artifact.plan_id,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(inspected.returncode, 0, msg=inspected.stderr)
+            inspect_payload = json.loads(inspected.stdout)
+            self.assertEqual(inspect_payload["status"], "ready")
+            self.assertEqual(inspect_payload["registry_path"], ".sopify-skills/plan/_registry.yaml")
+            self.assertTrue(inspect_payload["execution_truth"]["current_plan_is_machine_truth"])
+            self.assertTrue(inspect_payload["execution_truth"]["registry_is_observe_only"])
+            self.assertEqual(inspect_payload["selected_plan"]["plan_id"], artifact.plan_id)
+            self.assertEqual(inspect_payload["selected_plan"]["advice"]["suggested_priority"], "p2")
+
+            confirmed = subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "--workspace-root",
+                    str(workspace),
+                    "confirm-priority",
+                    "--plan-id",
+                    artifact.plan_id,
+                    "--priority",
+                    "p1",
+                    "--note",
+                    "用户确认先做",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(confirmed.returncode, 0, msg=confirmed.stderr)
+            confirm_payload = json.loads(confirmed.stdout)
+            self.assertEqual(confirm_payload["status"], "written")
+            self.assertEqual(confirm_payload["plan_id"], artifact.plan_id)
+            self.assertEqual(confirm_payload["confirmed_priority"], "p1")
+            self.assertEqual(confirm_payload["priority_source"], "user_confirmed")
+            self.assertEqual(confirm_payload["selected_plan"]["governance"]["priority"], "p1")
+            self.assertEqual(confirm_payload["selected_plan"]["governance"]["note"], "用户确认先做")
+            self.assertTrue(confirm_payload["priority_confirmed_at"])
+
+            entry_result = get_plan_entry(config=config, plan_id=artifact.plan_id)
+            self.assertIsNotNone(entry_result.entry)
+            assert entry_result.entry is not None
+            self.assertEqual(entry_result.entry["governance"]["priority"], "p1")
+            self.assertEqual(entry_result.entry["governance"]["priority_source"], "user_confirmed")
+
+    def test_inspect_plan_registry_exposes_recommendations_without_switching_current_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            current_plan = create_plan_scaffold("第一性原理协作规则分层落地", config=config, level="standard")
+            store.set_current_plan(current_plan)
+            backlog_plan = create_plan_scaffold("补 runtime 骨架", config=config, level="standard")
+
+            payload = inspect_plan_registry(config=config, plan_id=backlog_plan.plan_id)
+
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["current_plan"]["plan_id"], current_plan.plan_id)
+            self.assertEqual(payload["selected_plan"]["plan_id"], backlog_plan.plan_id)
+            self.assertTrue(payload["execution_truth"]["current_plan_is_machine_truth"])
+            self.assertTrue(any(item["plan_id"] == current_plan.plan_id for item in payload["recommendations"]))
+            self.assertEqual(store.get_current_plan().plan_id, current_plan.plan_id)
+
+
 class PlanReuseRuntimeTests(unittest.TestCase):
     def test_planning_reuses_active_plan_under_single_active_policy(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1894,7 +2213,7 @@ class PlanReuseRuntimeTests(unittest.TestCase):
             assert result.plan_artifact is not None
             self.assertEqual(result.plan_artifact.plan_id, current_plan.plan_id)
             self.assertTrue(any("implicit current-plan anchor" in note for note in result.notes))
-            self.assertEqual(len(list((workspace / ".sopify-skills" / "plan").iterdir())), 1)
+            self.assertEqual(_plan_dir_count(workspace), 1)
 
     def test_explicit_plan_reference_rebinds_current_plan(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1939,7 +2258,7 @@ class PlanReuseRuntimeTests(unittest.TestCase):
             assert result.plan_artifact is not None
             self.assertEqual(result.plan_artifact.topic_key, "runtime")
             self.assertFalse(any("topic_key=runtime" in note for note in result.notes))
-            self.assertEqual(len(list((workspace / ".sopify-skills" / "plan").iterdir())), 2)
+            self.assertEqual(_plan_dir_count(workspace), 2)
 
     def test_meta_review_request_does_not_create_new_plan(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1958,7 +2277,7 @@ class PlanReuseRuntimeTests(unittest.TestCase):
 
             self.assertEqual(result.route.route_name, "consult")
             self.assertIsNone(result.plan_artifact)
-            self.assertEqual(len(list((workspace / ".sopify-skills" / "plan").iterdir())), 1)
+            self.assertEqual(_plan_dir_count(workspace), 1)
             rebound = StateStore(load_runtime_config(workspace)).get_current_plan()
             self.assertIsNotNone(rebound)
             assert rebound is not None
@@ -1981,7 +2300,7 @@ class PlanReuseRuntimeTests(unittest.TestCase):
 
             self.assertEqual(result.route.route_name, "consult")
             self.assertIsNone(result.plan_artifact)
-            self.assertEqual(len(list((workspace / ".sopify-skills" / "plan").iterdir())), 1)
+            self.assertEqual(_plan_dir_count(workspace), 1)
             rebound = StateStore(load_runtime_config(workspace)).get_current_plan()
             self.assertIsNotNone(rebound)
             assert rebound is not None
@@ -2007,7 +2326,7 @@ class PlanReuseRuntimeTests(unittest.TestCase):
             self.assertIsNotNone(second.plan_artifact)
             assert second.plan_artifact is not None
             self.assertEqual(second.plan_artifact.plan_id, current_plan.plan_id)
-            self.assertEqual(len(list((workspace / ".sopify-skills" / "plan").iterdir())), 1)
+            self.assertEqual(_plan_dir_count(workspace), 1)
             rebound = StateStore(load_runtime_config(workspace)).get_current_plan()
             self.assertIsNotNone(rebound)
             assert rebound is not None
@@ -2028,7 +2347,7 @@ class PlanReuseRuntimeTests(unittest.TestCase):
             self.assertIsNotNone(first.plan_artifact)
             assert first.plan_artifact is not None
             self.assertNotEqual(first.plan_artifact.plan_id, current_plan.plan_id)
-            self.assertEqual(len(list((workspace / ".sopify-skills" / "plan").iterdir())), 2)
+            self.assertEqual(_plan_dir_count(workspace), 2)
 
     def test_decision_resume_reuses_existing_active_plan(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2138,7 +2457,7 @@ class PlanReuseRuntimeTests(unittest.TestCase):
             self.assertIsNotNone(second.plan_artifact)
             assert second.plan_artifact is not None
             self.assertNotEqual(second.plan_artifact.plan_id, current_plan.plan_id)
-            self.assertEqual(len(list((workspace / ".sopify-skills" / "plan").iterdir())), 2)
+            self.assertEqual(_plan_dir_count(workspace), 2)
             rebound = StateStore(load_runtime_config(workspace)).get_current_plan()
             self.assertIsNotNone(rebound)
             assert rebound is not None
@@ -4485,6 +4804,7 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((bundle_root / "scripts" / "clarification_bridge_runtime.py").exists())
             self.assertTrue((bundle_root / "scripts" / "develop_checkpoint_runtime.py").exists())
             self.assertTrue((bundle_root / "scripts" / "decision_bridge_runtime.py").exists())
+            self.assertTrue((bundle_root / "scripts" / "plan_registry_runtime.py").exists())
             self.assertTrue((bundle_root / "scripts" / "preferences_preload_runtime.py").exists())
             self.assertTrue((bundle_root / "scripts" / "runtime_gate.py").exists())
             self.assertTrue((bundle_root / "tests" / "test_runtime.py").exists())
@@ -4554,6 +4874,8 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue(manifest["capabilities"]["develop_checkpoint_callback"])
             self.assertTrue(manifest["capabilities"]["develop_resume_context"])
             self.assertTrue(manifest["capabilities"]["execution_gate"])
+            self.assertTrue(manifest["capabilities"]["plan_registry"])
+            self.assertTrue(manifest["capabilities"]["plan_registry_priority_confirm"])
             self.assertTrue(manifest["capabilities"]["planning_mode_orchestrator"])
             self.assertTrue(manifest["capabilities"]["preferences_preload"])
             self.assertTrue(manifest["capabilities"]["runtime_gate"])
@@ -4595,6 +4917,58 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(manifest["limits"]["develop_checkpoint_hosts"]["cli"]["preferred_mode"], "structured_callback")
             self.assertIn("working_summary", manifest["limits"]["develop_resume_context_required_fields"])
             self.assertIn("continue_host_develop", manifest["limits"]["develop_resume_after_actions"])
+            self.assertEqual(manifest["limits"]["plan_registry_entry"], "scripts/plan_registry_runtime.py")
+            self.assertEqual(manifest["limits"]["plan_registry_hosts"]["cli"]["preferred_mode"], "inspect_only_summary")
+            self.assertEqual(
+                manifest["limits"]["plan_registry_hosts"]["cli"]["trigger_points"],
+                ["post_plan_review", "manual_plan_registry_review"],
+            )
+            self.assertEqual(manifest["limits"]["plan_registry_hosts"]["cli"]["mount_scope"], "review_only")
+            self.assertEqual(manifest["limits"]["plan_registry_hosts"]["cli"]["blocked_scopes"], ["develop", "execute"])
+            self.assertEqual(manifest["limits"]["plan_registry_hosts"]["cli"]["default_surface"], "inspect_contract")
+            self.assertEqual(manifest["limits"]["plan_registry_hosts"]["cli"]["confirm_priority_trigger"], "explicit_user_action")
+            self.assertEqual(
+                manifest["limits"]["plan_registry_hosts"]["cli"]["display_fields"],
+                ["current_plan", "selected_plan", "recommendations", "drift_notice", "execution_truth"],
+            )
+            self.assertEqual(
+                manifest["limits"]["plan_registry_hosts"]["cli"]["allowed_actions"],
+                ["confirm_suggested", "set_p1", "set_p2", "set_p3", "dismiss"],
+            )
+            self.assertTrue(manifest["limits"]["plan_registry_hosts"]["cli"]["note_optional"])
+            self.assertEqual(
+                manifest["limits"]["plan_registry_hosts"]["cli"]["confirm_payload_fields"],
+                ["plan_id", "priority", "note"],
+            )
+            self.assertEqual(
+                manifest["limits"]["plan_registry_hosts"]["cli"]["success_behavior"],
+                {
+                    "refresh_scope": "selected_card",
+                    "stay_in_context": "review",
+                    "auto_execute": False,
+                    "auto_switch_current_plan": False,
+                },
+            )
+            self.assertEqual(
+                manifest["limits"]["plan_registry_hosts"]["cli"]["failure_behavior"],
+                {
+                    "inspect_failure": "hide_card_non_blocking",
+                    "confirm_failure": "show_retryable_error",
+                },
+            )
+            self.assertEqual(
+                manifest["limits"]["plan_registry_hosts"]["cli"]["copy"],
+                {
+                    "title": "Plan 优先级建议",
+                    "summary": "当前 active plan、当前评审 plan 与建议优先级",
+                    "boundary_notice": "确认优先级只会更新 registry，不会切换 current_plan",
+                    "success_notice": "已记录到 plan registry",
+                    "pending_notice": "已保留系统建议，暂未写入最终优先级",
+                },
+            )
+            self.assertEqual(manifest["limits"]["plan_registry_hosts"]["cli"]["raw_registry_visibility"], "advanced_only")
+            self.assertTrue(manifest["limits"]["plan_registry_hosts"]["cli"]["observe_only"])
+            self.assertEqual(manifest["limits"]["plan_registry_hosts"]["cli"]["execution_truth"], "current_plan")
             self.assertEqual(manifest["limits"]["preferences_preload_entry"], "scripts/preferences_preload_runtime.py")
             self.assertEqual(manifest["limits"]["preferences_preload_contract_version"], "1")
             self.assertEqual(

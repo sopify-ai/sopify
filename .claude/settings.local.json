@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(find /Users/weixin.li/Desktop/Sopify/sopify-skills/.sopify-skills/state/ -type f -name *.json)",
+      "Bash(python3:*)",
+      "Bash(grep -r \"importlib\\\\|__import__\\\\|getattr.*import\" /Users/weixin.li/Desktop/Sopify/sopify-skills/runtime/*.py)",
+      "Bash(python -m pytest tests/test_runtime.py::PlanRegistryTests -v --tb=short)",
+      "Bash(python3.11 -m pip install pytest)",
+      "Bash(python3.11 -m pytest tests/test_runtime.py::PlanRegistryTests -v --tb=short)",
+      "Bash(python3.11 -m unittest tests.test_runtime.PlanRegistryTests -v)",
+      "Bash(python3.11 -m unittest tests.test_runtime.PlanReuseRuntimeTests tests.test_runtime.EngineIntegrationTests -v)",
+      "WebSearch",
+      "WebFetch(domain:nio.feishu.cn)",
+      "Bash(uv run:*)"
+    ]
+  }
+}

@@ -6,6 +6,29 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-03-23.122831] - 2026-03-23
+
+### Changed
+
+- Updated release-relevant files:
+  - `.claude/settings.local.json`
+  - `.sopify-skills/user/feedback.jsonl`
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `runtime/engine.py`
+  - `runtime/finalize.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_registry.py`
+  - `runtime/plan_scaffold.py`
+  - `scripts/plan_registry_runtime.py`
+  - `scripts/sync-runtime-assets.sh`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_runtime.py`
+
 ## [2026-03-22.225057] - 2026-03-22
 
 ### Changed

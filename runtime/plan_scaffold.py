@@ -12,6 +12,7 @@ from ._yaml import YamlParseError, load_yaml
 from .decision import option_by_id
 from .knowledge_sync import render_knowledge_sync_front_matter
 from .models import DecisionState, PlanArtifact, RuntimeConfig
+from .plan_registry import PlanRegistryError, upsert_plan_entry
 from .state import iso_now
 
 _FRONT_MATTER_RE = re.compile(r"\A---\n(?P<front>.*?)\n---\n(?P<body>.*)\Z", re.DOTALL)
@@ -99,7 +100,7 @@ def create_plan_scaffold(
                 for path in (adr_dir, diagrams_dir)
             )
 
-    return PlanArtifact(
+    artifact = PlanArtifact(
         plan_id=plan_id,
         title=title,
         summary=summary,
@@ -109,6 +110,16 @@ def create_plan_scaffold(
         created_at=iso_now(),
         topic_key=topic_key,
     )
+    try:
+        upsert_plan_entry(
+            config=config,
+            artifact=artifact,
+            request_text=request_text,
+        )
+    except PlanRegistryError:
+        # Governance sync must not block core plan creation.
+        pass
+    return artifact
 
 
 def _derive_title(request_text: str) -> str:
