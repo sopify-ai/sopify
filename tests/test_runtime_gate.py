@@ -4,17 +4,19 @@ import json
 import os
 from pathlib import Path
 import re
+from types import SimpleNamespace
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from runtime.config import load_runtime_config
-from runtime.entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
+from runtime.entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE, build_entry_guard_contract
 from runtime.execution_gate import evaluate_execution_gate
 from runtime.gate import (
     CHECKPOINT_ONLY,
@@ -23,9 +25,9 @@ from runtime.gate import (
     NORMAL_RUNTIME_FOLLOWUP,
     enter_runtime_gate,
 )
-from runtime.models import PlanArtifact, RouteDecision, RunState
+from runtime.models import PlanArtifact, RouteDecision, RunState, RuntimeHandoff
 from runtime.plan_scaffold import create_plan_scaffold
-from runtime.state import StateStore, iso_now
+from runtime.state import StateStore, iso_now, stable_request_sha1
 
 
 def _rewrite_background_scope(
@@ -98,6 +100,63 @@ def _prepare_ready_plan_state(
     return plan_artifact
 
 
+def _make_runtime_handoff(
+    *,
+    run_id: str = "run-test",
+    route_name: str = "workflow",
+    required_host_action: str = "continue_host_workflow",
+    strict_runtime_entry: bool = True,
+) -> RuntimeHandoff:
+    entry_guard = build_entry_guard_contract(required_host_action=required_host_action)
+    if not strict_runtime_entry:
+        entry_guard = dict(entry_guard)
+        entry_guard["strict_runtime_entry"] = False
+    return RuntimeHandoff(
+        schema_version="1",
+        route_name=route_name,
+        run_id=run_id,
+        handoff_kind="workflow",
+        required_host_action=required_host_action,
+        artifacts={"entry_guard": entry_guard},
+        observability={
+            "generated_at": iso_now(),
+            "request_excerpt": "test request",
+            "request_sha1": stable_request_sha1("test request"),
+        },
+    )
+
+
+def _make_runtime_result(*, request_text: str, route_name: str, handoff: object | None) -> SimpleNamespace:
+    return SimpleNamespace(
+        route=RouteDecision(
+            route_name=route_name,
+            request_text=request_text,
+            reason="test",
+            complexity="simple",
+        ),
+        handoff=handoff,
+    )
+
+
+def _write_gate_receipt_fixture(
+    workspace: Path,
+    *,
+    request_text: str,
+    route_name: str,
+    raw_payload: dict[str, object] | None = None,
+) -> None:
+    receipt_path = workspace / ".sopify-skills" / "state" / CURRENT_GATE_RECEIPT_FILENAME
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = raw_payload or {
+        "observability": {
+            "written_at": iso_now(),
+            "request_sha1": stable_request_sha1(request_text),
+            "runtime_route_name": route_name,
+        }
+    }
+    receipt_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 class RuntimeGateTests(unittest.TestCase):
     def test_gate_returns_normal_runtime_followup_for_plan_review(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -119,6 +178,16 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertTrue(result["evidence"]["current_request_produced_handoff"])
             self.assertTrue(result["evidence"]["persisted_handoff_matches_current_request"])
             self.assertIn("补 runtime gate 骨架", result["observability"]["request_excerpt"])
+            self.assertEqual(
+                result["observability"]["previous_receipt"],
+                {
+                    "exists": False,
+                    "written_at": None,
+                    "request_sha1_match": None,
+                    "route_name_match": None,
+                    "stale_reason": None,
+                },
+            )
             self.assertTrue((workspace / ".sopify-skills" / "state" / CURRENT_GATE_RECEIPT_FILENAME).exists())
 
     def test_gate_maps_clarification_pending_to_checkpoint_only(self) -> None:
@@ -291,6 +360,57 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertEqual(result["observability"]["runtime_route_name"], "summary")
             self.assertIn("补 runtime gate 骨架", result["observability"]["persisted_handoff"]["request_excerpt"])
 
+    def test_gate_reports_previous_receipt_diagnostics(self) -> None:
+        scenarios = (
+            ("request_sha1_mismatch", "旧请求", "clarification_pending", False, True),
+            ("route_name_mismatch", "优化一下", "workflow", True, False),
+            ("both_mismatch", "旧请求", "workflow", False, False),
+        )
+        for stale_reason, previous_request, previous_route, request_match, route_match in scenarios:
+            with self.subTest(stale_reason=stale_reason):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    workspace = Path(temp_dir)
+                    _write_gate_receipt_fixture(
+                        workspace,
+                        request_text=previous_request,
+                        route_name=previous_route,
+                    )
+
+                    result = enter_runtime_gate(
+                        "优化一下",
+                        workspace_root=workspace,
+                        user_home=workspace / "home",
+                    )
+
+                    previous_receipt = result["observability"]["previous_receipt"]
+                    self.assertTrue(previous_receipt["exists"])
+                    self.assertEqual(previous_receipt["request_sha1_match"], request_match)
+                    self.assertEqual(previous_receipt["route_name_match"], route_match)
+                    self.assertEqual(previous_receipt["stale_reason"], stale_reason)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            receipt_path = workspace / ".sopify-skills" / "state" / CURRENT_GATE_RECEIPT_FILENAME
+            receipt_path.parent.mkdir(parents=True, exist_ok=True)
+            receipt_path.write_text("{not-json", encoding="utf-8")
+
+            result = enter_runtime_gate(
+                "优化一下",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            self.assertEqual(
+                result["observability"]["previous_receipt"],
+                {
+                    "exists": True,
+                    "written_at": None,
+                    "request_sha1_match": None,
+                    "route_name_match": None,
+                    "stale_reason": "parse_error",
+                },
+            )
+
     def test_gate_generates_session_id_and_session_scoped_state_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -388,6 +508,126 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertEqual(result["allowed_response_mode"], ERROR_VISIBLE_RETRY)
             self.assertEqual(result["error_code"], "handoff_missing")
             self.assertFalse(result["evidence"]["handoff_found"])
+
+    def test_gate_errors_when_current_request_handoff_is_not_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            runtime_handoff = _make_runtime_handoff(run_id="run-current")
+
+            with patch(
+                "runtime.gate.run_runtime",
+                return_value=_make_runtime_result(
+                    request_text="补 runtime gate",
+                    route_name="workflow",
+                    handoff=runtime_handoff,
+                ),
+            ):
+                result = enter_runtime_gate(
+                    "补 runtime gate",
+                    workspace_root=workspace,
+                    session_id="session-test",
+                    user_home=workspace / "home",
+                )
+
+            self.assertEqual(result["status"], "error")
+            self.assertFalse(result["gate_passed"])
+            self.assertEqual(result["error_code"], "current_request_not_persisted")
+            self.assertEqual(result["allowed_response_mode"], ERROR_VISIBLE_RETRY)
+            self.assertFalse(result["evidence"]["handoff_found"])
+            self.assertTrue(result["evidence"]["current_request_produced_handoff"])
+            self.assertEqual(result["evidence"]["handoff_source_kind"], "current_request_not_persisted")
+
+    def test_gate_errors_when_persisted_handoff_mismatches_runtime_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config, session_id="session-test")
+            store.set_current_handoff(_make_runtime_handoff(run_id="run-persisted"))
+
+            with patch(
+                "runtime.gate.run_runtime",
+                return_value=_make_runtime_result(
+                    request_text="补 runtime gate",
+                    route_name="workflow",
+                    handoff=_make_runtime_handoff(run_id="run-current"),
+                ),
+            ):
+                result = enter_runtime_gate(
+                    "补 runtime gate",
+                    workspace_root=workspace,
+                    session_id="session-test",
+                    user_home=workspace / "home",
+                )
+
+            self.assertEqual(result["status"], "error")
+            self.assertFalse(result["gate_passed"])
+            self.assertEqual(result["error_code"], "persisted_runtime_mismatch")
+            self.assertTrue(result["evidence"]["handoff_found"])
+            self.assertTrue(result["evidence"]["current_request_produced_handoff"])
+            self.assertFalse(result["evidence"]["persisted_handoff_matches_current_request"])
+            self.assertEqual(result["evidence"]["handoff_source_kind"], "persisted_runtime_mismatch")
+
+    def test_gate_errors_when_handoff_candidate_cannot_be_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            malformed_handoff = SimpleNamespace(
+                run_id="run-current",
+                route_name="workflow",
+                required_host_action="continue_host_workflow",
+            )
+
+            with patch(
+                "runtime.gate.run_runtime",
+                return_value=_make_runtime_result(
+                    request_text="补 runtime gate",
+                    route_name="workflow",
+                    handoff=malformed_handoff,
+                ),
+            ):
+                result = enter_runtime_gate(
+                    "补 runtime gate",
+                    workspace_root=workspace,
+                    session_id="session-test",
+                    user_home=workspace / "home",
+                )
+
+            self.assertEqual(result["status"], "error")
+            self.assertFalse(result["gate_passed"])
+            self.assertEqual(result["error_code"], "handoff_normalize_failed")
+            self.assertEqual(result["evidence"]["handoff_source_kind"], "current_request_not_persisted")
+
+    def test_gate_prioritizes_strict_runtime_entry_before_source_kind(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config, session_id="session-test")
+            store.set_current_handoff(
+                _make_runtime_handoff(
+                    run_id="run-persisted",
+                    route_name="workflow",
+                    strict_runtime_entry=False,
+                )
+            )
+
+            with patch(
+                "runtime.gate.run_runtime",
+                return_value=_make_runtime_result(
+                    request_text="~summary",
+                    route_name="summary",
+                    handoff=None,
+                ),
+            ):
+                result = enter_runtime_gate(
+                    "~summary",
+                    workspace_root=workspace,
+                    session_id="session-test",
+                    user_home=workspace / "home",
+                )
+
+            self.assertEqual(result["status"], "error")
+            self.assertFalse(result["gate_passed"])
+            self.assertEqual(result["error_code"], "strict_runtime_entry_missing")
+            self.assertEqual(result["evidence"]["handoff_source_kind"], "reused_prior_state")
 
     def test_runtime_gate_cli_prints_compact_json_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

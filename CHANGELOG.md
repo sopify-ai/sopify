@@ -6,6 +6,18 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-03-23.163812] - 2026-03-23
+
+### Changed
+
+- Updated release-relevant files:
+  - `runtime/gate.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_runtime_gate.py`
+
 ## [2026-03-23.143454] - 2026-03-23
 
 ### Changed

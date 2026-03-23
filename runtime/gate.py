@@ -38,9 +38,9 @@ def enter_runtime_gate(
     workspace = Path(workspace_root).resolve()
     contract = _base_contract(workspace)
     config = None
+    request = str(raw_request or "").strip()
 
     try:
-        request = str(raw_request or "").strip()
         if not request:
             raise ValueError("Runtime gate request cannot be empty")
 
@@ -63,7 +63,6 @@ def enter_runtime_gate(
             session_id=resolved_session_id,
             user_home=user_home,
         )
-        contract["preferences"] = _normalize_preferences(preload_preferences(config))
         contract["runtime"] = {
             "route_name": runtime_result.route.route_name,
             "reason": runtime_result.route.reason,
@@ -109,39 +108,13 @@ def enter_runtime_gate(
             cleaned_session_dirs=cleaned_session_dirs,
         )
         contract["state"] = _build_state_contract(store=store)
-
-        if not contract["handoff"]:
-            contract.update(
-                {
-                    "status": "error",
-                    "gate_passed": False,
-                    "allowed_response_mode": ERROR_VISIBLE_RETRY,
-                    "error_code": "handoff_missing",
-                    "message": "Runtime gate could not confirm a structured handoff.",
-                }
+        contract.update(
+            _evaluate_gate_evidence(
+                handoff=contract["handoff"],
+                handoff_source_kind=handoff_source_kind,
+                strict_runtime_entry=strict_runtime_entry,
             )
-        elif not strict_runtime_entry:
-            contract.update(
-                {
-                    "status": "error",
-                    "gate_passed": False,
-                    "allowed_response_mode": ERROR_VISIBLE_RETRY,
-                    "error_code": "strict_runtime_entry_missing",
-                    "message": "Runtime gate is missing strict entry evidence from handoff.entry_guard.",
-                }
-            )
-        else:
-            required_host_action = str(contract["handoff"].get("required_host_action") or "").strip()
-            allowed_response_mode = NORMAL_RUNTIME_FOLLOWUP
-            if required_host_action in CHECKPOINT_ONLY_ACTIONS:
-                allowed_response_mode = CHECKPOINT_ONLY
-            contract.update(
-                {
-                    "status": "ready",
-                    "gate_passed": True,
-                    "allowed_response_mode": allowed_response_mode,
-                }
-            )
+        )
     except (ConfigError, ValueError, WorkspacePreflightError) as exc:
         contract.update(
             {
@@ -163,10 +136,20 @@ def enter_runtime_gate(
             }
         )
 
-    if config is not None and write_receipt:
+    if config is not None:
         receipt_path = config.state_dir / CURRENT_GATE_RECEIPT_FILENAME
-        contract["receipt_path"] = str(receipt_path)
-        write_gate_receipt(receipt_path, contract)
+        observability = contract.get("observability")
+        if not isinstance(observability, dict):
+            observability = {}
+            contract["observability"] = observability
+        observability["previous_receipt"] = _read_previous_receipt(
+            receipt_path=receipt_path,
+            request_sha1=stable_request_sha1(request),
+            runtime_route_name=str(contract.get("runtime", {}).get("route_name") or ""),
+        )
+        if write_receipt:
+            contract["receipt_path"] = str(receipt_path)
+            write_gate_receipt(receipt_path, contract)
     return contract
 
 
@@ -249,6 +232,68 @@ def _normalize_handoff(handoff: Any) -> dict[str, Any]:
     return payload
 
 
+def _evaluate_gate_evidence(
+    *,
+    handoff: Mapping[str, Any],
+    handoff_source_kind: str,
+    strict_runtime_entry: bool,
+) -> dict[str, Any]:
+    normalized_valid = bool(handoff)
+    if not normalized_valid:
+        if handoff_source_kind == "missing":
+            return {
+                "status": "error",
+                "gate_passed": False,
+                "allowed_response_mode": ERROR_VISIBLE_RETRY,
+                "error_code": "handoff_missing",
+                "message": "Runtime gate could not confirm a structured handoff.",
+            }
+        return {
+            "status": "error",
+            "gate_passed": False,
+            "allowed_response_mode": ERROR_VISIBLE_RETRY,
+            "error_code": "handoff_normalize_failed",
+            "message": "Runtime gate found a handoff candidate but could not normalize it into the host contract.",
+        }
+
+    if not strict_runtime_entry:
+        return {
+            "status": "error",
+            "gate_passed": False,
+            "allowed_response_mode": ERROR_VISIBLE_RETRY,
+            "error_code": "strict_runtime_entry_missing",
+            "message": "Runtime gate is missing strict entry evidence from handoff.entry_guard.",
+        }
+
+    if handoff_source_kind == "current_request_not_persisted":
+        return {
+            "status": "error",
+            "gate_passed": False,
+            "allowed_response_mode": ERROR_VISIBLE_RETRY,
+            "error_code": "current_request_not_persisted",
+            "message": "Runtime gate found a current-request handoff, but it was not persisted to state.",
+        }
+
+    if handoff_source_kind == "persisted_runtime_mismatch":
+        return {
+            "status": "error",
+            "gate_passed": False,
+            "allowed_response_mode": ERROR_VISIBLE_RETRY,
+            "error_code": "persisted_runtime_mismatch",
+            "message": "Runtime gate found a persisted handoff, but it does not match the current runtime result.",
+        }
+
+    required_host_action = str(handoff.get("required_host_action") or "").strip()
+    allowed_response_mode = NORMAL_RUNTIME_FOLLOWUP
+    if required_host_action in CHECKPOINT_ONLY_ACTIONS:
+        allowed_response_mode = CHECKPOINT_ONLY
+    return {
+        "status": "ready",
+        "gate_passed": True,
+        "allowed_response_mode": allowed_response_mode,
+    }
+
+
 def _handoff_source_kind(*, persisted_handoff: Any, runtime_handoff: Any) -> str:
     if persisted_handoff is None and runtime_handoff is None:
         return "missing"
@@ -324,6 +369,70 @@ def _build_gate_observability(
             "required_host_action": getattr(runtime_handoff, "required_host_action", ""),
         }
     return payload
+
+
+def _read_previous_receipt(*, receipt_path: Path, request_sha1: str, runtime_route_name: str) -> dict[str, Any]:
+    missing_payload = {
+        "exists": False,
+        "written_at": None,
+        "request_sha1_match": None,
+        "route_name_match": None,
+        "stale_reason": None,
+    }
+    if not receipt_path.exists():
+        return missing_payload
+
+    try:
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {
+            "exists": True,
+            "written_at": None,
+            "request_sha1_match": None,
+            "route_name_match": None,
+            "stale_reason": "parse_error",
+        }
+
+    if not isinstance(payload, Mapping):
+        return {
+            "exists": True,
+            "written_at": None,
+            "request_sha1_match": None,
+            "route_name_match": None,
+            "stale_reason": "parse_error",
+        }
+
+    observability = payload.get("observability")
+    if not isinstance(observability, Mapping):
+        observability = {}
+    previous_runtime = payload.get("runtime")
+    if not isinstance(previous_runtime, Mapping):
+        previous_runtime = {}
+
+    previous_request_sha1 = str(observability.get("request_sha1") or "")
+    previous_route_name = str(observability.get("runtime_route_name") or previous_runtime.get("route_name") or "")
+    request_sha1_match = bool(previous_request_sha1 and request_sha1 and previous_request_sha1 == request_sha1)
+    route_name_match = bool(previous_route_name and runtime_route_name and previous_route_name == runtime_route_name)
+    return {
+        "exists": True,
+        "written_at": str(observability.get("written_at") or "") or None,
+        "request_sha1_match": request_sha1_match,
+        "route_name_match": route_name_match,
+        "stale_reason": _previous_receipt_stale_reason(
+            request_sha1_match=request_sha1_match,
+            route_name_match=route_name_match,
+        ),
+    }
+
+
+def _previous_receipt_stale_reason(*, request_sha1_match: bool, route_name_match: bool) -> str:
+    if request_sha1_match and route_name_match:
+        return "not_stale"
+    if request_sha1_match:
+        return "route_name_mismatch"
+    if route_name_match:
+        return "request_sha1_mismatch"
+    return "both_mismatch"
 
 
 def _build_state_contract(*, store: StateStore) -> dict[str, Any]:
