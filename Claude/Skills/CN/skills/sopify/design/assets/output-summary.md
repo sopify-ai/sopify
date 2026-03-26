@@ -12,4 +12,3 @@ Changes: {N} files
   - .sopify-skills/plan/...
 
 Next: 在宿主会话中继续评审或执行方案，或直接回复修改意见
-生成时间: {当前时间}

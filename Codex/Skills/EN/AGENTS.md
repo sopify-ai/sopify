@@ -1,5 +1,5 @@
 <!-- bootstrap: lang=en-US; encoding=UTF-8 -->
-<!-- SOPIFY_VERSION: 2026-03-25.182132 -->
+<!-- SOPIFY_VERSION: 2026-03-26.135542 -->
 <!-- ARCHITECTURE: Adaptive Workflow + Layered Rules -->
 
 # Sopify - Adaptive AI Programming Assistant
@@ -74,15 +74,12 @@ Changes: {N} files
   - {file2}
 
 Next: {Next step hint}
-Generated At: {current time}
 ```
 
 **Footer Contract:**
 - the footer always follows the `Changes` block
-- `Next:` must appear before `Generated At:`
-- When a generated time is present, `Generated At:` must be the final line.
-- `Generated At:` uses local display time in the fixed format `YYYY-MM-DD HH:MM:SS`, without a timezone suffix.
-- If a machine-auditable timestamp is needed, internal summary / replay artifacts may keep ISO 8601 timestamps with timezone data; do not copy that format into the footer.
+- `Next:` must be the final line in the footer.
+- the footer does not display generated time; if a machine-auditable timestamp is needed, internal summary / replay artifacts may keep ISO 8601 timestamps with timezone data.
 
 **Status Symbols:**
 | Symbol | Meaning |
@@ -145,6 +142,7 @@ Complex Task (full 3 phases):
 Note: once Sopify is triggered, the host's first step must be the runtime gate instead of calling the default runtime entry directly. In repo-local development mode, call `scripts/runtime_gate.py enter --workspace-root <cwd> --request "<raw user request>"`; when the runtime is vendored into another repository, the host must discover the helper from `.sopify-runtime/manifest.json -> limits.runtime_gate_entry` first and only then fall back to `.sopify-runtime/scripts/runtime_gate.py`. The gate owns workspace preflight / preload / default runtime dispatch / handoff normalization; `go_plan_runtime.py` remains a repo-local CLI/debug helper, not the first host hop.
 Note: when Sopify is triggered inside a project workspace and the workspace does not yet have a compatible `.sopify-runtime/manifest.json`, the host must read `~/.codex/sopify/payload-manifest.json` and call `~/.codex/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>` first; once bootstrap succeeds, continue through the repo-local bundle manifest.
 Note: before every Sopify LLM round, the host must first consume the runtime gate JSON contract. It may claim "runtime entered" and continue into normal stages only when `status == ready`, `gate_passed == true`, `evidence.handoff_found == true`, and `evidence.strict_runtime_entry == true`. When `allowed_response_mode == checkpoint_only`, the host may only continue through checkpoint responses; when `allowed_response_mode == error_visible_retry`, it may only show a short visible error and retry guidance.
+Note: the gate verification above must succeed from the current message turn's own tool call. The host may output any Sopify title line or continue into any route only after this turn first executes `scripts/runtime_gate.py enter` and validates the four conditions directly from that tool call output. It must not reuse `.sopify-skills/state/current_gate_receipt.json` from a previous turn as the current turn's gate receipt.
 Note: the runtime gate internally executes the long-term preference preload through `.sopify-runtime/manifest.json -> limits.preferences_preload_entry`; only repo-local development mode may fall back to `scripts/preferences_preload_runtime.py inspect --workspace-root <cwd>`. The host must consume only the `preferences` result exposed by the gate contract; it must not rebuild preload prompts itself or bypass the gate to call preload/default runtime directly.
 Note: the long-term preference block is a separate prompt section with fixed priority `current explicit task > preferences.md > default rules`. "current explicit task" means the temporary execution instruction stated explicitly in the current task; it overrides long-term preferences on conflict, composes when non-conflicting, and is not written back as a long-term preference by default.
 Note: after runtime execution, if `.sopify-skills/state/current_handoff.json` exists, the host must prioritize its `required_host_action`, `recommended_skill_ids`, and `artifacts` to decide the next step; the rendered `Next:` line is only a human-facing summary, not the sole machine contract.
@@ -154,6 +152,7 @@ Note: when `current_handoff.json.required_host_action == answer_questions`, the 
 Note: when `current_handoff.json.required_host_action == confirm_decision`, the host must first read `current_handoff.json.artifacts.decision_checkpoint` and `decision_submission_state`; only fall back to `.sopify-skills/state/current_decision.json` when the handoff does not contain the full checkpoint. Present the question/options/recommended_option_id to the user and wait for confirmation before resuming the default runtime entry; do not materialize the formal plan or jump to `~go exec` before confirmation.
 Note: when `current_handoff.json.required_host_action == confirm_execute`, the host must also read `current_handoff.json.artifacts.execution_summary`, show at least `plan_path / summary / task_count / risk_level / key_risk / mitigation`, and wait for a natural-language confirmation such as `continue / next / start` (or explicit plan feedback) before resuming the default runtime entry; do not jump into develop or treat `~go exec` as a bypass before that confirmation is resolved.
 Note: when `current_handoff.json.required_host_action == continue_host_develop`, the host still owns real code changes; but if implementation hits another user-facing branch, the host must not ask a free-form question or hand-write `current_decision.json / current_handoff.json`. It must call `scripts/develop_checkpoint_runtime.py submit --payload-json ...` instead (vendored: `.sopify-runtime/scripts/develop_checkpoint_runtime.py`). The payload must contain `checkpoint_kind` plus `resume_context`; the current minimum `resume_context` fields are `active_run_stage / current_plan_path / task_refs / changed_files / working_summary / verification_todo`.
+Note: when `current_handoff.json.required_host_action == continue_host_consult`, the host may continue the discussion only after consuming the current turn's gate contract. It must not self-route before the gate, and it must not re-decide consult vs non-consult after the gate. The answer must be grounded in the current gate contract plus any consult context exposed by `handoff.artifacts`; if that context is missing, degrade explicitly against the current request instead of inferring a different route from chat semantics.
 
 **workflow-learning proactive capture policy:**
 ```yaml
@@ -292,7 +291,7 @@ Check command prefix (~go, ~go plan, ~go exec, ~go finalize, ~compare)
 └─ No prefix → Semantic analysis
     ↓
 Semantic analysis routing:
-├─ Q&A → Direct answer
+├─ Q&A → gate → consult handoff → host answers
 ├─ Compare analysis (starts with "对比分析：") → Model compare
 ├─ Replay/Review/Why this choice → Workflow learning
 ├─ Simple change → Quick fix
@@ -304,7 +303,7 @@ Semantic analysis routing:
 
 | Route | Condition | Behavior |
 |-------|-----------|----------|
-| Q&A | Pure question, no code changes | Direct answer |
+| Q&A | Pure question, no code changes | Run gate first, then answer through consult handoff in the host session |
 | Model Compare | `~compare <question>` or `对比分析：<question>` | Call model-compare, wired to `scripts/model_compare_runtime.py::run_model_compare_runtime`; include session default model by default, run parallel compare only when usable model count reaches 2, otherwise fallback with normalized reason codes |
 | Workflow Learning | Mentions replay/review/why this choice (intent recognition is always enabled) | Call workflow-learning for trace capture and explanation |
 | Quick Fix | ≤2 files, clear modification | Direct execution |
@@ -335,6 +334,7 @@ Semantic analysis routing:
 - `~decide status|choose|cancel` is a debug/override surface only; the normal path is for the host to enter the confirmation loop automatically from the `confirm_decision` handoff.
 - While a decision is pending, the host must not create or rewrite the formal plan on its own and must not treat the rendered `Next:` text as an executable machine instruction.
 - After the user confirms, the host must re-enter the default runtime entry in the same workspace and let runtime materialize the single formal plan; if `current_decision.json` is cleared afterwards, that is the expected close-out behavior.
+- When `current_handoff.json.required_host_action == continue_host_consult`, treat the current message turn's gate tool-call contract together with `.sopify-skills/state/current_handoff.json` as the machine source of truth for consult answers; do not perform another host-side routing decision before answering.
 - Treat `~go exec` as an advanced recovery entry only; when there is no active plan or recovery state, the host must not present it as the normal implementation path.
 - Even when the user explicitly types `~go exec`, the host must still honor the machine contract for `clarification_pending / decision_pending / execution_confirm_pending` instead of bypassing those checkpoints.
 
@@ -369,7 +369,6 @@ Scope: {N} files
 
 ---
 Next: Continue to solution design? (Y/n)
-Generated At: {current time}
 ```
 
 ### P2 | Solution Design
@@ -402,7 +401,6 @@ Changes: 3 files
   - .sopify-skills/plan/20260115_feature/tasks.md
 
 Next: Continue plan review or execution in the host session, or reply with feedback
-Generated At: {current time}
 ```
 
 ### P3 | Development
@@ -434,7 +432,6 @@ Changes: 5 files
   - .sopify-skills/history/2026-01/...
 
 Next: Please verify the functionality
-Generated At: {current time}
 ```
 
 ---

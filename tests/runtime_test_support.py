@@ -112,6 +112,7 @@ from runtime.models import (
 from scripts.model_compare_runtime import make_default_candidate
 
 DEFAULT_RUNTIME_WORKFLOW_TEST_FILE = "tests/test_runtime_engine.py"
+_FOOTER_TIME_LABELS = ("Generated At:", "生成时间:")
 
 
 class _FakeInteractiveSession:
@@ -264,15 +265,13 @@ def _assert_rendered_footer_contract(
     rendered: str,
     *,
     next_prefix: str,
-    generated_at_prefix: str,
 ) -> None:
     lines = rendered.rstrip().splitlines()
     testcase.assertGreaterEqual(len(lines), 2)
-    testcase.assertTrue(lines[-2].startswith(next_prefix), msg=rendered)
-    testcase.assertRegex(
-        lines[-1],
-        rf"^{re.escape(generated_at_prefix)} \d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}}$",
-    )
+    testcase.assertEqual(lines[-2], "", msg=rendered)
+    testcase.assertTrue(lines[-1].startswith(next_prefix), msg=rendered)
+    for label in _FOOTER_TIME_LABELS:
+        testcase.assertNotIn(label, rendered)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

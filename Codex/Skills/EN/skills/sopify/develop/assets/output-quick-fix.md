@@ -8,4 +8,3 @@ Changes: {N} files
   - {file2}
 
 Next: Please verify the fix
-Generated At: {current time}

@@ -1135,7 +1135,6 @@ class EngineIntegrationTests(unittest.TestCase):
                 self,
                 rendered,
                 next_prefix="Next:",
-                generated_at_prefix="生成时间:",
             )
 
             events_path = workspace / result.replay_session_dir / "events.jsonl"
@@ -1198,7 +1197,6 @@ class EngineIntegrationTests(unittest.TestCase):
                 self,
                 rendered,
                 next_prefix="Next:",
-                generated_at_prefix="生成时间:",
             )
 
     def test_summary_route_includes_uncommitted_git_changes(self) -> None:

@@ -1,5 +1,5 @@
 <!-- bootstrap: lang=zh-CN; encoding=UTF-8 -->
-<!-- SOPIFY_VERSION: 2026-03-25.182132 -->
+<!-- SOPIFY_VERSION: 2026-03-26.135542 -->
 <!-- ARCHITECTURE: Adaptive Workflow + Layered Rules -->
 
 # Sopify - 自适应 AI 编程助手
@@ -74,15 +74,12 @@ Changes: {N} files
   - {file2}
 
 Next: {下一步提示}
-生成时间: {当前时间}
 ```
 
 **Footer 契约：**
 - footer 固定跟在 `Changes` 区块之后
-- `Next:` 必须先于 `生成时间:`
-- 若输出包含生成时间，`生成时间:` 必须作为最后一行。
-- `生成时间:` 使用本地展示时间，格式固定为 `YYYY-MM-DD HH:MM:SS`，不带时区后缀。
-- 若需要机器可审计时间戳，内部摘要 / replay 文件可继续使用 ISO 8601（可带时区）；不要把该格式直接搬到 footer。
+- `Next:` 必须作为 footer 最后一行。
+- footer 不展示生成时间；若需要机器可审计时间戳，内部摘要 / replay 文件可继续使用 ISO 8601（可带时区）。
 
 **状态符：**
 | 符号 | 含义 |
@@ -145,6 +142,7 @@ Next: {下一步提示}
 说明：当 Sopify 被触发时，宿主第一步必须先执行 runtime gate，而不是直接调用默认 runtime 入口。repo-local 开发态默认调用 `scripts/runtime_gate.py enter --workspace-root <cwd> --request "<raw user request>"`；若 runtime 以 bundle 方式接入到其他仓库，则宿主必须优先读取 `.sopify-runtime/manifest.json -> limits.runtime_gate_entry` 决定入口，默认再回退到 `.sopify-runtime/scripts/runtime_gate.py`。gate 内部统一负责 workspace preflight / preload / default runtime dispatch / handoff normalize；`go_plan_runtime.py` 只保留给 repo-local CLI / 调试用，不是宿主第一跳。
 说明：当用户在项目仓库中触发 Sopify，且当前仓库没有可用的 `.sopify-runtime/manifest.json` 时，宿主必须先读取 `~/.codex/sopify/payload-manifest.json`，再调用 `~/.codex/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>` 为当前仓库补齐或更新 `.sopify-runtime/`；bootstrap 成功后再继续按 repo-local manifest 选入口。
 说明：每次准备进入新的 Sopify LLM 回合前，宿主都必须先消费 runtime gate helper 返回的 JSON contract；仅当 `status == ready` 且 `gate_passed == true` 且 `evidence.handoff_found == true` 且 `evidence.strict_runtime_entry == true` 时，才允许声称“已进入 runtime”并继续后续阶段。`allowed_response_mode == checkpoint_only` 时只允许进入 checkpoint 响应；`allowed_response_mode == error_visible_retry` 时只允许输出短错误摘要并提示重试。
+说明：上述 gate 校验必须发生在当前消息回合的同一次 tool call 中；宿主只有在本回合先执行 `scripts/runtime_gate.py enter`，并直接从该 tool call 输出验证四项条件后，才允许输出任何 Sopify 标题行或进入后续路由。不得依赖上一轮写入的 `.sopify-skills/state/current_gate_receipt.json` 充当本回合 gate receipt。
 说明：runtime gate 内部会按 `.sopify-runtime/manifest.json -> limits.preferences_preload_entry` 执行长期偏好 preload；repo-local 开发态才允许回退到 `scripts/preferences_preload_runtime.py inspect --workspace-root <cwd>`。宿主只消费 gate contract 暴露的 `preferences` 结果，不得自行额外拼装 preload prompt，也不得绕过 gate 直连 preload/default runtime。
 说明：长期偏好注入是独立 prompt 块，固定优先级为：当前任务明确要求 > `preferences.md` > 默认规则。“当前任务明确要求”指用户在当前任务中显式给出的临时执行指令；冲突时优先，非冲突时叠加，且默认不回写为长期偏好。
 说明：runtime 执行后，若存在 `.sopify-skills/state/current_handoff.json`，宿主必须优先按其中的 `required_host_action`、`recommended_skill_ids` 与 `artifacts` 决定下一步；若存在 `artifacts.checkpoint_request`，必须优先消费该标准化 contract，再回退到 route-specific artifact；`Next:` 行仅作为面向人的摘要提示，不应作为唯一机器依据。
@@ -154,6 +152,7 @@ Next: {下一步提示}
 说明：当 `current_handoff.json.required_host_action == confirm_decision` 时，宿主必须优先读取 `current_handoff.json.artifacts.decision_checkpoint` 与 `decision_submission_state`；若 handoff 缺失完整 checkpoint，再回退到 `.sopify-skills/state/current_decision.json`。宿主应向用户展示 question/options/recommended_option_id，等待用户确认后再恢复默认 runtime 入口；在确认前不得自行生成正式 plan 或跳到 `~go exec`。
 说明：当 `current_handoff.json.required_host_action == confirm_execute` 时，宿主必须继续读取 `current_handoff.json.artifacts.execution_summary`，至少向用户展示 `plan_path / summary / task_count / risk_level / key_risk / mitigation`，并等待用户通过自然语言 `继续 / next / 开始`（或明确修改意见）恢复默认 runtime 入口；在执行确认前不得自行跳到 develop，也不得把 `~go exec` 当成绕过入口。
 说明：当 `current_handoff.json.required_host_action == continue_host_develop` 时，宿主继续负责真实代码修改；但若开发中再次出现“需要用户补事实 / 拍板选路”的分叉，宿主不得自由追问，也不得手写 `current_decision.json / current_handoff.json`，而必须调用 `scripts/develop_checkpoint_runtime.py submit --payload-json ...`（vendored 对应 `.sopify-runtime/scripts/develop_checkpoint_runtime.py`）回调 runtime。payload 必须包含 `checkpoint_kind` 与 `resume_context`；当前 `resume_context` 至少要求 `active_run_stage / current_plan_path / task_refs / changed_files / working_summary / verification_todo`。
+说明：当 `current_handoff.json.required_host_action == continue_host_consult` 时，宿主只可在已消费当前回合 gate contract 的前提下继续问答；不得在 gate 前自行路由，也不得在 gate 后再次重判 consult / 非 consult。宿主的回答应基于当前 gate contract 与 `handoff.artifacts` 暴露的 consult context（如有）生成；若缺少额外 consult context，应显式按当前请求降级回答，而不是用宿主侧语义分析补出另一条路由。
 
 **workflow-learning 主动记录策略：**
 ```yaml
@@ -292,7 +291,7 @@ progressive: 按需创建文件 (默认)
 └─ 无前缀 → 语义分析
     ↓
 语义分析判定路由:
-├─ 咨询问答 → 直接回答
+├─ 咨询问答 → gate → consult handoff → 宿主回答
 ├─ 对比分析（以“对比分析：”开头）→ 模型对比
 ├─ 复盘/回放/为什么这么做 → 复盘学习
 ├─ 简单修改 → 快速修复
@@ -304,7 +303,7 @@ progressive: 按需创建文件 (默认)
 
 | 路由 | 条件 | 行为 |
 |-----|------|-----|
-| 咨询问答 | 纯问题，无代码变更 | 直接回答 |
+| 咨询问答 | 纯问题，无代码变更 | 先过 gate，再按 consult handoff 由宿主回答 |
 | 模型对比 | `~compare <问题>` 或 `对比分析：<问题>` | 调用 model-compare，并接入 `scripts/model_compare_runtime.py::run_model_compare_runtime`；默认纳入当前会话模型，可用模型数达到 2 才并发对比，否则降级单模型并输出统一 reason code |
 | 复盘学习 | 提到回放/复盘/为什么这么做（意图识别始终开启） | 调用 workflow-learning，生成记录与讲解 |
 | 快速修复 | ≤2 文件，明确修改 | 直接执行 |
@@ -335,6 +334,7 @@ progressive: 按需创建文件 (默认)
 - `~decide status|choose|cancel` 只作为 debug/override 入口；正常链路仍应由宿主根据 `confirm_decision` handoff 主动进入确认环节。
 - decision pending 期间，宿主不得自行物化 plan、改写 plan 路径，也不应把渲染输出里的 `Next:` 误当成可执行机器指令。
 - 用户确认后，宿主必须在同一工作区重新调用默认 runtime 入口，让 runtime 负责将 pending decision 物化为唯一正式 plan；若恢复后 `current_decision.json` 被清理，视为正常收口。
+- 当 `current_handoff.json.required_host_action == continue_host_consult` 时，宿主必须把当前消息回合 gate tool call 返回的 contract 与 `.sopify-skills/state/current_handoff.json` 一起视为 consult 问答的机器事实来源；在生成回答前不要再次自行判断是否应改走其他路由。
 - `~go exec` 只应被当作高级恢复入口；若当前没有活动 plan 或恢复态，宿主不应把它当成普通开发入口。
 - 即使用户显式输入 `~go exec`，只要仍处于 `clarification_pending / decision_pending / execution_confirm_pending`，宿主也必须继续遵守对应 checkpoint 的机器契约。
 
@@ -369,7 +369,6 @@ progressive: 按需创建文件 (默认)
 
 ---
 Next: 继续方案设计？(Y/n)
-生成时间: {当前时间}
 ```
 
 ### P2 | 方案设计
@@ -402,7 +401,6 @@ Changes: 3 files
   - .sopify-skills/plan/20260115_feature/tasks.md
 
 Next: 在宿主会话中继续评审或执行方案，或直接回复修改意见
-生成时间: {当前时间}
 ```
 
 ### P3 | 开发实施
@@ -434,7 +432,6 @@ Changes: 5 files
   - .sopify-skills/history/2026-01/...
 
 Next: 请验证功能
-生成时间: {当前时间}
 ```
 
 ---

@@ -11,6 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+_FOOTER_TIME_LABELS = ("Generated At:", "生成时间:")
+
 from installer.bootstrap_workspace import _REQUIRED_BUNDLE_FILES, _classify_workspace_bundle
 from installer.hosts.base import install_host_assets
 from installer.hosts.claude import CLAUDE_ADAPTER
@@ -199,41 +201,41 @@ class WorkspaceBootstrapCompatibilityTests(unittest.TestCase):
 
 
 class HostPromptContractTests(unittest.TestCase):
+    def _assert_no_footer_time_labels(self, content: str) -> None:
+        for label in _FOOTER_TIME_LABELS:
+            self.assertNotIn(label, content)
+
     def _assert_footer_contract_block(
         self,
         content: str,
         *,
         next_line: str,
-        generated_at_line: str,
     ) -> None:
-        self.assertIn(f"{next_line}\n{generated_at_line}", content)
+        self.assertIn(next_line, content)
+        self._assert_no_footer_time_labels(content)
 
     def _assert_footer_contract_tail(
         self,
         content: str,
         *,
         next_prefix: str,
-        generated_at_line: str,
     ) -> None:
         lines = content.rstrip().splitlines()
-        self.assertGreaterEqual(len(lines), 2)
-        self.assertTrue(lines[-2].startswith(next_prefix), msg=content)
-        self.assertEqual(lines[-1], generated_at_line)
+        self.assertGreaterEqual(len(lines), 1)
+        self.assertTrue(lines[-1].startswith(next_prefix), msg=content)
+        self._assert_no_footer_time_labels(content)
 
     def _assert_rendered_footer_contract(
         self,
         rendered: str,
         *,
         next_prefix: str,
-        generated_at_prefix: str,
     ) -> None:
         lines = rendered.rstrip().splitlines()
         self.assertGreaterEqual(len(lines), 2)
-        self.assertTrue(lines[-2].startswith(next_prefix), msg=rendered)
-        self.assertRegex(
-            lines[-1],
-            rf"^{re.escape(generated_at_prefix)} \d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}}$",
-        )
+        self.assertEqual(lines[-2], "", msg=rendered)
+        self.assertTrue(lines[-1].startswith(next_prefix), msg=rendered)
+        self._assert_no_footer_time_labels(rendered)
 
     def _assert_installed_footer_contract(
         self,
@@ -241,10 +243,8 @@ class HostPromptContractTests(unittest.TestCase):
         adapter,
         language_directory: str,
         next_template_line: str,
-        generated_at_placeholder: str,
         footer_contract_line: str,
         runtime_language: str,
-        runtime_generated_at_label: str,
     ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_root = Path(temp_dir)
@@ -262,7 +262,6 @@ class HostPromptContractTests(unittest.TestCase):
             self._assert_footer_contract_block(
                 prompt,
                 next_line=next_template_line,
-                generated_at_line=generated_at_placeholder,
             )
             self.assertIn(footer_contract_line, prompt)
 
@@ -279,7 +278,6 @@ class HostPromptContractTests(unittest.TestCase):
                 self._assert_footer_contract_tail(
                     content,
                     next_prefix="Next:",
-                    generated_at_line=generated_at_placeholder,
                 )
 
             workspace = home_root / "workspace"
@@ -294,7 +292,6 @@ class HostPromptContractTests(unittest.TestCase):
             self._assert_rendered_footer_contract(
                 rendered,
                 next_prefix="Next:",
-                generated_at_prefix=runtime_generated_at_label,
             )
 
     def test_codex_cn_prompt_install_keeps_workspace_preflight_contract(self) -> None:
@@ -337,10 +334,8 @@ class HostPromptContractTests(unittest.TestCase):
             adapter=CODEX_ADAPTER,
             language_directory="CN",
             next_template_line="Next: {下一步提示}",
-            generated_at_placeholder="生成时间: {当前时间}",
-            footer_contract_line="- 若输出包含生成时间，`生成时间:` 必须作为最后一行。",
+            footer_contract_line="- footer 不展示生成时间；若需要机器可审计时间戳，内部摘要 / replay 文件可继续使用 ISO 8601（可带时区）。",
             runtime_language="zh-CN",
-            runtime_generated_at_label="生成时间:",
         )
 
     def test_claude_en_prompt_install_keeps_workspace_preflight_contract(self) -> None:
@@ -383,10 +378,8 @@ class HostPromptContractTests(unittest.TestCase):
             adapter=CLAUDE_ADAPTER,
             language_directory="EN",
             next_template_line="Next: {Next step hint}",
-            generated_at_placeholder="Generated At: {current time}",
-            footer_contract_line="- When a generated time is present, `Generated At:` must be the final line.",
+            footer_contract_line="- the footer does not display generated time; if a machine-auditable timestamp is needed, internal summary / replay artifacts may keep ISO 8601 timestamps with timezone data.",
             runtime_language="en-US",
-            runtime_generated_at_label="Generated At:",
         )
 
 

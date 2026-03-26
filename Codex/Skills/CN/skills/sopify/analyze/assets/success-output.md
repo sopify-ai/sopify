@@ -9,4 +9,3 @@
 Changes: 0 files
 
 Next: 继续方案设计？(Y/n)
-生成时间: {当前时间}

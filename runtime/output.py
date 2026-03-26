@@ -10,7 +10,6 @@ from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
 from .models import RuntimeResult
 from .plan_registry import extract_priority_note_event
-from .state import local_display_now
 
 _PHASE_LABELS = {
     "zh-CN": {
@@ -241,9 +240,6 @@ def render_runtime_output(
     else:
         lines.append(f"  - {labels['none']}")
     lines.extend(["", f"Next: {next_hint}"])
-    time_line = _time_line(result, language=locale)
-    if time_line is not None:
-        lines.append(time_line)
     return "\n".join(lines)
 
 
@@ -270,7 +266,6 @@ def render_runtime_error(
         f"  - {labels['none']}",
         "",
         f"Next: {labels['next_retry']}",
-        f"Generated At: {local_display_now()}" if locale == "en-US" else f"生成时间: {local_display_now()}",
     ]
     return "\n".join(lines)
 
@@ -672,19 +667,7 @@ def _render_daily_summary_output(result: RuntimeResult, *, title: str, language:
     else:
         lines.append(f"  - {labels['none']}")
     lines.extend(["", f"Next: {next_hint}"])
-    time_line = _time_line(result, language=language)
-    if time_line is not None:
-        lines.append(time_line)
     return "\n".join(lines)
-
-
-def _time_line(result: RuntimeResult, *, language: str) -> str | None:
-    activation = result.activation
-    if activation is None or not activation.display_time:
-        return None
-    if language == "en-US":
-        return f"Generated At: {activation.display_time}"
-    return f"生成时间: {activation.display_time}"
 
 
 def _colorize(text: str, *, title_color: str, use_color: bool | None) -> str:

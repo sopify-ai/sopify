@@ -11,4 +11,3 @@ Changes: {N} files
   - .sopify-skills/history/...
 
 Next: 请验证功能
-生成时间: {当前时间}

@@ -6,6 +6,57 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-03-26.135542] - 2026-03-26
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/output.py`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-host-doc-contract.py`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/CN/skills/sopify/analyze/assets/question-output.md`
+  - `Claude/Skills/CN/skills/sopify/analyze/assets/success-output.md`
+  - `Claude/Skills/CN/skills/sopify/design/assets/output-summary.md`
+  - `Claude/Skills/CN/skills/sopify/develop/assets/output-partial.md`
+  - `Claude/Skills/CN/skills/sopify/develop/assets/output-quick-fix.md`
+  - `Claude/Skills/CN/skills/sopify/develop/assets/output-success.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Claude/Skills/EN/skills/sopify/analyze/assets/question-output.md`
+  - `Claude/Skills/EN/skills/sopify/analyze/assets/success-output.md`
+  - `Claude/Skills/EN/skills/sopify/design/assets/output-summary.md`
+  - `Claude/Skills/EN/skills/sopify/develop/assets/output-partial.md`
+  - `Claude/Skills/EN/skills/sopify/develop/assets/output-quick-fix.md`
+  - `Claude/Skills/EN/skills/sopify/develop/assets/output-success.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/CN/skills/sopify/analyze/assets/question-output.md`
+  - `Codex/Skills/CN/skills/sopify/analyze/assets/success-output.md`
+  - `Codex/Skills/CN/skills/sopify/design/assets/output-summary.md`
+  - `Codex/Skills/CN/skills/sopify/develop/assets/output-partial.md`
+  - `Codex/Skills/CN/skills/sopify/develop/assets/output-quick-fix.md`
+  - `Codex/Skills/CN/skills/sopify/develop/assets/output-success.md`
+  - `Codex/Skills/EN/AGENTS.md`
+  - `Codex/Skills/EN/skills/sopify/analyze/assets/question-output.md`
+  - `Codex/Skills/EN/skills/sopify/analyze/assets/success-output.md`
+  - `Codex/Skills/EN/skills/sopify/design/assets/output-summary.md`
+  - `Codex/Skills/EN/skills/sopify/develop/assets/output-partial.md`
+  - `Codex/Skills/EN/skills/sopify/develop/assets/output-quick-fix.md`
+  - `Codex/Skills/EN/skills/sopify/develop/assets/output-success.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/runtime_test_support.py`
+  - `tests/test_installer.py`
+  - `tests/test_runtime_engine.py`
+
 ## [2026-03-25.182132] - 2026-03-25
 
 ### Docs

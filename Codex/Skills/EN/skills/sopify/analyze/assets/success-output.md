@@ -9,4 +9,3 @@ Scope: {estimated file count}
 Changes: 0 files
 
 Next: Continue to solution design? (Y/n)
-Generated At: {current time}

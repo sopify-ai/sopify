@@ -11,4 +11,3 @@ Changes: {N} files
   - ...
 
 Next: Resume the current host flow after resolving the blockers
-Generated At: {current time}
