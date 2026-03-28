@@ -8,6 +8,7 @@ from hashlib import sha1
 import re
 from typing import Any, Optional
 
+from .checkpoint_cancel import is_checkpoint_cancel_intent
 from .decision_policy import match_decision_policy, should_trigger_decision_policy
 from .decision_templates import PRIMARY_OPTION_FIELD_ID, build_strategy_pick_template
 from .knowledge_layout import resolve_context_profile
@@ -258,7 +259,7 @@ def parse_decision_response(decision_state: DecisionState, user_input: str) -> D
     normalized = text.casefold()
     if normalized in {alias.casefold() for alias in _STATUS_ALIASES}:
         return DecisionResponse(action="status")
-    if normalized in {alias.casefold() for alias in _CANCEL_ALIASES}:
+    if is_checkpoint_cancel_intent(text, cancel_aliases=_CANCEL_ALIASES):
         return DecisionResponse(action="cancel")
     if decision_state.status == "confirmed" and normalized in {alias.casefold() for alias in _CONTINUE_ALIASES}:
         return DecisionResponse(action="materialize")
@@ -604,7 +605,6 @@ def _selection_answers(decision_state: DecisionState, option_id: str) -> dict[st
 
 def _normalize_text(value: str) -> str:
     return _PUNCTUATION_RE.sub("", value.casefold())
-
 
 def iso_now() -> str:
     """Return a stable UTC timestamp without importing the state module."""

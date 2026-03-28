@@ -604,6 +604,62 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIn("Next: 在宿主会话中继续执行后续阶段", rendered_cleared)
             self.assertNotIn("~go abort", rendered_cleared)
 
+    def test_state_conflict_surfaces_handoff_pending_kind_mismatch_before_generic_multiple_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            store.set_current_handoff(
+                RuntimeHandoff(
+                    schema_version="1",
+                    route_name="decision_pending",
+                    run_id="run-1",
+                    handoff_kind="checkpoint",
+                    required_host_action="confirm_decision",
+                    artifacts={},
+                )
+            )
+            store.set_current_plan_proposal(
+                PlanProposalState(
+                    schema_version="1",
+                    checkpoint_id="proposal-1",
+                    request_text="继续",
+                    analysis_summary="proposal",
+                    proposed_level="standard",
+                    proposed_path=".sopify-skills/plan/proposal",
+                    estimated_task_count=2,
+                    candidate_files=(),
+                    topic_key="runtime",
+                    reserved_plan_id="proposal-1",
+                    resume_route="workflow",
+                    capture_mode="off",
+                    candidate_skill_ids=(),
+                )
+            )
+            store.set_current_decision(
+                DecisionState(
+                    schema_version="2",
+                    decision_id="decision-1",
+                    feature_key="runtime",
+                    phase="design",
+                    status="pending",
+                    decision_type="design_choice",
+                    question="继续哪个选项？",
+                    summary="pending decision",
+                    options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
+                    created_at=iso_now(),
+                    updated_at=iso_now(),
+                )
+            )
+
+            conflicted = run_runtime("看看状态", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(conflicted.route.route_name, "state_conflict")
+            self.assertEqual(conflicted.handoff.required_host_action, "resolve_state_conflict")
+            self.assertEqual(conflicted.recovered_context.state_conflict["code"], "pending_checkpoint_handoff_mismatch")
+
     def test_state_conflict_abort_preserves_confirmed_decision_and_stable_plan_truth(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -1364,6 +1420,185 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(blocked_exec.handoff.required_host_action, "confirm_decision")
             self.assertEqual(blocked_exec.recovered_context.current_run.stage, "decision_pending")
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
+    def test_decision_pending_cancel_prefix_cancels_checkpoint_with_negation_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            cancelled = run_runtime("取消这个 checkpoint", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(cancelled.route.route_name, "cancel_active")
+            self.assertTrue(any("Decision checkpoint cancelled" in note for note in cancelled.notes))
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            negated = run_runtime("不要取消这个 checkpoint", workspace_root=workspace, user_home=workspace / "home")
+            soft_negated = run_runtime("先别取消", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(negated.route.route_name, "decision_pending")
+            self.assertEqual(negated.handoff.required_host_action, "confirm_decision")
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+            self.assertEqual(soft_negated.route.route_name, "decision_pending")
+            self.assertEqual(soft_negated.handoff.required_host_action, "confirm_decision")
+
+    def test_decision_pending_cancel_prefix_without_boundary_does_not_cancel_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            result = run_runtime("取消后为什么还会回到 pending", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(result.route.route_name, "decision_pending")
+            self.assertEqual(result.handoff.required_host_action, "confirm_decision")
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
+
+    def test_decision_pending_question_mark_cancel_is_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            state_root = workspace / ".sopify-skills" / "state"
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            bare_question = run_runtime("取消这个 checkpoint?", workspace_root=workspace, user_home=workspace / "home")
+            trailing_question = run_runtime(
+                "取消这个 checkpoint？为什么还会回到 pending",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            emphatic = run_runtime("取消这个 checkpoint！", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(bare_question.route.route_name, "decision_pending")
+            self.assertEqual(bare_question.handoff.required_host_action, "confirm_decision")
+            self.assertEqual(trailing_question.route.route_name, "decision_pending")
+            self.assertEqual(trailing_question.handoff.required_host_action, "confirm_decision")
+            self.assertEqual(emphatic.route.route_name, "cancel_active")
+            self.assertFalse((state_root / "current_decision.json").exists())
+
+    def test_decision_pending_period_and_clause_punctuation_are_fail_closed_when_text_follows(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            state_root = workspace / ".sopify-skills" / "state"
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            period_route = run_runtime(
+                "取消这个 checkpoint。为什么还会回到 pending",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            colon_route = run_runtime(
+                "取消这个 checkpoint: 为什么还会回到 pending",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            semicolon_route = run_runtime(
+                "取消这个 checkpoint；为什么还会回到 pending",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            bare_period_route = run_runtime(
+                "取消这个 checkpoint。",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            self.assertEqual(period_route.route.route_name, "decision_pending")
+            self.assertEqual(period_route.handoff.required_host_action, "confirm_decision")
+            self.assertEqual(colon_route.route.route_name, "decision_pending")
+            self.assertEqual(colon_route.handoff.required_host_action, "confirm_decision")
+            self.assertEqual(semicolon_route.route.route_name, "decision_pending")
+            self.assertEqual(semicolon_route.handoff.required_host_action, "confirm_decision")
+            self.assertEqual(bare_period_route.route.route_name, "cancel_active")
+            self.assertFalse((state_root / "current_decision.json").exists())
+
+    def test_plan_proposal_cancel_does_not_derive_new_pending_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            state_root = workspace / ".sopify-skills" / "state"
+            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
+
+            cancelled = run_runtime("取消这个 checkpoint", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(cancelled.route.route_name, "cancel_active")
+            self.assertFalse((state_root / "current_plan_proposal.json").exists())
+            self.assertFalse((state_root / "current_decision.json").exists())
+            self.assertFalse((state_root / "current_clarification.json").exists())
+
+    def test_mixed_sentence_cancel_keeps_local_cancel_intent_for_both_pending_kinds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            state_root = workspace / ".sopify-skills" / "state"
+
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            decision_cancelled = run_runtime(
+                "取消这个 checkpoint，不要取消全部",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            self.assertEqual(decision_cancelled.route.route_name, "cancel_active")
+            self.assertFalse((state_root / "current_decision.json").exists())
+
+            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
+            proposal_cancelled = run_runtime(
+                "取消这个 checkpoint，不要取消全部",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            self.assertEqual(proposal_cancelled.route.route_name, "cancel_active")
+            self.assertFalse((state_root / "current_plan_proposal.json").exists())
+
+    def test_ready_plan_with_residual_review_checkpoint_enters_execution_confirm_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config, store, _ = _prepare_ready_plan_state(workspace)
+            store.set_current_plan_proposal(
+                PlanProposalState(
+                    schema_version="1",
+                    checkpoint_id="proposal-1",
+                    request_text="继续",
+                    analysis_summary="proposal",
+                    proposed_level="standard",
+                    proposed_path=".sopify-skills/plan/proposal",
+                    estimated_task_count=2,
+                    candidate_files=(),
+                    topic_key="runtime",
+                    reserved_plan_id="proposal-1",
+                    resume_route="workflow",
+                    capture_mode="off",
+                    candidate_skill_ids=(),
+                )
+            )
+
+            conflicted = run_runtime("status", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(conflicted.route.route_name, "state_conflict")
+            self.assertEqual(conflicted.handoff.required_host_action, "resolve_state_conflict")
+            self.assertEqual(conflicted.recovered_context.state_conflict["code"], "execution_confirm_review_checkpoint_conflict")
 
     def test_execution_confirmation_feedback_routes_back_to_plan_review(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -111,7 +111,10 @@ def build_decision_submission(
     resume_action: str = "submit",
 ) -> DecisionSubmission:
     """Validate and normalize host answers into a runtime submission payload."""
-    normalized_answers = normalize_decision_answers(checkpoint, answers)
+    if _is_cancel_submission(status=status, resume_action=resume_action):
+        normalized_answers = dict(answers)
+    else:
+        normalized_answers = normalize_decision_answers(checkpoint, answers)
     return DecisionSubmission(
         status=status,
         source=source,
@@ -121,6 +124,12 @@ def build_decision_submission(
         submitted_at=iso_now(),
         resume_action=resume_action,
     )
+
+
+def _is_cancel_submission(*, status: str, resume_action: str) -> bool:
+    normalized_status = str(status or "").strip().casefold()
+    normalized_action = str(resume_action or "").strip().casefold()
+    return normalized_status == "cancelled" or normalized_action in {"cancel", "cancelled"}
 
 
 def write_decision_submission(

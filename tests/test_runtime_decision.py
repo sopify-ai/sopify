@@ -2,9 +2,50 @@ from __future__ import annotations
 
 from tests.runtime_test_support import *
 from runtime.checkpoint_request import checkpoint_request_from_plan_proposal_state
+from runtime.decision import parse_decision_response
+from runtime.plan_proposal import parse_plan_proposal_response
 
 
 class DecisionContractTests(unittest.TestCase):
+    def test_shared_cancel_parser_respects_fail_closed_questions_and_explicit_boundaries(self) -> None:
+        decision_state = DecisionState(
+            schema_version="2",
+            decision_id="decision-1",
+            feature_key="runtime",
+            phase="design",
+            status="pending",
+            decision_type="design_choice",
+            question="继续哪个选项？",
+            summary="pending decision",
+            options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
+            created_at=iso_now(),
+            updated_at=iso_now(),
+        )
+
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint").action, "cancel")
+        self.assertEqual(parse_decision_response(decision_state, "不要取消这个 checkpoint").action, "invalid")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint。").action, "cancel")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint。为什么还会回到 pending").action, "invalid")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint: 为什么还会回到 pending").action, "invalid")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint；为什么还会回到 pending").action, "invalid")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint?").action, "invalid")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint？为什么还会回到 pending").action, "invalid")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint，不要取消全部").action, "cancel")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint！").action, "cancel")
+        self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint…").action, "cancel")
+
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint").action, "cancel")
+        self.assertEqual(parse_plan_proposal_response("不要取消这个 checkpoint").action, "inspect")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint。").action, "cancel")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint。为什么还会新建 proposal").action, "inspect")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint: 为什么还会新建 proposal").action, "inspect")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint；为什么还会新建 proposal").action, "inspect")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint?").action, "inspect")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint？为什么还会新建 proposal").action, "inspect")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint，不要取消全部").action, "cancel")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint！").action, "cancel")
+        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint…").action, "cancel")
+
     def test_decision_policy_keeps_current_planning_semantic_baseline(self) -> None:
         route = RouteDecision(
             route_name="plan_only",
@@ -804,6 +845,55 @@ class DecisionContractTests(unittest.TestCase):
             self.assertIsNotNone(updated)
             self.assertEqual(updated.submission.status, "submitted")
             self.assertEqual(updated.submission.answers["selected_option_id"], "option_1")
+
+    def test_decision_bridge_script_allows_cancel_submission_without_selected_option(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            run_runtime(
+                "~go plan payload 放 host root 还是 workspace/.sopify-runtime",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            script_path = REPO_ROOT / "scripts" / "decision_bridge_runtime.py"
+
+            submitted = subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "--workspace-root",
+                    str(workspace),
+                    "submit",
+                    "--answers-json",
+                    "{}",
+                    "--status",
+                    "cancelled",
+                    "--resume-action",
+                    "cancel",
+                    "--raw-input",
+                    "取消这个 checkpoint",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(submitted.returncode, 0, msg=submitted.stderr)
+            submit_payload = json.loads(submitted.stdout)
+            self.assertEqual(submit_payload["status"], "written")
+            self.assertEqual(submit_payload["submission"]["status"], "cancelled")
+            self.assertEqual(submit_payload["submission"]["resume_action"], "cancel")
+            self.assertEqual(submit_payload["submission"]["answers"], {})
+
+            store = StateStore(load_runtime_config(workspace))
+            updated = store.get_current_decision()
+            self.assertIsNotNone(updated)
+            self.assertIsNotNone(updated.submission)
+            self.assertEqual(updated.submission.status, "cancelled")
+            self.assertEqual(updated.submission.resume_action, "cancel")
+            self.assertEqual(updated.submission.answers, {})
+            response = response_from_submission(updated)
+            self.assertIsNotNone(response)
+            self.assertEqual(response.action, "cancel")
 
     def test_decision_bridge_rejects_handoff_without_strict_entry_guard_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

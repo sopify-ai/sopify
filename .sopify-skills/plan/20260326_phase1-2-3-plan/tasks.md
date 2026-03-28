@@ -39,9 +39,11 @@ archive_ready: false
 - [ ] 4.2 为每个后续子 plan 显式写出 acceptance gate
 - [x] 4.3 在 `20260327_hotfix` 中冻结 `snapshot-only resolver / proposal session-only / state_conflict + abort / unique handoff exit`
 - [ ] 4.4 在升级版 Plan B1 中将 thin stub 校验、dual-host host-aware、payload index、ignore 默认值、legacy fallback reason code 作为硬门禁
-- [ ] 4.5 在 Plan A 中冻结 `ExecutionGate` 核心字段名与 `gate_status` 值集
-- [ ] 4.6 在 Plan B2 中明确“不改变 plan/blueprint/history contract”
-- [ ] 4.7 在 Plan C 中明确“bounded side task，不允许自由漫游”
+- [ ] 4.5 在 Plan A 子 plan 启动前登记 carry-over recall debt 与明确 non-goals，避免把 Plan H correctness hotfix 与后续语义召回增强混做一轮
+- [ ] 4.6 为 Plan A 子 plan 明确启动触发条件（真实漏判样本 / 用户反馈阈值），避免长期后延或提前侵入 B1 窗口
+- [ ] 4.7 在 Plan A 中冻结 `ExecutionGate` 核心字段名与 `gate_status` 值集
+- [ ] 4.8 在 Plan B2 中明确“不改变 plan/blueprint/history contract”
+- [ ] 4.9 在 Plan C 中明确“bounded side task，不允许自由漫游”
 
 ## 5. 明确延后方向
 - [ ] 5.1 若未来启动 B3，单独拍板 `plan_path` 新语义

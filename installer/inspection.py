@@ -32,6 +32,17 @@ REASON_QUARANTINED_RUNTIME_STATE = "QUARANTINED_RUNTIME_STATE"
 REASON_RUNTIME_INSPECTION_UNAVAILABLE = "RUNTIME_INSPECTION_UNAVAILABLE"
 STATUS_READY_STATES = {"READY", "NEWER_THAN_GLOBAL"}
 STATUS_WARN_STATES = {"MISSING", "OUTDATED_COMPATIBLE"}
+_STATE_CONFLICT_EXPLANATIONS = {
+    "multiple_pending_checkpoints": "Multiple review checkpoints are simultaneously active and need manual cleanup.",
+    "pending_checkpoint_handoff_mismatch": "The active handoff points to one pending checkpoint type, but the persisted state contains another.",
+    "execution_confirm_review_checkpoint_conflict": "Execution confirmation is contaminated by residual review-checkpoint state.",
+    "run_stage_handoff_mismatch": "The persisted run stage and handoff action disagree about the current checkpoint.",
+    "resolution_id_mismatch": "current_run and current_handoff were written by different resolution batches.",
+    "resolution_id_mixed_presence": "current_run and current_handoff disagree on whether resolution tracking is present.",
+    "proposal_missing_for_pending_handoff": "The handoff expects a plan proposal checkpoint, but no valid proposal state was found.",
+    "clarification_missing_for_pending_handoff": "The handoff expects a clarification checkpoint, but no valid clarification state was found.",
+    "decision_missing_for_pending_handoff": "The handoff expects a decision checkpoint, but no valid decision state was found.",
+}
 
 
 @dataclass(frozen=True)
@@ -375,6 +386,9 @@ def render_status_text(payload: dict[str, object]) -> str:
                     path=first_conflict.get("path") or "(unknown)",
                 )
             )
+            explanation = str(first_conflict.get("explanation") or "").strip()
+            if explanation:
+                lines.append(f"  state_conflict_explanation: {explanation}")
     return "\n".join(lines)
 
 
@@ -452,7 +466,9 @@ def _inspect_runtime_workspace_state(workspace_root: Path) -> dict[str, object]:
             quarantined_items.setdefault(key, item.to_dict())
         for item in snapshot.conflict_items:
             key = (item.code, item.message, item.path, item.state_scope)
-            state_conflicts.setdefault(key, item.to_dict())
+            payload = item.to_dict()
+            payload["explanation"] = _describe_state_conflict(item.code)
+            state_conflicts.setdefault(key, payload)
         for note in snapshot.notes:
             if note not in runtime_notes:
                 runtime_notes.append(note)
@@ -505,9 +521,10 @@ def _runtime_workspace_checks(workspace_state: dict[str, object]) -> tuple[Inspe
                 status=CHECK_FAIL,
                 reason_code=REASON_RUNTIME_STATE_CONFLICT,
                 evidence=tuple(
-                    "{code} @ {path}".format(
+                    "{code} @ {path}: {explanation}".format(
                         code=item.get("code") or "unknown",
                         path=item.get("path") or "(unknown)",
+                        explanation=item.get("explanation") or _describe_state_conflict(str(item.get("code") or "")),
                     )
                     for item in state_conflicts[:5]
                     if isinstance(item, dict)
@@ -529,6 +546,16 @@ def _runtime_workspace_checks(workspace_state: dict[str, object]) -> tuple[Inspe
                 )
             )
     return tuple(checks)
+
+
+def _describe_state_conflict(code: str) -> str:
+    normalized = str(code or "").strip()
+    if not normalized:
+        return "A runtime state conflict requires manual cleanup before execution can continue."
+    return _STATE_CONFLICT_EXPLANATIONS.get(
+        normalized,
+        "A runtime state conflict requires manual cleanup before execution can continue.",
+    )
 
 
 def _inspect_host_prompt(*, adapter: HostAdapter, capability: HostCapability, home_root: Path) -> InspectionCheck:

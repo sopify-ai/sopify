@@ -6,6 +6,36 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-03-28.220226] - 2026-03-28
+
+### Docs
+
+- Refined public documentation:
+  - `docs/dev/development-guidelines.md`
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/checkpoint_cancel.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/decision.py`
+  - `runtime/decision_bridge.py`
+  - `runtime/plan_proposal.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_state.py`
+
+### Changed
+
+- Updated project files:
+  - `installer/inspection.py`
+
 ## [2026-03-28.002645] - 2026-03-28
 
 ### Runtime

@@ -57,6 +57,34 @@ def _seed_quarantined_workspace_state(workspace_root: Path) -> None:
     )
 
 
+def _seed_execution_confirm_conflict_workspace_state(workspace_root: Path) -> None:
+    state_root = workspace_root / ".sopify-skills" / "state"
+    _write_json(
+        state_root / "current_handoff.json",
+        {
+            "schema_version": "1",
+            "route_name": "execution_confirm_pending",
+            "run_id": "run-1",
+            "handoff_kind": "checkpoint",
+            "required_host_action": "confirm_execute",
+        },
+    )
+    _write_json(
+        state_root / "current_plan_proposal.json",
+        {
+            "schema_version": "1",
+            "checkpoint_id": "proposal-1",
+            "reserved_plan_id": "plan-1",
+            "topic_key": "runtime",
+            "proposed_level": "standard",
+            "proposed_path": ".sopify-skills/plan/proposal",
+            "analysis_summary": "proposal",
+            "estimated_task_count": 2,
+            "request_text": "继续",
+        },
+    )
+
+
 class HostCapabilityRegistryTests(unittest.TestCase):
     def test_registry_returns_complete_capabilities_for_declared_hosts(self) -> None:
         codex = get_host_capability("codex")
@@ -186,6 +214,45 @@ class StatusDoctorContractTests(unittest.TestCase):
             )
             self.assertEqual(quarantine_check["status"], "warn")
             self.assertEqual(quarantine_check["reason_code"], "QUARANTINED_RUNTIME_STATE")
+
+    def test_status_and_doctor_surface_state_conflict_explanation(self) -> None:
+        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as workspace_dir:
+            home_root = Path(home_dir)
+            workspace_root = Path(workspace_dir)
+            _seed_execution_confirm_conflict_workspace_state(workspace_root)
+
+            install_host_assets(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root, language_directory="CN")
+            install_global_payload(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root)
+
+            status_payload = build_status_payload(home_root=home_root, workspace_root=workspace_root)
+            conflict = status_payload["workspace_state"]["state_conflicts"][0]
+            self.assertEqual(conflict["code"], "execution_confirm_review_checkpoint_conflict")
+            self.assertEqual(
+                conflict["explanation"],
+                "Execution confirmation is contaminated by residual review-checkpoint state.",
+            )
+            rendered = render_status_text(status_payload)
+            self.assertIn("state_conflict: execution_confirm_review_checkpoint_conflict", rendered)
+            self.assertIn(
+                "state_conflict_explanation: Execution confirmation is contaminated by residual review-checkpoint state.",
+                rendered,
+            )
+
+            doctor_payload = build_doctor_payload(home_root=home_root, workspace_root=workspace_root)
+            conflict_check = next(
+                check
+                for check in doctor_payload["checks"]
+                if check["check_id"] == "workspace_runtime_state_conflict"
+            )
+            self.assertEqual(conflict_check["status"], "fail")
+            self.assertEqual(conflict_check["reason_code"], "RUNTIME_STATE_CONFLICT")
+            self.assertTrue(
+                any(
+                    "execution_confirm_review_checkpoint_conflict" in evidence
+                    and "Execution confirmation is contaminated by residual review-checkpoint state." in evidence
+                    for evidence in conflict_check["evidence"]
+                )
+            )
 
     def test_status_json_reports_ready_when_workspace_bundle_is_healthy(self) -> None:
         with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as workspace_dir:

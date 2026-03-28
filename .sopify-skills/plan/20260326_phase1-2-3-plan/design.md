@@ -64,6 +64,42 @@
 - 核心字段名 `gate_status / blocking_reason / plan_completion / next_required_action` 不改名
 - `blocking_reason` 如需扩展，必须验证未知值消费兼容性
 
+承接边界（来自 Plan H 收口后的 carry-over）:
+- Plan H 负责 checkpoint correctness hotfix：唯一 pending 收敛、cancel bridge 放行、execution-confirm 污染冲突、doctor/status 协商态解释
+- Plan A 只承接 host-facing 语义召回增强，不重开 Plan H 已收口的状态机正确性修复
+
+非目标:
+- 不扩大全局语义理解；仅允许在局部 checkpoint 语境下增强召回
+- 不在本计划中改 runtime state model / handoff contract / resolution contract
+- 不把 polite prefix、同义词、更多 tail token 的扩展伪装成 Plan H 热修
+
+启动条件:
+- 仅在 `Plan H + Plan B1` 各自收口后，才进入 Plan A 子 plan
+- 启动前必须先登记真实漏判样本或用户反馈阈值，避免长期欠债无限后延，也避免过早侵入 control-plane 迁移窗口
+
+Case（后续拆分 Plan A 子计划时必须覆盖）:
+- Case A-1 | checkpoint 中 explain-only 咨询不应二次物化
+  - 场景: 已存在 `confirm_plan_package / confirm_decision` 等 pending checkpoint 时，用户提出“只分析、不改文件”的追问。
+  - 期望: 优先按 consult 回答并保持当前 checkpoint 身份稳定；除非用户明确提交 `继续 / 取消 / 1/2/...`，不得新建或重开 plan proposal。
+  - 验收: 同一 session 连续 explain-only 问答后，不新增 proposal `checkpoint_id`，且 `plan/` 下无新建方案包目录。
+- Case A-2 | 决策编号确认携带补充文本应稳健消费
+  - 场景: 用户以 `1/2` 开头确认决策，同时附带后续动作文本（如“并把 case 补进总纲”）。
+  - 期望: 先稳定消费 decision selection，再把后续文本作为 follow-up 意图处理，避免回退到“无效选择”或重复 decision checkpoint。
+- Case A-3 | 引用受保护 plan 资产的分析请求不应默认升级阻断
+  - 场景: 用户消息包含 `.sopify-skills/plan/...` 引用，但意图是“只分析/不改文件/判断是否认可”。
+  - 期望: 优先按 consult 或非阻断路径处理；仅在命中明确执行动作（如 `继续/next/开始/选择`）时进入 checkpoint 约束。
+  - 验收: 在同一 session 下，连续分析问答不会新增 `plan_proposal_pending`；`required_host_action` 不因“只分析”从 consult 漂移到阻断 checkpoint。
+- Case A-4 | “取消 checkpoint”应幂等收口，不得派生新 pending
+  - 场景: 当前处于 `confirm_decision / confirm_plan_package` pending，用户输入“取消这个 checkpoint”。
+  - 期望: 只取消当前 pending（或返回已取消状态），并恢复到稳定可继续态；不得创建新的 proposal 或切到其他 checkpoint 类型。
+  - 验收: 取消后 `current_handoff.required_host_action` 不再是新的 pending checkpoint；不会出现“取消动作触发新 plan_proposal_pending”的链路漂移。
+  - 验收补充: 当用户输入“取消这个 checkpoint”等含取消关键词的自由文本时，必须按 `cancel` 处理，并允许 `status=cancelled/resume_action=cancel` 在无 `selected_option_id` 的情况下生效，且不得派生新的 pending checkpoint。
+- Case A-5 | 逗号混合句的局部语境歧义应单独细化
+  - 场景: 当前为保留 `"取消这个 checkpoint，不要取消全部"` 这类混合句的可执行语义，`, / ，` 仍作为 cancel 成功边界。
+  - 已知残余风险: `"取消这个 checkpoint，为什么还会回到 pending"` 这类分析/追问句仍可能误命中 cancel。
+  - 期望: 在 Plan A 中统一细化逗号后从句的局部语境，区分否定补充、解释性补充与疑问补充；该项不回流到 Plan H。
+  - 验收: 保留 `"取消这个 checkpoint，不要取消全部"` 的 cancel 语义，同时降低 `"取消这个 checkpoint，为什么..."` 类问句的误触发率。
+
 ### Plan D | 对外定位与文档
 状态: committed after Plan A scope is stable
 

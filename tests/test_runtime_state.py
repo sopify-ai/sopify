@@ -1176,3 +1176,114 @@ class ContextSnapshotTests(unittest.TestCase):
 
             self.assertTrue(snapshot.is_conflict)
             self.assertEqual(snapshot.conflict_code, "run_stage_handoff_mismatch")
+
+    def test_answer_questions_allows_preserved_confirmed_decision_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            store.set_current_handoff(
+                RuntimeHandoff(
+                    schema_version="1",
+                    route_name="clarification_pending",
+                    run_id="run-1",
+                    handoff_kind="checkpoint",
+                    required_host_action="answer_questions",
+                )
+            )
+            store.set_current_clarification(
+                ClarificationState(
+                    clarification_id="clar-1",
+                    feature_key="runtime",
+                    phase="analyze",
+                    status="pending",
+                    summary="need facts",
+                    questions=("缺少哪类事实？",),
+                    missing_facts=("fact",),
+                    request_text="补充事实",
+                    created_at=iso_now(),
+                    updated_at=iso_now(),
+                )
+            )
+            store.set_current_decision(
+                confirm_decision(
+                    DecisionState(
+                        schema_version="2",
+                        decision_id="decision-1",
+                        feature_key="runtime",
+                        phase="design",
+                        status="pending",
+                        decision_type="design_choice",
+                        question="继续哪个选项？",
+                        summary="confirmed decision should be preserved during clarification",
+                        options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
+                        created_at=iso_now(),
+                        updated_at=iso_now(),
+                    ),
+                    option_id="option_1",
+                    source="text",
+                    raw_input="1",
+                )
+            )
+
+            snapshot = resolve_context_snapshot(
+                config=config,
+                review_store=store,
+                global_store=store,
+            )
+
+            self.assertFalse(snapshot.is_conflict)
+            self.assertIsNotNone(snapshot.current_clarification)
+            self.assertIsNotNone(snapshot.current_decision)
+            self.assertEqual(snapshot.current_decision.status, "confirmed")
+
+    def test_ready_for_execution_detects_residual_review_checkpoint_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            plan_artifact = create_plan_scaffold("补 runtime 状态机 hotfix", config=config, level="standard")
+            store.set_current_plan(plan_artifact)
+            store.set_current_run(
+                RunState(
+                    run_id="run-1",
+                    status="active",
+                    stage="ready_for_execution",
+                    route_name="workflow",
+                    title=plan_artifact.title,
+                    created_at=iso_now(),
+                    updated_at=iso_now(),
+                    plan_id=plan_artifact.plan_id,
+                    plan_path=plan_artifact.path,
+                )
+            )
+            store.set_current_plan_proposal(
+                PlanProposalState(
+                    schema_version="1",
+                    checkpoint_id="proposal-1",
+                    request_text="继续",
+                    analysis_summary="proposal",
+                    proposed_level="standard",
+                    proposed_path=".sopify-skills/plan/proposal",
+                    estimated_task_count=2,
+                    candidate_files=(),
+                    topic_key="runtime",
+                    reserved_plan_id="proposal-1",
+                    resume_route="workflow",
+                    capture_mode="off",
+                    candidate_skill_ids=(),
+                )
+            )
+
+            snapshot = resolve_context_snapshot(
+                config=config,
+                review_store=store,
+                global_store=store,
+            )
+
+            self.assertTrue(snapshot.is_conflict)
+            self.assertEqual(snapshot.conflict_code, "execution_confirm_review_checkpoint_conflict")

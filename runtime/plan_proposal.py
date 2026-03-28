@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import re
 from typing import Mapping
 
+from .checkpoint_cancel import is_checkpoint_cancel_intent
 from .models import DecisionState, PlanProposalState, RouteDecision
 
 CURRENT_PLAN_PROPOSAL_FILENAME = "current_plan_proposal.json"
@@ -48,7 +49,7 @@ def parse_plan_proposal_response(user_input: str) -> PlanProposalResponse:
         return PlanProposalResponse(action="confirm")
     if normalized in {alias.casefold() for alias in _STATUS_ALIASES}:
         return PlanProposalResponse(action="inspect")
-    if normalized in {alias.casefold() for alias in _CANCEL_ALIASES}:
+    if is_checkpoint_cancel_intent(text, cancel_aliases=_CANCEL_ALIASES):
         return PlanProposalResponse(action="cancel")
     if _looks_like_revision_feedback(text):
         return PlanProposalResponse(action="revise")

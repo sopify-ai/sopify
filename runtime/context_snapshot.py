@@ -33,6 +33,11 @@ _NEGOTIATION_RUN_STAGE_ACTIONS = {
 _DECISION_CONFLICT_STATUSES = {"pending", "collecting", "confirmed", "cancelled", "timed_out"}
 _CLARIFICATION_CONFLICT_STATUSES = {"pending", "collecting"}
 _PENDING_HOST_ACTIONS = {"answer_questions", "confirm_decision", "confirm_plan_package", "confirm_execute"}
+_PENDING_ACTION_EXPECTED_STATE_KINDS = {
+    "answer_questions": {"current_clarification"},
+    "confirm_decision": {"current_decision"},
+    "confirm_plan_package": {"current_plan_proposal"},
+}
 _CONFLICT_ALLOWED_USER_INTENTS = ("cancel", "force_cancel")
 _CONFLICT_ALLOWED_INTERNAL_ACTIONS = ("abort_negotiation",)
 _PRIMARY_SCOPE = "primary"
@@ -224,7 +229,44 @@ def resolve_context_snapshot(
         global_clarification=global_clarification,
         global_decision=global_decision,
     )
-    if len(pending_items) > 1:
+    active_pending_action, active_pending_store, active_pending_path, active_pending_source = _resolve_active_pending_context(
+        review_store=review_store,
+        global_store=global_store,
+        review_run=review_run,
+        global_run=global_run,
+        review_handoff=review_handoff,
+        global_handoff=global_handoff,
+    )
+    effective_pending_items = _filter_pending_items_for_active_action(
+        pending_items,
+        active_pending_action=active_pending_action,
+        review_store=review_store,
+        global_store=global_store,
+        review_decision=review_decision,
+        global_decision=global_decision,
+    )
+    execution_confirm_conflict = _execution_confirm_review_checkpoint_conflict(
+        active_pending_action=active_pending_action,
+        active_pending_store=active_pending_store,
+        active_pending_path=active_pending_path,
+        review_proposal=review_proposal,
+        review_clarification=review_clarification,
+        review_decision=review_decision,
+        global_clarification=global_clarification,
+        global_decision=global_decision,
+    )
+    if not conflicts and execution_confirm_conflict is not None:
+        conflicts.append(execution_confirm_conflict)
+    pending_mismatch = _pending_checkpoint_handoff_mismatch(
+        active_pending_action=active_pending_action,
+        active_pending_store=active_pending_store,
+        active_pending_path=active_pending_path,
+        active_pending_source=active_pending_source,
+        pending_items=effective_pending_items,
+    )
+    if not conflicts and pending_mismatch is not None:
+        conflicts.append(pending_mismatch)
+    if not conflicts and len(effective_pending_items) > 1:
         conflicts.append(
             StateConflictDetail(
                 code="multiple_pending_checkpoints",
@@ -836,6 +878,132 @@ def _collect_pending_items(
     if global_decision is not None and global_decision.status in _DECISION_CONFLICT_STATUSES:
         pending.append(("current_decision", global_store.relative_path(global_store.current_decision_path)))
     return pending
+
+
+def _resolve_active_pending_context(
+    *,
+    review_store: StateStore,
+    global_store: StateStore,
+    review_run: RunState | None,
+    global_run: RunState | None,
+    review_handoff: RuntimeHandoff | None,
+    global_handoff: RuntimeHandoff | None,
+) -> tuple[str, StateStore | None, str, str]:
+    if review_handoff is not None:
+        required_action = str(review_handoff.required_host_action or "").strip()
+        if required_action in _PENDING_HOST_ACTIONS:
+            return (required_action, review_store, review_store.relative_path(review_store.current_handoff_path), "handoff")
+        return ("", None, "", "")
+    if global_handoff is not None:
+        required_action = str(global_handoff.required_host_action or "").strip()
+        if required_action in _PENDING_HOST_ACTIONS:
+            return (required_action, global_store, global_store.relative_path(global_store.current_handoff_path), "handoff")
+        return ("", None, "", "")
+    if review_run is not None:
+        required_action = _NEGOTIATION_RUN_STAGE_ACTIONS.get(review_run.stage, "")
+        if required_action in _PENDING_HOST_ACTIONS:
+            return (required_action, review_store, review_store.relative_path(review_store.current_run_path), "run")
+    if global_run is not None:
+        required_action = _NEGOTIATION_RUN_STAGE_ACTIONS.get(global_run.stage, "")
+        if required_action in _PENDING_HOST_ACTIONS:
+            return (required_action, global_store, global_store.relative_path(global_store.current_run_path), "run")
+    return ("", None, "", "")
+
+
+def _filter_pending_items_for_active_action(
+    pending_items: list[tuple[str, str]],
+    *,
+    active_pending_action: str,
+    review_store: StateStore,
+    global_store: StateStore,
+    review_decision: DecisionState | None,
+    global_decision: DecisionState | None,
+) -> list[tuple[str, str]]:
+    if active_pending_action != "answer_questions":
+        return pending_items
+
+    filtered: list[tuple[str, str]] = []
+    review_decision_path = review_store.relative_path(review_store.current_decision_path)
+    global_decision_path = global_store.relative_path(global_store.current_decision_path)
+    for kind, path in pending_items:
+        if kind != "current_decision":
+            filtered.append((kind, path))
+            continue
+        if review_decision is not None and review_decision.status == "confirmed" and path == review_decision_path:
+            continue
+        if global_decision is not None and global_decision.status == "confirmed" and path == global_decision_path:
+            continue
+        filtered.append((kind, path))
+    return filtered
+
+
+def _execution_confirm_review_checkpoint_conflict(
+    *,
+    active_pending_action: str,
+    active_pending_store: StateStore | None,
+    active_pending_path: str,
+    review_proposal: PlanProposalState | None,
+    review_clarification: ClarificationState | None,
+    review_decision: DecisionState | None,
+    global_clarification: ClarificationState | None,
+    global_decision: DecisionState | None,
+) -> StateConflictDetail | None:
+    if active_pending_action != "confirm_execute" or active_pending_store is None:
+        return None
+
+    observed_kinds: set[str] = set()
+    if review_proposal is not None:
+        observed_kinds.add("current_plan_proposal")
+    if review_clarification is not None and review_clarification.status in _CLARIFICATION_CONFLICT_STATUSES:
+        observed_kinds.add("current_clarification")
+    if global_clarification is not None and global_clarification.status in _CLARIFICATION_CONFLICT_STATUSES:
+        observed_kinds.add("current_clarification")
+    if review_decision is not None:
+        observed_kinds.add("current_decision")
+    if global_decision is not None:
+        observed_kinds.add("current_decision")
+    if not observed_kinds:
+        return None
+
+    observed = ",".join(sorted(observed_kinds))
+    return StateConflictDetail(
+        code="execution_confirm_review_checkpoint_conflict",
+        message=f"execution confirmation cannot coexist with review checkpoint carriers [{observed}]",
+        path=active_pending_path,
+        state_scope=active_pending_store.scope,
+    )
+
+
+def _pending_checkpoint_handoff_mismatch(
+    *,
+    active_pending_action: str,
+    active_pending_store: StateStore | None,
+    active_pending_path: str,
+    active_pending_source: str,
+    pending_items: list[tuple[str, str]],
+) -> StateConflictDetail | None:
+    if active_pending_store is None or active_pending_source != "handoff" or not pending_items:
+        return None
+
+    expected_kinds = _PENDING_ACTION_EXPECTED_STATE_KINDS.get(active_pending_action)
+    if expected_kinds is None:
+        return None
+
+    observed_kinds = {kind for kind, _path in pending_items}
+    if observed_kinds.issubset(expected_kinds):
+        return None
+
+    expected = ",".join(sorted(expected_kinds))
+    observed = ",".join(sorted(observed_kinds))
+    return StateConflictDetail(
+        code="pending_checkpoint_handoff_mismatch",
+        message=(
+            f"required_host_action={active_pending_action} expects [{expected}] "
+            f"but observed pending checkpoints [{observed}]"
+        ),
+        path=active_pending_path,
+        state_scope=active_pending_store.scope,
+    )
 
 
 def _rehydrate_handoff_state_conflict(
