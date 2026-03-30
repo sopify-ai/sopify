@@ -44,6 +44,8 @@ archive_ready: false
 - [ ] 4.7 在 Plan A 中冻结 `ExecutionGate` 核心字段名与 `gate_status` 值集
 - [ ] 4.8 在 Plan B2 中明确“不改变 plan/blueprint/history contract”
 - [ ] 4.9 在 Plan C 中明确“bounded side task，不允许自由漫游”
+- [ ] 4.10 在 Plan A 子 plan 中覆盖 `ready_for_execution + state_conflict(abort_conflict)` 收敛 case：必须验证“开始执行 -> state_conflict -> 取消 -> 再次开始执行”不再回环冲突，并沉淀可追溯证据链（`current_gate_receipt / current_run / current_handoff / last_route`）与对应代码链路（`context_snapshot -> router -> engine -> handoff`）
+- [x] 4.11 冻结后续设计边界：`B1` 收口后可先灰度推广；`Plan A / Plan D` 默认必须向后兼容已发布 `B1` contract，不得隐式引入破坏性变更；若需破坏性改动，必须单独立项并附迁移/回滚方案
 
 ## 5. 明确延后方向
 - [ ] 5.1 若未来启动 B3，单独拍板 `plan_path` 新语义

@@ -101,6 +101,24 @@ Case（后续拆分 Plan A 子计划时必须覆盖）:
   - 已知残余风险: `"取消这个 checkpoint，为什么还会回到 pending"` 这类分析/追问句仍可能误命中 cancel。
   - 期望: 在 Plan A 中统一细化逗号后从句的局部语境，区分否定补充、解释性补充与疑问补充；该项不回流到 Plan H。
   - 验收: 保留 `"取消这个 checkpoint，不要取消全部"` 的 cancel 语义，同时降低 `"取消这个 checkpoint，为什么..."` 类问句的误触发率。
+- Case A-6 | execution confirm 与 state_conflict abort 必须单次收敛
+  - 场景: `current_run.stage=ready_for_execution` 且 `execution_gate.next_required_action=confirm_execute`，但 `current_handoff.required_host_action` 漂移为 `review_or_execute_plan` 或 `continue_host_workflow`。
+  - 堵塞路径（可复现）:
+    1. 用户输入“开始执行 ...”时命中 `state_conflict(resolve_state_conflict)`。
+    2. 用户输入“取消”命中 `state_conflict(abort_conflict)`，handoff 被写成 `continue_host_workflow`。
+    3. 用户再次输入“开始执行 ...”后再次命中 `state_conflict(resolve_state_conflict)`，形成循环卡死。
+  - 根因链路（用于追溯）:
+    1. `context_snapshot` 对 `ready_for_execution -> confirm_execute` 存在强约束（`run_stage_handoff_mismatch`）。
+    2. `engine` 的 abort 清理只清理 conflict carrier / abortable negotiation 状态，未覆盖 `ready_for_execution` run stage 的归一。
+    3. `handoff` 在 `state_conflict + abort_conflict` 下会输出 `required_host_action=continue_host_workflow`。
+  - 期望:
+    1. `abort_conflict` 后必须收敛到单一合法配对事实源。
+    2. 允许的收敛终态仅两类：`ready_for_execution + confirm_execute`，或 `plan_generated + review_or_execute_plan`。
+    3. 明确禁止出现 `ready_for_execution + continue_host_workflow` 这类二次 mismatch。
+  - 验收:
+    1. 同一 session 下执行“开始执行 -> 取消 -> 开始执行”序列时，不得再次回到同一 `state_conflict` 原因码。
+    2. gate 回执不再反复给出 `run_stage_handoff_mismatch`。
+    3. 必须能从以下证据文件复盘整条链路：`.sopify-skills/state/current_gate_receipt.json`、`.sopify-skills/state/sessions/<session_id>/current_run.json`、`.sopify-skills/state/sessions/<session_id>/current_handoff.json`、`.sopify-skills/state/sessions/<session_id>/last_route.json`。
 
 ### Plan D | 对外定位与文档
 状态: committed after Plan A scope is stable
@@ -216,6 +234,11 @@ Case（后续拆分 Plan A 子计划时必须覆盖）:
 - `B2` 不依赖 `A`，但应在 `B1` 之后，避免同时处理 control-plane bundle 迁移与运行态目录迁移
 - `C` 的 contract design 可早于 `B2`，但 full implementation 建议在 `A` 与 `B1/B2` 稳定后进行
 - `B3` 必须单独决策后再开工
+
+推广与兼容边界（冻结）:
+- `B1` 收口后允许先做一波灰度推广，不要求等待 `Plan A / Plan D` 全部完成
+- `Plan A / Plan D` 必须按增量增强方式推进：默认向后兼容 `B1` 已发布 contract，不得破坏既有字段名、值集与升级路径
+- 若后续方案确需破坏性改动，必须单独立项拍板，并附带显式迁移/回滚方案；不得作为 `A / D` 常规迭代隐式带入
 
 ## 当前执行窗口
 当前总纲下的即时执行窗口分成两个层次：
