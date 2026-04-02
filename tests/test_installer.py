@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -81,6 +82,29 @@ def _create_incomplete_payload(*, home_root: Path, version: str) -> Path:
     helper_path.parent.mkdir(parents=True, exist_ok=True)
     helper_path.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
     return payload_root
+
+
+def _run_installed_bootstrap_helper(
+    *,
+    helper_path: Path,
+    workspace_root: Path,
+    request: str = "",
+    activation_root: Path | None = None,
+) -> dict[str, object]:
+    command = [sys.executable, str(helper_path), "--workspace-root", str(workspace_root)]
+    if request:
+        command.extend(["--request", request])
+    if activation_root is not None:
+        command.extend(["--activation-root", str(activation_root)])
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stderr.strip() or completed.stdout.strip() or "bootstrap helper failed")
+    return json.loads(completed.stdout)
 
 
 def _write_bundle_layout(
@@ -269,9 +293,9 @@ class WorkspaceBootstrapCompatibilityTests(unittest.TestCase):
                 global_bundle_root=global_bundle_root,
             )
 
-            self.assertEqual(state, "INCOMPATIBLE")
-            self.assertEqual(reason_code, "MISSING_REQUIRED_FILE")
-            self.assertIn("scripts/clarification_bridge_runtime.py", message)
+            self.assertEqual(state, "READY")
+            self.assertEqual(reason_code, "STUB_SELECTED")
+            self.assertIn("selected global bundle", message)
             self.assertEqual(from_version, "2026-02-13")
 
     def test_same_version_bundle_missing_required_capability_is_incompatible(self) -> None:
@@ -324,9 +348,9 @@ class WorkspaceBootstrapCompatibilityTests(unittest.TestCase):
                 global_bundle_root=global_bundle_root,
             )
 
-            self.assertEqual(state, "INCOMPATIBLE")
-            self.assertEqual(reason_code, "MISSING_REQUIRED_CAPABILITY")
-            self.assertIn("decision_bridge", message)
+            self.assertEqual(state, "READY")
+            self.assertEqual(reason_code, "STUB_SELECTED")
+            self.assertIn("selected global bundle", message)
             self.assertEqual(from_version, "2026-02-13")
 
     def test_stub_only_workspace_is_ready_when_stub_and_selected_global_bundle_are_valid(self) -> None:
@@ -370,8 +394,8 @@ class WorkspaceBootstrapCompatibilityTests(unittest.TestCase):
             )
 
             self.assertEqual(state, "READY")
-            self.assertEqual(reason_code, "WORKSPACE_BUNDLE_READY")
-            self.assertIn("valid global bundle", message)
+            self.assertEqual(reason_code, "STUB_SELECTED")
+            self.assertIn("selected global bundle", message)
             self.assertEqual(from_version, "2026-02-13")
 
     def test_global_only_workspace_does_not_fallback_when_selected_global_bundle_is_missing(self) -> None:
@@ -802,6 +826,123 @@ class WorkspaceBootstrapCompatibilityTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, str(manifest_path)):
                 validate_workspace_stub_manifest(bundle_root)
 
+
+class WorkspaceBootstrapIgnorePolicyTests(unittest.TestCase):
+    def test_installed_helper_writes_managed_block_to_git_exclude_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_root = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            CODEX_ADAPTER.destination_root(home_root).mkdir(parents=True, exist_ok=True)
+            exclude_path = workspace_root / ".git" / "info" / "exclude"
+            exclude_path.parent.mkdir(parents=True, exist_ok=True)
+            exclude_path.write_text("user-entry\n", encoding="utf-8")
+
+            payload_phase = install_global_payload(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root)
+            helper_path = payload_phase.root / "helpers" / "bootstrap_workspace.py"
+
+            result = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go plan 补 runtime gate 骨架",
+            )
+
+            self.assertEqual(result["action"], "bootstrapped")
+            self.assertEqual(result["reason_code"], "STUB_SELECTED")
+            self.assertEqual(result["ignore_mode"], "exclude")
+            self.assertEqual(Path(result["ignore_target"]).resolve(), exclude_path.resolve())
+            manifest = json.loads((workspace_root / ".sopify-runtime" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ignore_mode"], "exclude")
+            exclude_content = exclude_path.read_text(encoding="utf-8")
+            self.assertIn("user-entry\n", exclude_content)
+            self.assertIn("# BEGIN sopify-managed", exclude_content)
+            self.assertIn(".sopify-runtime/", exclude_content)
+            self.assertIn(".sopify-skills/state/", exclude_content)
+            self.assertIn(".sopify-skills/replay/", exclude_content)
+            self.assertFalse((workspace_root / ".gitignore").exists())
+
+    def test_installed_helper_keeps_commit_lock_sticky_until_explicit_go_init_switches_back(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_root = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            CODEX_ADAPTER.destination_root(home_root).mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".git" / "info").mkdir(parents=True, exist_ok=True)
+
+            payload_phase = install_global_payload(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root)
+            helper_path = payload_phase.root / "helpers" / "bootstrap_workspace.py"
+            exclude_path = workspace_root / ".git" / "info" / "exclude"
+            gitignore_path = workspace_root / ".gitignore"
+
+            first = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go init commit-lock",
+            )
+
+            self.assertEqual(first["action"], "bootstrapped")
+            self.assertEqual(first["ignore_mode"], "gitignore")
+            self.assertEqual(Path(first["ignore_target"]).resolve(), gitignore_path.resolve())
+            self.assertIn("# BEGIN sopify-managed", gitignore_path.read_text(encoding="utf-8"))
+            self.assertFalse(exclude_path.exists())
+
+            sticky = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go plan 继续开发",
+            )
+
+            self.assertEqual(sticky["action"], "skipped")
+            self.assertEqual(sticky["ignore_mode"], "gitignore")
+            manifest = json.loads((workspace_root / ".sopify-runtime" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ignore_mode"], "gitignore")
+            self.assertIn("# BEGIN sopify-managed", gitignore_path.read_text(encoding="utf-8"))
+
+            switched = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go init",
+            )
+
+            self.assertEqual(switched["action"], "updated")
+            self.assertEqual(switched["ignore_mode"], "exclude")
+            self.assertEqual(Path(switched["ignore_target"]).resolve(), exclude_path.resolve())
+            manifest = json.loads((workspace_root / ".sopify-runtime" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ignore_mode"], "exclude")
+            self.assertFalse(gitignore_path.exists())
+            self.assertIn("# BEGIN sopify-managed", exclude_path.read_text(encoding="utf-8"))
+
+    def test_installed_helper_repairs_missing_managed_block_for_ready_git_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_root = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            CODEX_ADAPTER.destination_root(home_root).mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".git" / "info").mkdir(parents=True, exist_ok=True)
+
+            payload_phase = install_global_payload(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root)
+            helper_path = payload_phase.root / "helpers" / "bootstrap_workspace.py"
+            exclude_path = workspace_root / ".git" / "info" / "exclude"
+
+            _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go plan 初始化",
+            )
+            exclude_path.write_text("user-entry\n", encoding="utf-8")
+
+            repaired = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go plan 继续开发",
+            )
+
+            self.assertEqual(repaired["action"], "updated")
+            self.assertEqual(repaired["ignore_mode"], "exclude")
+            exclude_content = exclude_path.read_text(encoding="utf-8")
+            self.assertIn("user-entry\n", exclude_content)
+            self.assertIn("# BEGIN sopify-managed", exclude_content)
+
     def test_validate_payload_manifests_returns_both_payload_and_bundle_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_root = Path(temp_dir)
@@ -1091,16 +1232,25 @@ class HostPromptContractTests(unittest.TestCase):
             self.assertIn("~/.codex/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>", prompt)
             self.assertIn("缺少或不满足兼容要求的 `.sopify-runtime/manifest.json`", prompt)
             self.assertIn("第一步必须先执行 runtime gate", prompt)
-            self.assertIn("limits.runtime_gate_entry", prompt)
+            self.assertIn("只作为 thin stub", prompt)
+            self.assertIn("selected global bundle", prompt)
+            self.assertIn("workspace preflight contract", prompt)
+            self.assertIn("runtime_gate_entry", prompt)
             self.assertIn("scripts/runtime_gate.py enter --workspace-root <cwd> --request \"<raw user request>\"", prompt)
             self.assertIn("不得绕过 gate 直接调用 `scripts/sopify_runtime.py`", prompt)
             self.assertIn("allowed_response_mode == checkpoint_only", prompt)
             self.assertIn("allowed_response_mode == error_visible_retry", prompt)
-            self.assertIn("limits.preferences_preload_entry", prompt)
+            self.assertIn("preferences_preload_entry", prompt)
             self.assertIn("scripts/preferences_preload_runtime.py inspect --workspace-root <cwd>", prompt)
             self.assertIn("fail-open with visibility", prompt)
             self.assertIn("当前任务明确要求 > `preferences.md` > 默认规则", prompt)
             self.assertIn("不得自行读取 `preferences.md` 原文做二次拼装", prompt)
+            self.assertIn("ROOT_CONFIRM_REQUIRED", prompt)
+            self.assertIn("activation_root", prompt)
+            self.assertIn("默认推荐“当前目录”", prompt)
+            self.assertIn("这一类返回属于 pre-runtime checkpoint", prompt)
+            self.assertIn("`allowed_response_mode` 应为 `checkpoint_only`", prompt)
+            self.assertIn("`~go init` 不得绕过这一步", prompt)
             self.assertIn("scripts/develop_checkpoint_runtime.py", prompt)
             self.assertIn("resume_context", prompt)
             self.assertIn("不得自由追问", prompt)
@@ -1135,16 +1285,25 @@ class HostPromptContractTests(unittest.TestCase):
             self.assertIn("~/.claude/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>", prompt)
             self.assertIn("does not yet have a compatible `.sopify-runtime/manifest.json`", prompt)
             self.assertIn("first step must be the runtime gate", prompt)
-            self.assertIn("limits.runtime_gate_entry", prompt)
+            self.assertIn("only a thin stub", prompt)
+            self.assertIn("selected global bundle", prompt)
+            self.assertIn("workspace-preflight contract", prompt)
+            self.assertIn("runtime_gate_entry", prompt)
             self.assertIn("scripts/runtime_gate.py enter --workspace-root <cwd> --request \"<raw user request>\"", prompt)
             self.assertIn("must not bypass the gate", prompt)
             self.assertIn("allowed_response_mode == checkpoint_only", prompt)
             self.assertIn("allowed_response_mode == error_visible_retry", prompt)
-            self.assertIn("limits.preferences_preload_entry", prompt)
+            self.assertIn("preferences_preload_entry", prompt)
             self.assertIn("scripts/preferences_preload_runtime.py inspect --workspace-root <cwd>", prompt)
             self.assertIn("fail-open with visibility", prompt)
             self.assertIn("current explicit task > preferences.md > default rules", prompt)
             self.assertIn("never re-read `preferences.md` to rebuild the prompt block manually", prompt)
+            self.assertIn("ROOT_CONFIRM_REQUIRED", prompt)
+            self.assertIn("activation_root", prompt)
+            self.assertIn("recommend the current directory", prompt)
+            self.assertIn("This outcome is a pre-runtime checkpoint", prompt)
+            self.assertIn("`allowed_response_mode` must be `checkpoint_only`", prompt)
+            self.assertIn("must not bypass this step", prompt)
             self.assertIn("scripts/develop_checkpoint_runtime.py", prompt)
             self.assertIn("resume_context", prompt)
             self.assertIn("must not ask a free-form question", prompt)
