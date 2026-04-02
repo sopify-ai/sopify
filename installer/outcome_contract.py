@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 ACTION_CONTINUE = "continue"
 ACTION_WARN = "warn"
@@ -109,6 +109,16 @@ def annotate_outcome_payload(
     return payload
 
 
+def render_outcome_summary(payload: Mapping[str, object]) -> str:
+    primary_code = str(payload.get("primary_code") or "").strip()
+    action_level = str(payload.get("action_level") or "").strip()
+    if not primary_code and not action_level:
+        return ""
+    if primary_code and action_level:
+        return f"{primary_code} [{action_level}]"
+    return primary_code or action_level
+
+
 def normalize_diagnostic_identifier(value: str | None) -> str | None:
     normalized = str(value or "").strip()
     if not normalized:
@@ -128,4 +138,3 @@ def diagnostic_identifiers_from_evidence(evidence: object) -> tuple[str, ...]:
         if identifier and identifier not in diagnostics:
             diagnostics.append(identifier)
     return tuple(diagnostics)
-

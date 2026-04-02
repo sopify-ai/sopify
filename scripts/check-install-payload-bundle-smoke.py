@@ -21,6 +21,7 @@ from installer.hosts import get_host_adapter
 from installer.inspection import build_status_payload
 from installer.inspection import inspect_payload_bundle_resolution
 from installer.models import InstallError, parse_install_target
+from installer.outcome_contract import render_outcome_summary
 from installer.validate import (
     resolve_payload_bundle_root,
     run_bundle_smoke_check,
@@ -164,9 +165,9 @@ def run_smoke(*, target_value: str, temp_root: Path) -> dict[str, Any]:
         "path_summary": {
             "payload_source_kind": payload_bundle.source_kind,
             "payload_reason_code": payload_bundle.reason_code,
-            "payload_outcome": _render_outcome_summary(payload_bundle.to_status_dict()) or None,
+            "payload_outcome": render_outcome_summary(payload_bundle.to_status_dict()) or None,
             "workspace_reason_code": workspace_bundle.get("reason_code"),
-            "workspace_outcome": _render_outcome_summary(workspace_bundle) or None,
+            "workspace_outcome": render_outcome_summary(workspace_bundle) or None,
         },
         "checks": {
             "single_install_command_only": True,
@@ -227,17 +228,6 @@ def _run_workspace_bootstrap(*, helper_path: Path, workspace_root: Path) -> str:
         details = completed.stderr.strip() or completed.stdout.strip() or "unknown bootstrap failure"
         raise InstallError(f"Workspace bootstrap helper failed: {details}")
     return completed.stdout.strip()
-
-
-def _render_outcome_summary(payload: dict[str, object]) -> str:
-    primary_code = str(payload.get("primary_code") or "").strip()
-    action_level = str(payload.get("action_level") or "").strip()
-    if not primary_code and not action_level:
-        return ""
-    if primary_code and action_level:
-        return f"{primary_code} [{action_level}]"
-    return primary_code or action_level
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -10,6 +10,7 @@ from typing import Callable, TextIO
 from installer.hosts import iter_installable_hosts
 from installer.inspection import build_doctor_payload, build_status_payload
 from installer.models import InstallError, InstallResult, InstallTarget, LANGUAGE_DIRECTORY_MAP
+from installer.outcome_contract import render_outcome_summary
 
 SOURCE_CHANNEL_REPO_LOCAL = "repo-local"
 DEFAULT_REPO_LOCAL_REF = "working-tree"
@@ -144,8 +145,8 @@ def render_distribution_result(report: DistributionInstallReport) -> str:
     selected_checks = _select_host_checks(report.doctor_payload, install_result.target)
     payload_bundle = selected_host.get("payload_bundle") or {}
     workspace_bundle = selected_host.get("workspace_bundle") or {}
-    payload_outcome = _render_outcome_summary(payload_bundle)
-    workspace_outcome = _render_outcome_summary(workspace_bundle)
+    payload_outcome = render_outcome_summary(payload_bundle)
+    workspace_outcome = render_outcome_summary(workspace_bundle)
     workspace_line = _render_workspace_line(install_result)
     lines = [
         "Sopify already current:" if _is_noop_install(install_result) else "Installed Sopify successfully:",
@@ -411,13 +412,3 @@ def _is_noop_install(install_result: InstallResult) -> bool:
 def _first_smoke_line(smoke_output: str) -> str:
     first_line = smoke_output.splitlines()[0].strip() if smoke_output else ""
     return first_line or "(no smoke output)"
-
-
-def _render_outcome_summary(payload: dict[str, object]) -> str:
-    primary_code = str(payload.get("primary_code") or "").strip()
-    action_level = str(payload.get("action_level") or "").strip()
-    if not primary_code and not action_level:
-        return ""
-    if primary_code and action_level:
-        return f"{primary_code} [{action_level}]"
-    return primary_code or action_level

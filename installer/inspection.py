@@ -17,7 +17,7 @@ from installer.bootstrap_workspace import (
 from installer.hosts import iter_host_registrations
 from installer.hosts.base import HostAdapter, HostRegistration
 from installer.models import HostCapability, InstallError
-from installer.outcome_contract import annotate_outcome_payload, diagnostic_identifiers_from_evidence
+from installer.outcome_contract import annotate_outcome_payload, diagnostic_identifiers_from_evidence, render_outcome_summary
 from installer.validate import (
     resolve_payload_bundle_root,
     run_bundle_smoke_check,
@@ -438,10 +438,10 @@ def render_status_text(payload: dict[str, object]) -> str:
                 payload_reason_code=payload_bundle.get("reason_code", REASON_GLOBAL_INDEX_CORRUPTED),
             )
         )
-        workspace_summary = _render_outcome_summary(workspace_bundle)
+        workspace_summary = render_outcome_summary(workspace_bundle)
         if workspace_summary:
             lines.append(f"    workspace_outcome: {workspace_summary}")
-        payload_summary = _render_outcome_summary(payload_bundle)
+        payload_summary = render_outcome_summary(payload_bundle)
         if payload_summary:
             lines.append(f"    payload_outcome: {payload_summary}")
         warning_identifiers = diagnostic_identifiers_from_evidence(workspace_bundle.get("evidence") or ())
@@ -510,7 +510,7 @@ def render_doctor_text(payload: dict[str, object]) -> str:
         prefix = f"{check.get('host_id')}:" if check.get("host_id") else ""
         source_suffix = f" [{check['source_kind']}]" if check.get("source_kind") else ""
         line = f"  - {prefix}{check['check_id']} -> {check['status']} ({check['reason_code']}){source_suffix}"
-        outcome_summary = _render_outcome_summary(check)
+        outcome_summary = render_outcome_summary(check)
         if outcome_summary:
             line += f" | outcome: {outcome_summary}"
         if check.get("recommendation"):
@@ -522,16 +522,6 @@ def render_doctor_text(payload: dict[str, object]) -> str:
         for detail in _render_structured_evidence_lines(check.get("evidence")):
             lines.append(f"    {detail}")
     return "\n".join(lines)
-
-
-def _render_outcome_summary(payload: Mapping[str, object]) -> str:
-    primary_code = str(payload.get("primary_code") or "").strip()
-    action_level = str(payload.get("action_level") or "").strip()
-    if not primary_code and not action_level:
-        return ""
-    if primary_code and action_level:
-        return f"{primary_code} [{action_level}]"
-    return primary_code or action_level
 
 
 def _render_structured_evidence_lines(evidence: object) -> tuple[str, ...]:
