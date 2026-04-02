@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -26,6 +27,7 @@ from installer.hosts.base import install_host_assets
 from installer.hosts.claude import CLAUDE_ADAPTER
 from installer.hosts.codex import CODEX_ADAPTER
 from installer.models import InstallError, InstallPhaseResult, InstallResult, parse_install_target
+from installer.outcome_contract import annotate_outcome_payload
 from installer.payload import (
     _REQUIRED_BUNDLE_CAPABILITIES,
     _install_versioned_runtime_bundle,
@@ -121,6 +123,38 @@ def _write_bundle_layout(
         path = bundle_root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("", encoding="utf-8")
+
+
+def _load_module_without_repo_installer(module_path: Path, *, module_name: str):
+    original_sys_path = list(sys.path)
+    saved_modules = {
+        name: sys.modules.pop(name)
+        for name in tuple(sys.modules)
+        if name == "installer" or name.startswith("installer.")
+    }
+    try:
+        filtered_sys_path: list[str] = []
+        for entry in original_sys_path:
+            candidate = Path.cwd() if entry == "" else Path(entry)
+            try:
+                if candidate.resolve() == REPO_ROOT:
+                    continue
+            except OSError:
+                pass
+            filtered_sys_path.append(entry)
+        sys.path[:] = filtered_sys_path
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise AssertionError(f"Failed to load module spec: {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path[:] = original_sys_path
+        for name in tuple(sys.modules):
+            if name == "installer" or name.startswith("installer."):
+                sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
 
 
 class PayloadInstallTests(unittest.TestCase):
@@ -1323,6 +1357,45 @@ class HostPromptContractTests(unittest.TestCase):
 
 
 class InstallRenderTests(unittest.TestCase):
+    def test_bootstrap_helper_fallback_keeps_outcome_contract_in_sync(self) -> None:
+        standalone_module = _load_module_without_repo_installer(
+            REPO_ROOT / "installer" / "bootstrap_workspace.py",
+            module_name="bootstrap_workspace_fallback_test",
+        )
+        reason_codes = (
+            "STUB_SELECTED",
+            "STUB_INVALID",
+            "GLOBAL_BUNDLE_MISSING",
+            "GLOBAL_BUNDLE_INCOMPATIBLE",
+            "GLOBAL_INDEX_CORRUPTED",
+            "LEGACY_FALLBACK_SELECTED",
+            "ROOT_CONFIRM_REQUIRED",
+            "READONLY",
+            "NON_INTERACTIVE",
+            "CONFIRM_BOOTSTRAP_REQUIRED",
+            "BRAKE_LAYER_BLOCKED",
+            "FIRST_WRITE_NOT_AUTHORIZED",
+            "COMMAND_NOT_BOOTSTRAP_AUTHORIZED",
+            "UNKNOWN_REASON",
+        )
+
+        for reason_code in reason_codes:
+            with self.subTest(reason_code=reason_code):
+                expected = annotate_outcome_payload(
+                    {"reason_code": reason_code},
+                    reason_code=reason_code,
+                    message_hint="retry",
+                )
+                actual = standalone_module._annotate_outcome_payload(
+                    {"reason_code": reason_code},
+                    reason_code=reason_code,
+                    message_hint="retry",
+                )
+
+                self.assertEqual(actual.get("primary_code"), expected.get("primary_code"))
+                self.assertEqual(actual.get("action_level"), expected.get("action_level"))
+                self.assertEqual(actual.get("message_hint"), expected.get("message_hint"))
+
     def test_render_result_reports_already_current_for_noop_install(self) -> None:
         result = _build_install_result(host_action="skipped", payload_action="skipped")
 

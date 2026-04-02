@@ -21,6 +21,79 @@ import sys
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+try:
+    from installer.outcome_contract import annotate_outcome_payload as _annotate_outcome_payload
+except ModuleNotFoundError as exc:
+    if not str(exc.name or "").startswith("installer"):
+        raise
+
+    # This helper is copied into the installed payload and must keep a narrow
+    # outcome-contract mirror for standalone execution.
+    _PRIMARY_CODE_BY_REASON = {
+        "STUB_SELECTED": "stub_selected",
+        "STUB_INVALID": "stub_invalid",
+        "GLOBAL_BUNDLE_MISSING": "global_bundle_missing",
+        "GLOBAL_BUNDLE_INCOMPATIBLE": "global_bundle_incompatible",
+        "GLOBAL_INDEX_CORRUPTED": "global_index_corrupted",
+        "LEGACY_FALLBACK_SELECTED": "legacy_fallback_selected",
+        "ROOT_CONFIRM_REQUIRED": "root_confirm_required",
+        "READONLY": "readonly",
+        "NON_INTERACTIVE": "non_interactive",
+    }
+    _ACTION_LEVEL_BY_PRIMARY = {
+        "stub_selected": "continue",
+        "stub_invalid": "fail_closed",
+        "global_bundle_missing": "fail_closed",
+        "global_bundle_incompatible": "fail_closed",
+        "global_index_corrupted": "fail_closed",
+        "legacy_fallback_selected": "warn",
+        "root_confirm_required": "confirm",
+        "readonly": "fail_closed",
+        "non_interactive": "fail_closed",
+    }
+    _ACTION_LEVEL_BY_REASON = {
+        "BRAKE_LAYER_BLOCKED": "fail_closed",
+        "FIRST_WRITE_NOT_AUTHORIZED": "fail_closed",
+        "COMMAND_NOT_BOOTSTRAP_AUTHORIZED": "fail_closed",
+        "CONFIRM_BOOTSTRAP_REQUIRED": "confirm",
+    }
+
+    def _primary_code_for_reason(reason_code: str | None) -> str | None:
+        normalized = str(reason_code or "").strip().upper()
+        if not normalized:
+            return None
+        return _PRIMARY_CODE_BY_REASON.get(normalized)
+
+    def _action_level_for_reason(reason_code: str | None, *, primary_code: str | None = None) -> str | None:
+        normalized_primary = str(primary_code or "").strip()
+        if normalized_primary:
+            return _ACTION_LEVEL_BY_PRIMARY.get(normalized_primary)
+        normalized_reason = str(reason_code or "").strip().upper()
+        if normalized_reason in _ACTION_LEVEL_BY_REASON:
+            return _ACTION_LEVEL_BY_REASON[normalized_reason]
+        fallback_primary = _primary_code_for_reason(normalized_reason)
+        if fallback_primary is None:
+            return None
+        return _ACTION_LEVEL_BY_PRIMARY.get(fallback_primary)
+
+    def _annotate_outcome_payload(
+        payload: dict[str, Any],
+        *,
+        reason_code: str | None = None,
+        message_hint: str | None = None,
+    ) -> dict[str, Any]:
+        effective_reason = str(reason_code or payload.get("reason_code") or "").strip()
+        primary_code = _primary_code_for_reason(effective_reason)
+        action_level = _action_level_for_reason(effective_reason, primary_code=primary_code)
+        if primary_code:
+            payload.setdefault("primary_code", primary_code)
+        if action_level:
+            payload.setdefault("action_level", action_level)
+        normalized_hint = str(message_hint or payload.get("message_hint") or "").strip()
+        if normalized_hint:
+            payload.setdefault("message_hint", normalized_hint)
+        return payload
+
 PAYLOAD_MANIFEST_FILENAME = "payload-manifest.json"
 _REQUIRED_BUNDLE_FILES = (
     Path("manifest.json"),
@@ -65,34 +138,6 @@ REASON_NON_INTERACTIVE = "NON_INTERACTIVE"
 DIAGNOSTIC_NON_GIT_WORKSPACE = "NON_GIT_WORKSPACE"
 DIAGNOSTIC_ROOT_REUSE_ANCESTOR_MARKER = "ROOT_REUSE_ANCESTOR_MARKER"
 DIAGNOSTIC_INVALID_ANCESTOR_MARKER = "INVALID_ANCESTOR_MARKER"
-_PRIMARY_CODE_BY_REASON = {
-    REASON_STUB_SELECTED: "stub_selected",
-    REASON_STUB_INVALID: "stub_invalid",
-    "GLOBAL_BUNDLE_MISSING": "global_bundle_missing",
-    "GLOBAL_BUNDLE_INCOMPATIBLE": "global_bundle_incompatible",
-    "GLOBAL_INDEX_CORRUPTED": "global_index_corrupted",
-    "LEGACY_FALLBACK_SELECTED": "legacy_fallback_selected",
-    REASON_ROOT_CONFIRM_REQUIRED: "root_confirm_required",
-    REASON_READONLY: "readonly",
-    REASON_NON_INTERACTIVE: "non_interactive",
-}
-_ACTION_LEVEL_BY_PRIMARY = {
-    "stub_selected": "continue",
-    "stub_invalid": "fail_closed",
-    "global_bundle_missing": "fail_closed",
-    "global_bundle_incompatible": "fail_closed",
-    "global_index_corrupted": "fail_closed",
-    "legacy_fallback_selected": "warn",
-    "root_confirm_required": "confirm",
-    "readonly": "fail_closed",
-    "non_interactive": "fail_closed",
-}
-_ACTION_LEVEL_BY_REASON = {
-    "BRAKE_LAYER_BLOCKED": "fail_closed",
-    "FIRST_WRITE_NOT_AUTHORIZED": "fail_closed",
-    "COMMAND_NOT_BOOTSTRAP_AUTHORIZED": "fail_closed",
-    REASON_CONFIRM_BOOTSTRAP_REQUIRED: "confirm",
-}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1278,15 +1323,7 @@ def _result(
     )
     if evidence:
         payload["evidence"] = evidence
-    primary_code = _primary_code_for_reason(reason_code)
-    action_level = _action_level_for_reason(reason_code, primary_code=primary_code)
-    if primary_code:
-        payload["primary_code"] = primary_code
-    if action_level:
-        payload["action_level"] = action_level
-    if message:
-        payload["message_hint"] = message
-    return payload
+    return _annotate_outcome_payload(payload, reason_code=reason_code, message_hint=message)
 
 
 def _result_evidence(
@@ -1319,27 +1356,5 @@ def _string_or_none(value: object) -> str | None:
         normalized = value.strip()
         return normalized or None
     return None
-
-
-def _primary_code_for_reason(reason_code: str) -> str | None:
-    normalized = str(reason_code or "").strip().upper()
-    if not normalized:
-        return None
-    return _PRIMARY_CODE_BY_REASON.get(normalized)
-
-
-def _action_level_for_reason(reason_code: str, *, primary_code: str | None) -> str | None:
-    normalized_primary = str(primary_code or "").strip()
-    if normalized_primary:
-        return _ACTION_LEVEL_BY_PRIMARY.get(normalized_primary)
-    normalized_reason = str(reason_code or "").strip().upper()
-    if normalized_reason in _ACTION_LEVEL_BY_REASON:
-        return _ACTION_LEVEL_BY_REASON[normalized_reason]
-    fallback_primary = _primary_code_for_reason(normalized_reason)
-    if fallback_primary is None:
-        return None
-    return _ACTION_LEVEL_BY_PRIMARY.get(fallback_primary)
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

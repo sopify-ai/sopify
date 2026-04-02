@@ -4,6 +4,21 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+try:
+    from installer.outcome_contract import render_outcome_summary
+except ModuleNotFoundError as exc:
+    if not str(exc.name or "").startswith("installer"):
+        raise
+
+    def render_outcome_summary(payload: Mapping[str, object]) -> str:
+        primary_code = str(payload.get("primary_code") or "").strip()
+        action_level = str(payload.get("action_level") or "").strip()
+        if not primary_code and not action_level:
+            return ""
+        if primary_code and action_level:
+            return f"{primary_code} [{action_level}]"
+        return primary_code or action_level
+
 _HINTS = {
     "stub_selected": "Selected global bundle is ready for this workspace.",
     "stub_invalid": "Repair or recreate `.sopify-runtime/manifest.json`, then retry.",
@@ -62,14 +77,10 @@ def render_gate_text(payload: Mapping[str, Any]) -> str:
             lines.append(f"  reason: {reason}")
     if preflight:
         reason_code = str(preflight.get("reason_code") or "").strip()
-        primary_code = str(preflight.get("primary_code") or "").strip()
-        action_level = str(preflight.get("action_level") or "").strip()
         if reason_code:
             lines.append(f"  preflight_reason: {reason_code}")
-        if primary_code or action_level:
-            summary = primary_code or "(none)"
-            if action_level:
-                summary += f" [{action_level}]"
+        summary = render_outcome_summary(preflight)
+        if summary:
             lines.append(f"  preflight_outcome: {summary}")
         for detail in _render_preflight_details(preflight):
             lines.append(f"  {detail}")
@@ -113,4 +124,3 @@ def _render_preflight_details(preflight: Mapping[str, Any]) -> tuple[str, ...]:
     if hint:
         lines.append(f"hint: {hint}")
     return tuple(lines)
-

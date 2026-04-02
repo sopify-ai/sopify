@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,7 @@ from runtime.gate import (
 )
 from installer.hosts.claude import CLAUDE_ADAPTER
 from installer.hosts.codex import CODEX_ADAPTER
+from installer.outcome_contract import annotate_outcome_payload, render_outcome_summary
 from installer.payload import install_global_payload
 from runtime.models import DecisionOption, DecisionState, PlanArtifact, PlanProposalState, RouteDecision, RunState, RuntimeHandoff
 from runtime.plan_scaffold import create_plan_scaffold
@@ -256,6 +258,38 @@ def _write_host_id_legacy_payload_manifest_for_gate(*, home_root: Path) -> Path:
     return payload_manifest_path
 
 
+def _load_module_without_repo_installer(module_path: Path, *, module_name: str):
+    original_sys_path = list(sys.path)
+    saved_modules = {
+        name: sys.modules.pop(name)
+        for name in tuple(sys.modules)
+        if name == "installer" or name.startswith("installer.")
+    }
+    try:
+        filtered_sys_path: list[str] = []
+        for entry in original_sys_path:
+            candidate = Path.cwd() if entry == "" else Path(entry)
+            try:
+                if candidate.resolve() == REPO_ROOT:
+                    continue
+            except OSError:
+                pass
+            filtered_sys_path.append(entry)
+        sys.path[:] = filtered_sys_path
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise AssertionError(f"Failed to load module spec: {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path[:] = original_sys_path
+        for name in tuple(sys.modules):
+            if name == "installer" or name.startswith("installer."):
+                sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
+
+
 def _write_gate_receipt_fixture(
     workspace: Path,
     *,
@@ -276,6 +310,63 @@ def _write_gate_receipt_fixture(
 
 
 class RuntimeGateTests(unittest.TestCase):
+    def test_workspace_preflight_fallback_keeps_outcome_contract_in_sync(self) -> None:
+        standalone_module = _load_module_without_repo_installer(
+            REPO_ROOT / "runtime" / "workspace_preflight.py",
+            module_name="workspace_preflight_fallback_test",
+        )
+        reason_codes = (
+            "STUB_SELECTED",
+            "STUB_INVALID",
+            "GLOBAL_BUNDLE_MISSING",
+            "GLOBAL_BUNDLE_INCOMPATIBLE",
+            "GLOBAL_INDEX_CORRUPTED",
+            "LEGACY_FALLBACK_SELECTED",
+            "HOST_MISMATCH",
+            "INGRESS_CONTRACT_INVALID",
+            "ROOT_CONFIRM_REQUIRED",
+            "READONLY",
+            "NON_INTERACTIVE",
+            "CONFIRM_BOOTSTRAP_REQUIRED",
+            "UNKNOWN_REASON",
+        )
+
+        for reason_code in reason_codes:
+            with self.subTest(reason_code=reason_code):
+                expected = annotate_outcome_payload(
+                    {"reason_code": reason_code},
+                    reason_code=reason_code,
+                    message_hint="retry",
+                )
+                actual = standalone_module.annotate_outcome_payload(
+                    {"reason_code": reason_code},
+                    reason_code=reason_code,
+                    message_hint="retry",
+                )
+
+                self.assertEqual(actual.get("primary_code"), expected.get("primary_code"))
+                self.assertEqual(actual.get("action_level"), expected.get("action_level"))
+                self.assertEqual(actual.get("message_hint"), expected.get("message_hint"))
+
+    def test_gate_output_fallback_keeps_outcome_summary_rendering_in_sync(self) -> None:
+        standalone_module = _load_module_without_repo_installer(
+            REPO_ROOT / "runtime" / "gate_output.py",
+            module_name="gate_output_fallback_test",
+        )
+        payloads = (
+            {},
+            {"primary_code": "stub_selected"},
+            {"action_level": "continue"},
+            {"primary_code": "stub_selected", "action_level": "continue"},
+        )
+
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                self.assertEqual(
+                    standalone_module.render_outcome_summary(payload),
+                    render_outcome_summary(payload),
+                )
+
     def test_gate_preflight_falls_back_to_legacy_helper_argv_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)

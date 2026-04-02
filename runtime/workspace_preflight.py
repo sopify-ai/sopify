@@ -28,6 +28,8 @@ except ModuleNotFoundError as exc:
         """Vendored runtime fallback when installer package is unavailable."""
 
     ACTION_FAIL_CLOSED = "fail_closed"
+    # Keep this fallback mirror aligned with installer.outcome_contract; tests
+    # import this module outside the repo package to verify parity.
 
     _FALLBACK_HOST_PAYLOAD_ROOTS = {
         "codex": (".codex", "sopify"),
