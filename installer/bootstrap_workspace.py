@@ -48,6 +48,14 @@ _PRERELEASE_RANK = {"dev": -4, "alpha": -3, "beta": -2, "rc": -1}
 _WORKSPACE_STUB_REQUIRED_CAPABILITIES = ("runtime_gate", "preferences_preload")
 _WORKSPACE_STUB_LOCATOR_MODES = {"global_first", "global_only"}
 _WORKSPACE_STUB_IGNORE_MODES = {"exclude", "gitignore", "noop"}
+_SOPIFY_MANAGED_IGNORE_BEGIN = "# BEGIN sopify-managed"
+_SOPIFY_MANAGED_IGNORE_END = "# END sopify-managed"
+_SOPIFY_MANAGED_IGNORE_ENTRIES = (
+    ".sopify-runtime/",
+    ".sopify-skills/state/",
+    ".sopify-skills/replay/",
+    ".sopify-skills/plan/_registry.yaml",
+)
 REASON_STUB_SELECTED = "STUB_SELECTED"
 REASON_STUB_INVALID = "STUB_INVALID"
 REASON_CONFIRM_BOOTSTRAP_REQUIRED = "CONFIRM_BOOTSTRAP_REQUIRED"
@@ -175,40 +183,65 @@ def bootstrap_workspace(
         except ValueError:
             normalized_manifest = {}
         current_ignore_mode = str(normalized_manifest.get("ignore_mode") or current_ignore_mode)
+    request_authorization = _authorize_first_workspace_write(request_text)
+    request_authorization_mode = str(request_authorization["mode"])
+    desired_ignore_mode = _resolve_workspace_ignore_mode(
+        workspace_root=resolved_activation_root,
+        current_ignore_mode=current_ignore_mode,
+        request_text=request_text,
+        authorization_mode=request_authorization_mode,
+    )
 
     if state in {"READY", "NEWER_THAN_GLOBAL"}:
+        ignore_sync_changed = False
+        if request_authorization_mode in {"explicit_allow", "explicit_confirm", "host_installer_default"}:
+            ignore_sync_changed = _sync_workspace_ignore_policy(
+                workspace_root=resolved_activation_root,
+                current_ignore_mode=current_ignore_mode,
+                desired_ignore_mode=desired_ignore_mode,
+            )
+            if ignore_sync_changed and current_ignore_mode != desired_ignore_mode:
+                _write_workspace_stub_overlay(
+                    bundle_root=bundle_root,
+                    workspace_root=resolved_activation_root,
+                    bundle_manifest=bundle_manifest,
+                    ignore_mode=desired_ignore_mode,
+                )
         return _result(
-            action="skipped",
+            action="updated" if ignore_sync_changed else "skipped",
             state=state,
             reason_code=reason_code,
             workspace_root=workspace_root,
             bundle_root=bundle_root,
             from_version=from_version,
             to_version=to_version,
-            message=message,
+            message=_success_message(
+                action="updated" if ignore_sync_changed else "skipped",
+                activation_root=resolved_activation_root,
+                ignore_mode=desired_ignore_mode,
+            ),
             activation_root=resolved_activation_root,
             requested_root=requested_root,
             root_resolution_source=root_resolution_source,
             payload_root=payload_root,
             host_id=host_id,
             fallback_reason=fallback_reason,
-            ignore_mode=current_ignore_mode,
+            ignore_mode=desired_ignore_mode,
         )
 
     write_authorization_mode = ""
     if state == "MISSING":
-        authorization = _authorize_first_workspace_write(request_text)
-        write_authorization_mode = str(authorization["mode"])
-        if not authorization["allow_write"]:
+        write_authorization_mode = request_authorization_mode
+        if not request_authorization["allow_write"]:
             return _result(
                 action="skipped",
                 state=state,
-                reason_code=str(authorization["reason_code"]),
+                reason_code=str(request_authorization["reason_code"]),
                 workspace_root=workspace_root,
                 bundle_root=bundle_root,
                 from_version=from_version,
                 to_version=to_version,
-                message=str(authorization["message"]),
+                message=str(request_authorization["message"]),
                 activation_root=resolved_activation_root,
                 requested_root=requested_root,
                 root_resolution_source=root_resolution_source,
@@ -216,7 +249,7 @@ def bootstrap_workspace(
                 host_id=host_id,
                 authorization_mode=write_authorization_mode,
                 fallback_reason=fallback_reason,
-                ignore_mode=current_ignore_mode,
+                ignore_mode=desired_ignore_mode,
             )
         write_barrier = _classify_first_write_barrier(
             workspace_root=workspace_root,
@@ -226,7 +259,7 @@ def bootstrap_workspace(
             root_resolution_source=root_resolution_source,
             fallback_reason=fallback_reason,
             interaction_mode=interaction_mode,
-            ignore_mode=current_ignore_mode,
+            ignore_mode=desired_ignore_mode,
             authorization_mode=write_authorization_mode,
         )
         if write_barrier is not None:
@@ -246,7 +279,7 @@ def bootstrap_workspace(
                 host_id=host_id,
                 authorization_mode=write_authorization_mode,
                 fallback_reason=fallback_reason,
-                ignore_mode=current_ignore_mode,
+                ignore_mode=desired_ignore_mode,
                 extra_evidence=tuple(str(item) for item in write_barrier.get("evidence") or ()),
                 expose_activation_root=bool(write_barrier.get("expose_activation_root", True)),
                 expose_ignore_mode=bool(write_barrier.get("expose_ignore_mode", True)),
@@ -268,7 +301,7 @@ def bootstrap_workspace(
             payload_root=payload_root,
             host_id=host_id,
             fallback_reason=fallback_reason,
-            ignore_mode=current_ignore_mode,
+            ignore_mode=desired_ignore_mode,
         )
 
     if selected_bundle_root is None:
@@ -295,16 +328,21 @@ def bootstrap_workspace(
             payload_root=payload_root,
             host_id=host_id,
             fallback_reason=fallback_reason,
-            ignore_mode=current_ignore_mode,
+            ignore_mode=desired_ignore_mode,
         )
 
+    _sync_workspace_ignore_policy(
+        workspace_root=resolved_activation_root,
+        current_ignore_mode=current_ignore_mode,
+        desired_ignore_mode=desired_ignore_mode,
+    )
     _write_workspace_stub_overlay(
         bundle_root=bundle_root,
         workspace_root=resolved_activation_root,
         bundle_manifest=bundle_manifest,
+        ignore_mode=desired_ignore_mode,
     )
     action = "bootstrapped" if state == "MISSING" else "updated"
-    success_ignore_mode = _default_ignore_mode(resolved_activation_root)
     return _result(
         action=action,
         state=state,
@@ -313,7 +351,11 @@ def bootstrap_workspace(
         bundle_root=bundle_root,
         from_version=from_version,
         to_version=to_version,
-        message="Workspace control-plane stub is enabled and points to the selected global bundle.",
+        message=_success_message(
+            action=action,
+            activation_root=resolved_activation_root,
+            ignore_mode=desired_ignore_mode,
+        ),
         activation_root=resolved_activation_root,
         requested_root=requested_root,
         root_resolution_source=root_resolution_source,
@@ -321,7 +363,7 @@ def bootstrap_workspace(
         host_id=host_id,
         authorization_mode=write_authorization_mode if state == "MISSING" else "",
         fallback_reason=fallback_reason,
-        ignore_mode=success_ignore_mode,
+        ignore_mode=desired_ignore_mode,
     )
 
 
@@ -343,6 +385,7 @@ _BRAKE_LAYER_PATTERNS = (
     re.compile(r"(do not|don't|no need to)\s+(write|edit|modify|change)", re.IGNORECASE),
     re.compile(r"(explain-only|read-only)", re.IGNORECASE),
 )
+_COMMIT_LOCK_PATTERN = re.compile(r"(?<![A-Za-z0-9])commit(?:-| )lock(?![A-Za-z0-9])", re.IGNORECASE)
 
 
 def _authorize_first_workspace_write(request_text: str) -> dict[str, object]:
@@ -428,7 +471,7 @@ def _classify_first_write_barrier(
                 ),
             }
 
-    if not _can_write_bootstrap_target(bundle_root):
+    if not _can_write_bootstrap_target(bundle_root, workspace_root=activation_root, ignore_mode=ignore_mode):
         return {
             "reason_code": REASON_READONLY,
             "message": "Sopify cannot enable this directory because it is not writable. Fix permissions and retry.",
@@ -438,7 +481,11 @@ def _classify_first_write_barrier(
     if ignore_mode == "noop" and authorization_mode not in {"explicit_confirm", "host_installer_default"}:
         return {
             "reason_code": REASON_CONFIRM_BOOTSTRAP_REQUIRED,
-            "message": "Current directory is not a Git repository. Continuing will not add ignore rules automatically. Run `~go init` to confirm, or initialize Git and retry.",
+            "message": _confirm_bootstrap_message(
+                activation_root=activation_root,
+                root_resolution_source=root_resolution_source,
+                fallback_reason=fallback_reason,
+            ),
         }
     return None
 
@@ -467,17 +514,21 @@ def _resolve_activation_root(
 
 
 def _find_git_ancestor_root(workspace_root: Path) -> Path | None:
-    if (workspace_root / ".git").exists():
+    if _resolve_git_dir(workspace_root) is not None:
         return workspace_root
     for ancestor in workspace_root.parents:
-        if (ancestor / ".git").exists():
+        if _resolve_git_dir(ancestor) is not None:
             return ancestor
     return None
 
 
-def _can_write_bootstrap_target(bundle_root: Path) -> bool:
-    candidate = bundle_root if bundle_root.exists() else bundle_root.parent
-    return os.access(candidate, os.W_OK | os.X_OK)
+def _can_write_bootstrap_target(bundle_root: Path, *, workspace_root: Path | None = None, ignore_mode: str = "") -> bool:
+    candidates = [_writable_probe_path(bundle_root)]
+    if workspace_root is not None and ignore_mode:
+        ignore_target = _resolve_ignore_target(workspace_root=workspace_root, ignore_mode=ignore_mode)
+        if ignore_target is not None:
+            candidates.append(_writable_probe_path(ignore_target))
+    return all(os.access(candidate, os.W_OK | os.X_OK) for candidate in candidates)
 
 
 def _marker_has_minimum_validity(marker_path: Path) -> bool:
@@ -837,7 +888,7 @@ def _normalize_required_capabilities(value: Any) -> list[str]:
 def _normalize_ignore_mode(value: Any, *, workspace_root: Path) -> str:
     normalized = str(value or "").strip()
     if not normalized:
-        return "exclude" if (workspace_root / ".git").exists() else "noop"
+        return "exclude" if _resolve_git_dir(workspace_root) is not None else "noop"
     if normalized not in _WORKSPACE_STUB_IGNORE_MODES:
         raise ValueError("Workspace stub contract is invalid: ignore_mode.")
     return normalized
@@ -871,6 +922,7 @@ def _write_workspace_stub_overlay(
     bundle_root: Path,
     workspace_root: Path,
     bundle_manifest: dict[str, Any] | None = None,
+    ignore_mode: str | None = None,
 ) -> None:
     manifest_path = bundle_root / "manifest.json"
     payload = _read_json(manifest_path)
@@ -888,7 +940,7 @@ def _write_workspace_stub_overlay(
         "required_capabilities": list(_WORKSPACE_STUB_REQUIRED_CAPABILITIES),
         "locator_mode": "global_first",
         "legacy_fallback": False,
-        "ignore_mode": _default_ignore_mode(workspace_root),
+        "ignore_mode": ignore_mode or _default_ignore_mode(workspace_root),
         "written_by_host": True,
     }
     bundle_root.mkdir(parents=True, exist_ok=True)
@@ -900,9 +952,188 @@ def _write_workspace_stub_overlay(
 
 
 def _default_ignore_mode(workspace_root: Path) -> str:
-    if (workspace_root / ".git").exists():
+    if _resolve_git_dir(workspace_root) is not None:
         return "exclude"
     return "noop"
+
+
+def _resolve_workspace_ignore_mode(
+    *,
+    workspace_root: Path,
+    current_ignore_mode: str,
+    request_text: str,
+    authorization_mode: str,
+) -> str:
+    if _resolve_git_dir(workspace_root) is None:
+        return "noop"
+    if authorization_mode == "explicit_confirm":
+        return "gitignore" if _COMMIT_LOCK_PATTERN.search(str(request_text or "").strip()) else "exclude"
+    return current_ignore_mode or "exclude"
+
+
+def _sync_workspace_ignore_policy(
+    *,
+    workspace_root: Path,
+    current_ignore_mode: str,
+    desired_ignore_mode: str,
+) -> bool:
+    changed = False
+    current_target = _resolve_ignore_target(workspace_root=workspace_root, ignore_mode=current_ignore_mode)
+    desired_target = _resolve_ignore_target(workspace_root=workspace_root, ignore_mode=desired_ignore_mode)
+    if current_target is not None and current_target != desired_target:
+        changed = _remove_managed_ignore_block(current_target) or changed
+    if desired_target is not None:
+        changed = _write_managed_ignore_block(desired_target) or changed
+    return changed
+
+
+def _resolve_ignore_target(*, workspace_root: Path, ignore_mode: str) -> Path | None:
+    if ignore_mode == "exclude":
+        git_dir = _resolve_git_dir(workspace_root)
+        if git_dir is None:
+            return None
+        return git_dir / "info" / "exclude"
+    if ignore_mode == "gitignore":
+        return workspace_root / ".gitignore"
+    return None
+
+
+def _resolve_git_dir(workspace_root: Path) -> Path | None:
+    dot_git = workspace_root / ".git"
+    if dot_git.is_dir():
+        return dot_git
+    if not dot_git.is_file():
+        return None
+    try:
+        first_line = dot_git.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, IndexError):
+        return None
+    prefix = "gitdir:"
+    if not first_line.lower().startswith(prefix):
+        return None
+    raw_value = first_line[len(prefix) :].strip()
+    if not raw_value:
+        return None
+    candidate = Path(raw_value)
+    if not candidate.is_absolute():
+        candidate = (workspace_root / candidate).resolve()
+    return candidate
+
+
+def _nearest_existing_path(path: Path) -> Path:
+    candidate = path
+    while not candidate.exists():
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
+    return candidate
+
+
+def _writable_probe_path(path: Path) -> Path:
+    candidate = _nearest_existing_path(path)
+    if candidate.is_dir():
+        return candidate
+    return candidate.parent
+
+
+def _render_managed_ignore_block() -> str:
+    return "\n".join((_SOPIFY_MANAGED_IGNORE_BEGIN, *_SOPIFY_MANAGED_IGNORE_ENTRIES, _SOPIFY_MANAGED_IGNORE_END))
+
+
+def _write_managed_ignore_block(path: Path) -> bool:
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    block = _render_managed_ignore_block()
+    if _SOPIFY_MANAGED_IGNORE_BEGIN in existing and _SOPIFY_MANAGED_IGNORE_END in existing:
+        new_content = re.sub(
+            rf"{re.escape(_SOPIFY_MANAGED_IGNORE_BEGIN)}.*?{re.escape(_SOPIFY_MANAGED_IGNORE_END)}",
+            block,
+            existing,
+            count=1,
+            flags=re.DOTALL,
+        )
+    else:
+        base = existing.rstrip("\n")
+        separator = "\n\n" if base else ""
+        new_content = f"{base}{separator}{block}"
+    return _write_text_if_changed(path, _ensure_trailing_newline(new_content))
+
+
+def _remove_managed_ignore_block(path: Path) -> bool:
+    if not path.exists():
+        return False
+    existing = path.read_text(encoding="utf-8")
+    if _SOPIFY_MANAGED_IGNORE_BEGIN not in existing or _SOPIFY_MANAGED_IGNORE_END not in existing:
+        return False
+    new_content = re.sub(
+        rf"(?:\n)?{re.escape(_SOPIFY_MANAGED_IGNORE_BEGIN)}.*?{re.escape(_SOPIFY_MANAGED_IGNORE_END)}(?:\n)?",
+        "\n",
+        existing,
+        count=1,
+        flags=re.DOTALL,
+    )
+    normalized = _normalize_ignore_file_content(new_content)
+    if path.name == ".gitignore" and not normalized:
+        path.unlink()
+        return True
+    return _write_text_if_changed(path, _ensure_trailing_newline(normalized) if normalized else "")
+
+
+def _normalize_ignore_file_content(content: str) -> str:
+    return re.sub(r"\n{3,}", "\n\n", content).strip("\n")
+
+
+def _ensure_trailing_newline(content: str) -> str:
+    if not content:
+        return ""
+    return f"{content.rstrip()}\n"
+
+
+def _write_text_if_changed(path: Path, content: str) -> bool:
+    existing = path.read_text(encoding="utf-8") if path.exists() else None
+    if existing == content:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile("w", delete=False, dir=path.parent, encoding="utf-8") as handle:
+        handle.write(content)
+        temp_path = Path(handle.name)
+    temp_path.replace(path)
+    return True
+
+
+def _confirm_bootstrap_message(
+    *,
+    activation_root: Path,
+    root_resolution_source: str,
+    fallback_reason: str,
+) -> str:
+    parts = [
+        "Current directory is not a Git repository.",
+        "Continuing will not add ignore rules automatically.",
+        f"Target root: {activation_root}.",
+        f"Root resolution: {root_resolution_source or 'cwd'}.",
+    ]
+    if fallback_reason:
+        parts.append(f"Fallback reason: {fallback_reason}.")
+    parts.append("Run `~go init` to confirm, or initialize Git and retry.")
+    return " ".join(parts)
+
+
+def _success_message(
+    *,
+    action: str,
+    activation_root: Path,
+    ignore_mode: str,
+) -> str:
+    if ignore_mode == "noop":
+        return (
+            f"Sopify is enabled at {activation_root}. "
+            "Current directory is not a Git repository, so ignore rules remain manual."
+        )
+    if action == "skipped":
+        return "Sopify is enabled for this project and points to the selected global bundle."
+    ignore_target = _resolve_ignore_target(workspace_root=activation_root, ignore_mode=ignore_mode)
+    return f"Sopify is enabled at {activation_root}. Managed ignore rules are synced via {ignore_target}."
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -1007,10 +1238,9 @@ def _result(
     effective_ignore_mode = ignore_mode if expose_ignore_mode else ""
     if effective_ignore_mode:
         payload["ignore_mode"] = effective_ignore_mode
-        if effective_ignore_mode == "exclude":
-            payload["ignore_target"] = str(target_root / ".git" / "info" / "exclude")
-        elif effective_ignore_mode == "gitignore":
-            payload["ignore_target"] = str(target_root / ".gitignore")
+        ignore_target = _resolve_ignore_target(workspace_root=target_root, ignore_mode=effective_ignore_mode)
+        if ignore_target is not None:
+            payload["ignore_target"] = str(ignore_target)
     evidence = _result_evidence(
         workspace_root=target_root,
         ignore_mode=effective_ignore_mode,
@@ -1032,13 +1262,19 @@ def _result_evidence(
     extra_evidence: tuple[str, ...],
 ) -> list[str]:
     evidence: list[str] = [str(item) for item in extra_evidence if str(item or "").strip()]
+    evidence.append(f"workspace_kind={'git' if _resolve_git_dir(workspace_root) is not None else 'non_git'}")
     if root_resolution_source == "ancestor_marker":
         evidence.append(DIAGNOSTIC_ROOT_REUSE_ANCESTOR_MARKER)
     if fallback_reason == "invalid_ancestor_marker":
         evidence.append(DIAGNOSTIC_INVALID_ANCESTOR_MARKER)
-    if ignore_mode == "noop" and not (workspace_root / ".git").exists():
+    if ignore_mode == "noop" and _resolve_git_dir(workspace_root) is None:
         evidence.append(DIAGNOSTIC_NON_GIT_WORKSPACE)
         evidence.append("ignore_mode=noop")
+    elif ignore_mode:
+        evidence.append(f"ignore_mode={ignore_mode}")
+        ignore_target = _resolve_ignore_target(workspace_root=workspace_root, ignore_mode=ignore_mode)
+        if ignore_target is not None:
+            evidence.append(f"manual_disable=remove .sopify-runtime/manifest.json and the sopify-managed block from {ignore_target}")
     return evidence
 
 

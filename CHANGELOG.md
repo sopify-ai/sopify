@@ -6,6 +6,19 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-04-02.094312] - 2026-04-02
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_installer.py`
+  - `tests/test_runtime_gate.py`
+
+### Changed
+
+- Updated project files:
+  - `installer/bootstrap_workspace.py`
+
 ## [2026-04-01.110138] - 2026-04-01
 
 ### Docs

@@ -527,6 +527,64 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertTrue((workspace / ".sopify-runtime" / "manifest.json").exists())
             self.assertFalse((workspace / ".sopify-runtime" / "scripts").exists())
 
+    def test_gate_preflight_bootstraps_git_workspace_in_explicit_commit_lock_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            workspace = temp_root / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / ".git" / "info").mkdir(parents=True, exist_ok=True)
+            payload_manifest_path = _install_payload_manifest_for_gate(home_root=temp_root / "home")
+
+            result = enter_runtime_gate(
+                "~go init commit-lock",
+                workspace_root=workspace,
+                payload_manifest_path=payload_manifest_path,
+                user_home=temp_root / "home",
+            )
+
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["preflight"]["action"], "bootstrapped")
+            self.assertEqual(result["preflight"]["reason_code"], "STUB_SELECTED")
+            self.assertEqual(result["preflight"]["ignore_mode"], "gitignore")
+            self.assertEqual(Path(result["preflight"]["ignore_target"]).resolve(), (workspace / ".gitignore").resolve())
+            manifest = json.loads((workspace / ".sopify-runtime" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ignore_mode"], "gitignore")
+            self.assertIn("# BEGIN sopify-managed", (workspace / ".gitignore").read_text(encoding="utf-8"))
+
+    def test_gate_preflight_explicit_go_init_switches_commit_lock_workspace_back_to_exclude(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            workspace = temp_root / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / ".git" / "info").mkdir(parents=True, exist_ok=True)
+            payload_manifest_path = _install_payload_manifest_for_gate(home_root=temp_root / "home")
+
+            enter_runtime_gate(
+                "~go init commit-lock",
+                workspace_root=workspace,
+                payload_manifest_path=payload_manifest_path,
+                user_home=temp_root / "home",
+            )
+
+            result = enter_runtime_gate(
+                "~go init",
+                workspace_root=workspace,
+                payload_manifest_path=payload_manifest_path,
+                user_home=temp_root / "home",
+            )
+
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["preflight"]["action"], "updated")
+            self.assertEqual(result["preflight"]["ignore_mode"], "exclude")
+            self.assertEqual(
+                Path(result["preflight"]["ignore_target"]).resolve(),
+                (workspace / ".git" / "info" / "exclude").resolve(),
+            )
+            manifest = json.loads((workspace / ".sopify-runtime" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ignore_mode"], "exclude")
+            self.assertFalse((workspace / ".gitignore").exists())
+            self.assertIn("# BEGIN sopify-managed", (workspace / ".git" / "info" / "exclude").read_text(encoding="utf-8"))
+
     def test_gate_preflight_bootstraps_missing_workspace_for_go_init(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)

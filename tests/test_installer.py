@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -81,6 +82,29 @@ def _create_incomplete_payload(*, home_root: Path, version: str) -> Path:
     helper_path.parent.mkdir(parents=True, exist_ok=True)
     helper_path.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
     return payload_root
+
+
+def _run_installed_bootstrap_helper(
+    *,
+    helper_path: Path,
+    workspace_root: Path,
+    request: str = "",
+    activation_root: Path | None = None,
+) -> dict[str, object]:
+    command = [sys.executable, str(helper_path), "--workspace-root", str(workspace_root)]
+    if request:
+        command.extend(["--request", request])
+    if activation_root is not None:
+        command.extend(["--activation-root", str(activation_root)])
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stderr.strip() or completed.stdout.strip() or "bootstrap helper failed")
+    return json.loads(completed.stdout)
 
 
 def _write_bundle_layout(
@@ -801,6 +825,123 @@ class WorkspaceBootstrapCompatibilityTests(unittest.TestCase):
 
             with self.assertRaisesRegex(Exception, str(manifest_path)):
                 validate_workspace_stub_manifest(bundle_root)
+
+
+class WorkspaceBootstrapIgnorePolicyTests(unittest.TestCase):
+    def test_installed_helper_writes_managed_block_to_git_exclude_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_root = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            CODEX_ADAPTER.destination_root(home_root).mkdir(parents=True, exist_ok=True)
+            exclude_path = workspace_root / ".git" / "info" / "exclude"
+            exclude_path.parent.mkdir(parents=True, exist_ok=True)
+            exclude_path.write_text("user-entry\n", encoding="utf-8")
+
+            payload_phase = install_global_payload(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root)
+            helper_path = payload_phase.root / "helpers" / "bootstrap_workspace.py"
+
+            result = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go plan 补 runtime gate 骨架",
+            )
+
+            self.assertEqual(result["action"], "bootstrapped")
+            self.assertEqual(result["reason_code"], "STUB_SELECTED")
+            self.assertEqual(result["ignore_mode"], "exclude")
+            self.assertEqual(Path(result["ignore_target"]).resolve(), exclude_path.resolve())
+            manifest = json.loads((workspace_root / ".sopify-runtime" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ignore_mode"], "exclude")
+            exclude_content = exclude_path.read_text(encoding="utf-8")
+            self.assertIn("user-entry\n", exclude_content)
+            self.assertIn("# BEGIN sopify-managed", exclude_content)
+            self.assertIn(".sopify-runtime/", exclude_content)
+            self.assertIn(".sopify-skills/state/", exclude_content)
+            self.assertIn(".sopify-skills/replay/", exclude_content)
+            self.assertFalse((workspace_root / ".gitignore").exists())
+
+    def test_installed_helper_keeps_commit_lock_sticky_until_explicit_go_init_switches_back(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_root = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            CODEX_ADAPTER.destination_root(home_root).mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".git" / "info").mkdir(parents=True, exist_ok=True)
+
+            payload_phase = install_global_payload(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root)
+            helper_path = payload_phase.root / "helpers" / "bootstrap_workspace.py"
+            exclude_path = workspace_root / ".git" / "info" / "exclude"
+            gitignore_path = workspace_root / ".gitignore"
+
+            first = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go init commit-lock",
+            )
+
+            self.assertEqual(first["action"], "bootstrapped")
+            self.assertEqual(first["ignore_mode"], "gitignore")
+            self.assertEqual(Path(first["ignore_target"]).resolve(), gitignore_path.resolve())
+            self.assertIn("# BEGIN sopify-managed", gitignore_path.read_text(encoding="utf-8"))
+            self.assertFalse(exclude_path.exists())
+
+            sticky = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go plan 继续开发",
+            )
+
+            self.assertEqual(sticky["action"], "skipped")
+            self.assertEqual(sticky["ignore_mode"], "gitignore")
+            manifest = json.loads((workspace_root / ".sopify-runtime" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ignore_mode"], "gitignore")
+            self.assertIn("# BEGIN sopify-managed", gitignore_path.read_text(encoding="utf-8"))
+
+            switched = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go init",
+            )
+
+            self.assertEqual(switched["action"], "updated")
+            self.assertEqual(switched["ignore_mode"], "exclude")
+            self.assertEqual(Path(switched["ignore_target"]).resolve(), exclude_path.resolve())
+            manifest = json.loads((workspace_root / ".sopify-runtime" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["ignore_mode"], "exclude")
+            self.assertFalse(gitignore_path.exists())
+            self.assertIn("# BEGIN sopify-managed", exclude_path.read_text(encoding="utf-8"))
+
+    def test_installed_helper_repairs_missing_managed_block_for_ready_git_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_root = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            CODEX_ADAPTER.destination_root(home_root).mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".git" / "info").mkdir(parents=True, exist_ok=True)
+
+            payload_phase = install_global_payload(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root)
+            helper_path = payload_phase.root / "helpers" / "bootstrap_workspace.py"
+            exclude_path = workspace_root / ".git" / "info" / "exclude"
+
+            _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go plan 初始化",
+            )
+            exclude_path.write_text("user-entry\n", encoding="utf-8")
+
+            repaired = _run_installed_bootstrap_helper(
+                helper_path=helper_path,
+                workspace_root=workspace_root,
+                request="~go plan 继续开发",
+            )
+
+            self.assertEqual(repaired["action"], "updated")
+            self.assertEqual(repaired["ignore_mode"], "exclude")
+            exclude_content = exclude_path.read_text(encoding="utf-8")
+            self.assertIn("user-entry\n", exclude_content)
+            self.assertIn("# BEGIN sopify-managed", exclude_content)
 
     def test_validate_payload_manifests_returns_both_payload_and_bundle_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

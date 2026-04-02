@@ -43,11 +43,11 @@ archive_ready: false
 - [ ] 0.A.4 测试、迁移说明、自检脚本放在最后收口，但 `primary_code` 矩阵与 hint contract 必须先补齐再补测试
 
 ## 0.B | 首次写入许可模型
-- [ ] 0.B.1 按已冻结结论落首次写入许可模型的入口边界与触发优先级：显式强意图命令、`confirm_bootstrap` checkpoint、禁止纯语义自动 bootstrap，并明确 `~go / ~go plan` 何时可直接落 thin stub
+- [x] 0.B.1 按已冻结结论落首次写入许可模型的入口边界与触发优先级：显式强意图命令、`confirm_bootstrap` checkpoint、禁止纯语义自动 bootstrap，并明确 `~go / ~go plan` 何时可直接落 thin stub
 - [x] 0.B.2 按已冻结白名单落宿主入口：明确 `~go / ~go plan / ~go init` 的许可语义，以及 `~compare / 未激活仓库上的 ~go finalize` 默认不触发 bootstrap；其中 `~go init` 只作为合法入口，不阻塞 `B1` 主链交付
-- [ ] 0.B.3 按已冻结职责边界收敛语义判定层：只允许输出结构化 intent proposal，不得直接驱动 `bootstrap / plan scaffold / proposal materialization / workspace write`
-- [ ] 0.B.4 按已冻结生成物边界落首次 auto-bootstrap：默认只写 thin stub，不默认生成 `sopify.config.yaml`
-- [ ] 0.B.5 按已冻结路由语义落实“已激活 workspace”后续行为：继续走 `consult / minimal / adaptive`，不得把激活态等同于“所有请求都强管控”
+- [x] 0.B.3 按已冻结职责边界收敛语义判定层：只允许输出结构化 intent proposal，不得直接驱动 `bootstrap / plan scaffold / proposal materialization / workspace write`
+- [x] 0.B.4 按已冻结生成物边界落首次 auto-bootstrap：默认只写 thin stub，不默认生成 `sopify.config.yaml`
+- [x] 0.B.5 按已冻结路由语义落实“已激活 workspace”后续行为：继续走 `consult / minimal / adaptive`，不得把激活态等同于“所有请求都强管控”
 - [x] 0.B.6 按已冻结授权位置收敛 host ingress / preflight：首次写入许可必须发生在宿主入口前置决策，不得下沉到 repo-local runtime 内部再确认
 - [x] 0.B.7 按已冻结规则落实 brake layer 的最小覆盖面：`不要改 / 先分析 / 只解释 / 不写文件 / explain-only` 等高确定性表达优先阻断写入意图
 - [x] 0.B.8 按已冻结规则落 `monorepo` 首次激活默认 root 逻辑：`显式 root 指定 > 最近的有效 ancestor marker > 当前 cwd`；`sopify.config.yaml` 不作为上层复用信号；向上 walk 命中的第一个 ancestor marker 只有通过最低有效性才允许复用，若最低有效性失败则立即停止并 `fail-closed` 回退 `cwd`；`repo-root` 级激活必须显式指定
@@ -61,17 +61,18 @@ archive_ready: false
   评审记录：payload manifest 存在但 JSON 非法/非 object 时，doctor 侧当前仍统一折叠为 `MISSING_REQUIRED_FILE`；已评审为 diagnostics debt，后续在 reason-code matrix 阶段细化，不作为当前阻断项。
 
 ## 1. P0 | Bootstrap 与 Ignore 基线
-- [ ] 1.1 盘点 bootstrap 当前写路径、ancestor `marker` 探测与 `target_root` 解析逻辑，标出必须拆除的 vendored 前提，并移除 `config` 参与 root 复用的旧分支
-- [ ] 1.2 按已冻结 contract 落 `ignore_mode = exclude | gitignore | noop`：git 默认 `.git/info/exclude`，显式 commit-lock 才写 `.gitignore`，non-git visible `noop`
-- [ ] 1.3 设计 `.git/info/exclude` 写入策略：优先使用 `BEGIN/END sopify-managed` block 承载 Sopify 条目，best-effort 幂等追加，不覆盖用户自定义条目，不以文件锁或严格去重为前提
-- [ ] 1.4 按 bootstrap-time explicit choice 落 commit-lock / `ignore_mode`：写入 thin stub、保持 sticky workspace policy、仅允许显式 re-bootstrap / update 切换；v1 至少对 Sopify 可安全归属的旧 managed block / 已知条目做确定性 reconciliation，超出安全判定范围的残留给出可见提示与手动 remediation，不要求完整 clean/deactivate
+- [x] 1.1 盘点 bootstrap 当前写路径、ancestor `marker` 探测与 `target_root` 解析逻辑，标出必须拆除的 vendored 前提，并移除 `config` 参与 root 复用的旧分支
+- [x] 1.2 按已冻结 contract 落 `ignore_mode = exclude | gitignore | noop`：git 默认 `.git/info/exclude`，显式 commit-lock 才写 `.gitignore`，non-git visible `noop`
+- [x] 1.3 设计 `.git/info/exclude` 写入策略：优先使用 `BEGIN/END sopify-managed` block 承载 Sopify 条目，best-effort 幂等追加，不覆盖用户自定义条目，不以文件锁或严格去重为前提
+- [x] 1.4 按 bootstrap-time explicit choice 落 commit-lock / `ignore_mode`：写入 thin stub、保持 sticky workspace policy、仅允许显式 re-bootstrap / update 切换；v1 至少对 Sopify 可安全归属的旧 managed block / 已知条目做确定性 reconciliation，超出安全判定范围的残留给出可见提示与手动 remediation，不要求完整 clean/deactivate
 - [x] 1.5 设计 non-git repository 的 `confirm_bootstrap` 提示、warning/evidence 暴露与 fail-open 行为；`non_git_workspace` 不作为默认成功/失败主码
   进展记录：当前 non-git 首写在 `bootstrap helper -> workspace_preflight -> runtime_gate` 上统一返回 `confirm_bootstrap_required`，消息固定为“当前目录不是 Git 仓库 / 继续启用后不会自动写入忽略规则”的用户向口径；`~go init` 与 installer 直装流作为显式确认入口放行，写入成功后只通过 `evidence` 暴露 `non_git_workspace + ignore_mode=noop`。
-- [ ] 1.6 明确 bootstrap 输出需要暴露的 observability 字段：ignore_target、ignore_mode、reason_code、workspace_kind、target_root、root_resolution_source；并暴露仅覆盖 `thin stub + managed block` 的手动停用路径
+- [x] 1.6 明确 bootstrap 输出需要暴露的 observability 字段：ignore_target、ignore_mode、reason_code、workspace_kind、target_root、root_resolution_source；并暴露仅覆盖 `thin stub + managed block` 的手动停用路径
   进展记录：当前 bootstrap 输出已稳定暴露 `ignore_mode / ignore_target / reason_code / activation_root / requested_root / root_resolution_source / fallback_reason`，并通过 `evidence` 补出 `non_git_workspace / ignore_mode=noop / root_reuse_ancestor_marker / invalid_ancestor_marker`；`workspace_kind` 命名与手动停用路径仍待后续切片统一。
-- [ ] 1.7 明确 `confirm_bootstrap` 文案与 direct-write 提示：至少暴露 `target_root / root_resolution_source / fallback_reason`，且不暗示会自动清理 `.sopify-skills/state/` 或知识库；其中 non-git 写入前确认标题固定为“当前目录不是 Git 仓库”，原因固定为“继续启用后不会自动写入忽略规则。”
+- [x] 1.7 明确 `confirm_bootstrap` 文案与 direct-write 提示：至少暴露 `target_root / root_resolution_source / fallback_reason`，且不暗示会自动清理 `.sopify-skills/state/` 或知识库；其中 non-git 写入前确认标题固定为“当前目录不是 Git 仓库”，原因固定为“继续启用后不会自动写入忽略规则。”
   进展记录：当前 helper / gate 已稳定暴露 `activation_root(requested target) / requested_root / root_resolution_source / fallback_reason`，且 non-git 阻断消息已落“当前目录不是 Git 仓库。继续启用后不会自动写入忽略规则。使用 ~go init 确认，或先初始化 Git 后重试。”；若后续需要单独拆 title/reason 字段，再在 host checkpoint contract 中补。
   进展更新：`ROOT_CONFIRM_REQUIRED` 的恢复提示已收口为“默认推荐当前目录、备选仓库根目录、允许手动指定其他目录，并以显式 `activation_root` 重试”；同时保留 root 选择优先于 non-git 确认的顺序，避免在 monorepo 子目录里静默写错 root。
+  进展更新：git workspace 现已真实落 managed ignore block；`~go init commit-lock` 作为显式模式切到 `.gitignore`，普通 `~go init` 显式切回默认 `exclude`；bootstrap 输出额外通过 evidence 暴露 `workspace_kind` 与仅覆盖 `thin stub + sopify-managed block` 的手动停用路径。
 
 ### 当前推荐推进顺序（2026-03-30 评审结论）
 1. `4.2 -> 4.6`
@@ -146,7 +147,7 @@ archive_ready: false
 - [ ] 5.2 将 `default primary codes + action_level + typed evidence` 接入 bootstrap、preflight、validate、inspection、status、doctor 与 CLI 渲染层的输出面，并为 `diagnostic-only identifiers` 冻结 evidence / warning surface 与 reason-code-specific 的用户可见 hint 分类；不新增新的稳定机器字段
   进展记录：当前已接入 `bootstrap / workspace_preflight / runtime_gate / inspection / doctor tests` 的主结果与 evidence 语义，并把 `stub_invalid / global bundle failures` 的 recommendation 文案收成更直接的用户口径；`action_level` 统一命名与剩余 `status / doctor` 终端文案细化仍待后续切片补齐。
 - [ ] 5.3 补回归测试矩阵：new workspace、legacy vendored workspace、dual-host same repo、non-git workspace、commit-lock mode、monorepo nearest-ancestor-marker reuse、monorepo invalid-nearest-ancestor-marker fail-closed、monorepo explicit-root override；其中 dual-host same repo 只断言 `host_mismatch + typed evidence`，不绑定提示文案模板；non-git workspace 断言“写入前触发 `confirm_bootstrap` + 写入后只在 evidence / warning 中暴露 `non_git_workspace + ignore_mode=noop`”，不要求其成为默认首屏主码
-  进展记录：当前已补 non-git 行的两段式回归：`~go plan` 在非 Git 首写时阻断并返回 `confirm_bootstrap_required`，`~go init` 成功后回到 `stub_selected + non_git_workspace/ignore_mode=noop`；其余 dual-host / commit-lock 等行仍待补齐。
+  进展记录：当前已补 non-git 行的两段式回归：`~go plan` 在非 Git 首写时阻断并返回 `confirm_bootstrap_required`，`~go init` 成功后回到 `stub_selected + non_git_workspace/ignore_mode=noop`；同时已补 `commit-lock` mode 的 helper / gate 回归：`~go init commit-lock` 落 `.gitignore`，后续显式 `~go init` 可切回 `.git/info/exclude`。剩余 dual-host 与 monorepo 相关行仍待补齐。
 - [ ] 5.4 补 smoke 验证矩阵：一次安装、bootstrap、global bundle 解析、fallback visibility、默认入口不变
 - [ ] 5.5 更新迁移说明：新仓库、已 bootstrap 仓库、旧 vendored 仓库分别怎么过渡，并确保迁移说明与 `doctor / status` 的 actionable hint 一致；本轮仅补可见性与说明，不提供一键迁移器
 - [ ] 5.6 更新安装输出与自检脚本，确保用户能看到“当前走的是 stub/global/legacy 哪条路径”
