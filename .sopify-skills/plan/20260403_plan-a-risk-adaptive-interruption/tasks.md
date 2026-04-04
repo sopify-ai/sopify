@@ -1,6 +1,6 @@
 ---
-plan_id: 20260403_plan-a-risk-adaptive-interruption
-feature_key: plan-a-risk-adaptive-interruption
+plan_id: 20260403_context-risk-adaptive-interruption
+feature_key: context-risk-adaptive-interruption
 level: standard
 lifecycle_state: active
 knowledge_sync:
@@ -13,7 +13,7 @@ archive_ready: false
 plan_status: design_active
 ---
 
-# 任务清单: Plan A 子计划 | 风险自适应打断与局部语义分类收敛
+# 任务清单: 局部语义收口方案 | 风险自适应打断与局部语义分类收敛
 
 ## 当前状态
 
@@ -32,12 +32,12 @@ plan_status: design_active
 
 ## A. 已承接的冻结决策
 
-- [x] A.1 Plan A 现在进入正式子 plan 窗口，前置依据是 program plan 中的 `3.2 -> 3.3`
-- [x] A.2 Plan A 只承接 host-facing recall debt，不重开 Plan H correctness hotfix
+- [x] A.1 本方案现在进入正式子 plan 窗口，前置依据是 program plan 中的 `3.2 -> 3.3`
+- [x] A.2 本方案只承接 host-facing recall debt，不重开既有 correctness hotfix 主线
 - [x] A.3 仅在局部 checkpoint / execution gate 语境下增强召回
 - [x] A.4 默认不修改 `ExecutionGate` v1 核心字段与 `gate_status` 值集
 - [x] A.4.1 新引入的 `reason_code` 词法、streak 统计与相关扩展字段只能以非破坏性扩展附加，绝不污染或覆盖既有 `ExecutionGate / gate_status` 核心契约
-- [x] A.5 默认与 B1 已发布 contract 保持兼容
+- [x] A.5 默认与既有对外 contract 主线保持兼容
 - [x] A.6 不接受“单词/短语补丁式”修复；修复必须在统一决策契约层收口，不得通过孤立词规则或局部 parser 特判绕过统一裁决链
 - [x] A.7 A-7 `question signal + retopic signal + plan referent` 已作为回归基线冻结
 - [x] A.8 当前 plan 的职责是设计收敛，不是立即实施局部语义分类器
@@ -52,18 +52,18 @@ plan_status: design_active
 ### 1. carry-over recall debt
 
 - [ ] 1.1 把总纲中的 A-1 ~ A-8 重新分组为语义类簇，而不是逐 case 平铺
-- [ ] 1.2 为每个语义类簇补齐“为何属于 Plan A，而不是 Plan H / B1”的边界说明
+- [ ] 1.2 为每个语义类簇补齐“为何属于本方案，而不是既有 correctness hotfix 主线 / 既有对外 contract 主线”的边界说明
 - [ ] 1.3 把 `analysis-only / no-write / no-package` 统一冻结成 brake signal 语义，而不是散落样本描述
 
 验收标准：
 
 - 每个 case 都能落入稳定语义类
-- 不再出现“这是 parser hotfix 还是 Plan A recall debt”边界含混
+- 不再出现“这是 parser hotfix 还是本方案 recall debt”边界含混
 
 ### 2. non-goals 与行为边界
 
 - [ ] 2.1 显式补齐本子 plan 的 non-goals 清单
-- [ ] 2.2 将 `plan_proposal_pending + command prefix` 标记为待产品确认项，并与 parser 收口任务解耦
+- [x] 2.2 已拍板：`plan_proposal_pending + command prefix` 保持显式 fail-close，不视为自动继续；并与 parser 收口任务解耦
 - [x] 2.3 已拍板：`analysis-only / no-write / no-package` 在各类 pending checkpoint 下默认出口为 `consult_readonly`（只分析，不执行）
 
 验收标准：
@@ -134,7 +134,7 @@ plan_status: design_active
 
 - [ ] 7.1 明确 v1 implementation candidate file map
 - [ ] 7.2 明确哪些模块允许在 v1 变更，哪些只保留为观察点
-- [ ] 7.3 明确 rollout / rollback 与 B1 compatibility 口径
+- [ ] 7.3 明确 rollout / rollback 与既有对外 contract 主线 compatibility 口径
 - [ ] 7.4 明确“什么时候允许从设计收敛切换到开发实施”
 
 验收标准：
@@ -147,9 +147,10 @@ plan_status: design_active
 ### 8. 去显性来源化收敛
 
 - [ ] 8.1 统一目录名、`plan_id`、`feature_key` 为中性能力命名，禁止来源锚点残留
-- [ ] 8.2 清理 `background.md / design.md / tasks.md` 正文中的来源显式映射写法，统一替换为通用术语
-- [ ] 8.3 清理图示标签与示例标识中的来源锚点，统一为机制导向标签
-- [ ] 8.4 对当前方案包执行来源锚点 denylist 扫描，并记录零命中结果
+  说明：`plan_id / feature_key` 已中性化；目录名迁移因活动 runtime state 仍引用旧路径而暂缓，待 state 退出活动态后再执行。
+- [x] 8.2 已完成：`background.md / design.md / tasks.md` 正文中的来源显式映射写法已替换为通用术语
+- [x] 8.3 已完成：图示标签、示例标识与分支命名中的来源锚点已替换为机制导向标签
+- [x] 8.4 已完成：对当前方案包正文执行预定义来源锚点 denylist 扫描，结果为零命中
 
 验收标准：
 
@@ -236,26 +237,26 @@ plan_status: design_active
 
 ## H. 当前推荐顺序
 
-1. 先完成 `feature/plan-a-boundary-core`（B 组核心 + G-9~G-11）。
-2. 并行完成 `feature/plan-a-doc1-governance`（F 组），不阻塞主契约收敛。
-3. 再完成 `feature/plan-a-v1-guard-rails`（4a，承载 C 组骨架 + L 组 + M/N 组基础能力）。
+1. 先完成 `feature/context-boundary-core`（B 组核心 + G-9~G-11）。
+2. 并行完成 `feature/public-surface-governance`（F 组），不阻塞主契约收敛。
+3. 再完成 `feature/context-v1-guard-rails`（4a，承载 C 组骨架 + L 组 + M/N 组基础能力）。
 4. 在 `boundary-core + 4a guard-rails` 合并前统一通过 Checkpoint A。
-5. 在 guard-rails 基线上完成 `feature/plan-a-sample-invariant-gate`（D 组），并通过 Checkpoint B。
-6. 然后完成 `feature/plan-a-v1-scope-finalize`（4b，承载 E 组 + L 组收口），并通过 Checkpoint C。
+5. 在 guard-rails 基线上完成 `feature/context-sample-invariant-gate`（D 组），并通过 Checkpoint B。
+6. 然后完成 `feature/context-v1-scope-finalize`（4b，承载 E 组 + L 组收口），并通过 Checkpoint C。
 7. 当 Checkpoint A/B/C 均通过，进入 `Ready-for-V1-Execution`（阻断 V1 的正式执行门）。
-8. 最后完成 `feature/plan-a-vnext-gate`（4.4 + G-12 + G-13），并通过 Checkpoint D。
+8. 最后完成 `feature/context-vnext-gate`（4.4 + G-12 + G-13），并通过 Checkpoint D。
 9. 当 Checkpoint D 通过且具备 v1 rollout 证据后，进入 `Ready-for-V2-Trial`（仅阻断 V2，不阻断 V1）。
 
 ## I. 分支矩阵与合并顺序
 
 ### 14. Topic 分支拆分
 
-- [ ] 14.1 建立 `feature/plan-a-boundary-core`，承载 `1.x + 2.1/2.2 + 9.x + 10.x + 11.x`
-- [ ] 14.2 建立 `feature/plan-a-doc1-governance`，承载 `8.x`（允许与 14.1 并行）
-- [ ] 14.3 建立 `feature/plan-a-v1-guard-rails`（4a），承载 `3.x + 4.1-4.3 + 17.1-17.3 + 18.x + 19.x(入口/出口定义)`
-- [ ] 14.4 建立 `feature/plan-a-sample-invariant-gate`，承载 `5.x + 6.x`
-- [ ] 14.5 建立 `feature/plan-a-v1-scope-finalize`（4b），承载 `7.x + 17.4`
-- [ ] 14.6 建立 `feature/plan-a-vnext-gate`，承载 `4.4 + 12.x + 13.x`
+- [ ] 14.1 建立 `feature/context-boundary-core`，承载 `1.x + 2.1/2.2 + 9.x + 10.x + 11.x`
+- [ ] 14.2 建立 `feature/public-surface-governance`，承载 `8.x`（允许与 14.1 并行）
+- [ ] 14.3 建立 `feature/context-v1-guard-rails`（4a），承载 `3.x + 4.1-4.3 + 17.1-17.3 + 18.x + 19.x(入口/出口定义)`
+- [ ] 14.4 建立 `feature/context-sample-invariant-gate`，承载 `5.x + 6.x`
+- [ ] 14.5 建立 `feature/context-v1-scope-finalize`（4b），承载 `7.x + 17.4`
+- [ ] 14.6 建立 `feature/context-vnext-gate`，承载 `4.4 + 12.x + 13.x`
 - [ ] 14.7 冻结依赖拓扑：`boundary-core -> 4a guard-rails -> sample-invariant-gate -> 4b scope-finalize -> vnext-gate`
 - [ ] 14.8 要求 `sample-invariant-gate` 基于已合入的 `4a guard-rails` 基线执行，不允许裸奔压测
 
@@ -268,10 +269,10 @@ plan_status: design_active
 
 ### 15. Checkpoint 治理落地
 
-- [ ] 15.1 在 PR 模板中增加必填字段：`PlanA-Checkpoint(A/B/C/D)`、`Decision IDs`、`Blocked by`、`Out-of-scope touched`
-- [ ] 15.2 在提交规范中增加 trailer：`PlanA-Checkpoint: A|B|C|D`
-- [ ] 15.3 新增 CI 强检脚本 `scripts/check-plan-a-checkpoints.py`，缺字段或决策未冻结即 fail
-- [ ] 15.4 Checkpoint A 绑定：`plan_proposal_pending + command prefix` 口径与 A-6 归属
+- [ ] 15.1 在 PR 模板中增加必填字段：`Context-Checkpoint(A/B/C/D)`、`Decision IDs`、`Blocked by`、`Out-of-scope touched`
+- [ ] 15.2 在提交规范中增加 trailer：`Context-Checkpoint: A|B|C|D`
+- [ ] 15.3 新增 CI 强检脚本 `scripts/check-context-checkpoints.py`，缺字段或决策未冻结即 fail
+- [x] 15.4 Checkpoint A 已绑定：`plan_proposal_pending + command prefix` 保持显式 fail-close，A-6 继续留在本方案
 - [ ] 15.5 Checkpoint B 绑定：A-1~A-8 唯一映射与“表格填不平”清零
 - [ ] 15.6 Checkpoint C 绑定：v1 file map/白名单冻结与超范围变更阻断
 - [ ] 15.7 Checkpoint D 绑定：vNext 价值/预算/安全/结构门槛冻结
@@ -290,8 +291,8 @@ plan_status: design_active
 
 ### 16. 离线契约干跑
 
-- [ ] 16.1 在 `feature/plan-a-boundary-core` 提交 `scripts/check-fail-close-contract.py`
-- [ ] 16.2 补充离线 fixture（如 `tests/fixtures/plan_a_fail_close_contract.yaml`），可枚举 `required_host_action -> fallback_action`
+- [ ] 16.1 在 `feature/context-boundary-core` 提交 `scripts/check-fail-close-contract.py`
+- [ ] 16.2 补充离线 fixture（如 `tests/fixtures/context_fail_close_contract.yaml`），可枚举 `required_host_action -> fallback_action`
 - [ ] 16.3 先覆盖 A-1~A-8 的规则级判定预期，再扩到历史错例回放输入
 - [ ] 16.4 将 `scripts/check-fail-close-contract.py` 升级为 pytest 数据驱动测试入口
 - [ ] 16.5 固定接入 CI 回归套件，新增 case 必须先补数据样本再合并
@@ -306,9 +307,9 @@ plan_status: design_active
 
 ### 17. 可见性级边界锁定
 
-- [ ] 17.1 在 `feature/plan-a-v1-guard-rails` 提交 `runtime/plan_a_v1_scope.py`（常量注册表）
+- [ ] 17.1 在 `feature/context-v1-guard-rails` 提交 `runtime/context_v1_scope.py`（常量注册表）
 - [ ] 17.2 至少冻结常量：`SUPPORTED_CHECKPOINT_KINDS_V1`、`ALLOWED_V1_STATE_EFFECTS`、`FORBIDDEN_V1_SIDE_EFFECTS`
-- [ ] 17.3 提交 `tests/test_plan_a_v1_scope.py`，对越界动作做阻断断言
+- [ ] 17.3 提交 `tests/test_context_v1_scope.py`，对越界动作做阻断断言
 - [ ] 17.4 把 `7.1~7.4` 的名单口径映射到上述注册表与测试，不允许“只写文档不落守卫”
 
 验收标准：

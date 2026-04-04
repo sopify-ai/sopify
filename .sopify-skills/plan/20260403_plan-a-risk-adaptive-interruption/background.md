@@ -1,24 +1,24 @@
-# 变更提案: Plan A 子计划 | 风险自适应打断与局部语义分类收敛
+# 变更提案: 局部语义收口方案 | 风险自适应打断与局部语义分类收敛
 
 ## 需求背景
 
-当前总纲已经把 `Plan B1` 记录为 control-plane 主线收口，并明确下一步是“在 3.2 的 control-plane contract 稳定后推进 Plan A 子 plan”。这意味着 Plan A 现在已经进入可正式拆包的窗口，但还不适合直接进入代码实施。
+当前总纲已经把既有 control-plane 契约主线记录为主线收口，并明确下一步是在 `3.2` 的 control-plane contract 稳定后推进当前方案包。这意味着本方案现在已经进入可正式拆包的窗口，但还不适合直接进入代码实施。
 
-当前更合适的动作，是先把 Plan A 从总纲中的“冻结边界 + 样本矩阵 + 零散探讨”收敛成一个独立的标准方案包，作为真正开工前持续迭代的设计工作台。
+当前更合适的动作，是先把本方案从总纲中的“冻结边界 + 样本矩阵 + 零散探讨”收敛成一个独立的标准方案包，作为真正开工前持续迭代的设计工作台。
 
-Plan A 当前要解决的问题，不是再修一轮 `Plan H` 那类状态机 correctness hotfix，而是把 pending checkpoint 语境下的 host-facing recall debt 系统化收口。近期真实样本已经稳定指向以下几类问题：
+本方案当前要解决的问题，不是再修一轮既有 correctness hotfix 主线那类状态机修补，而是把 pending checkpoint 语境下的 host-facing recall debt 系统化收口。近期真实样本已经稳定指向以下几类问题：
 
 1. explain-only / analysis-only 请求被重新物化成 proposal 或其他 pending checkpoint
 2. existing plan referent 被误判成新的阻断路径
 3. “取消 checkpoint”类表达在局部语境下不够稳健
 4. mixed clause 在逗号后从句里仍存在局部歧义
 5. `no-write / no-package / just-analyze` brake signal 会被 process semantic 覆盖
-6. `ready_for_execution + state_conflict(abort_conflict)` 仍需要作为 Plan A 的设计门禁显式追踪
+6. `ready_for_execution + state_conflict(abort_conflict)` 仍需要作为本方案的设计门禁显式追踪
 7. 公开方案包中若残留显性来源锚点（第三方产品名/仓库名/专有函数名/源码路径），会带来版权/合规观感风险并削弱方案抽象独立性
 
 因此，本 plan 的目的不是“马上实现局部语义分类器”，而是把下面四类信息先写进一个可持续优化的正式方案包：
 
-1. 总纲中已经冻结的 Plan A 边界与硬约束
+1. 总纲中已经冻结的本方案边界与硬约束
 2. 外部参考实现中可借鉴的设计模式
 3. 当前已经定下来的候选方案、非目标、风险与实施前门禁
 4. 公开发布面的去显性来源化约束与验收口径
@@ -27,7 +27,7 @@ Plan A 当前要解决的问题，不是再修一轮 `Plan H` 那类状态机 co
 
 本 plan 主要承接以下输入：
 
-1. program plan 中的 Plan A 总纲与任务门禁
+1. program plan 中的本方案总纲与任务门禁
    - `.sopify-skills/plan/20260326_phase1-2-3-plan/design.md`
    - `.sopify-skills/plan/20260326_phase1-2-3-plan/tasks.md`
 2. 本轮已冻结的 A0 语义契约与 A-1 ~ A-8 样本矩阵
@@ -38,14 +38,14 @@ Plan A 当前要解决的问题，不是再修一轮 `Plan H` 那类状态机 co
 
 以下内容已经在总纲层面冻结，本子 plan 只能承接，不能推翻：
 
-1. Plan A 的职责是 host-facing 语义召回增强，不重开 Plan H 已收口的状态机正确性修复
+1. 本方案的职责是 host-facing 语义召回增强，不重开既有 correctness hotfix 主线已收口的状态机正确性修复
 2. 只允许在局部 checkpoint 语境下增强召回，不做全局自由语义理解
 3. 默认不改 runtime state model / handoff contract / resolution contract
 4. `ExecutionGate` 核心机器语义保持稳定
 5. `gate_status` 值集在 v1 不改
 6. `gate_status / blocking_reason / plan_completion / next_required_action` 不改名
 7. 不接受“单词/短语补丁式”修复，必须按同一语义类一次收口
-8. 与 B1 的对外 contract 默认保持向后兼容
+8. 默认与既有对外 contract 主线保持向后兼容
 
 ## 为什么现在要起标准方案包
 
@@ -57,7 +57,7 @@ Plan A 当前要解决的问题，不是再修一轮 `Plan H` 那类状态机 co
 
 ## 当前方向判断
 
-基于这轮分析，Plan A 的推荐方向不是“先上一个全局自然语言分类器”，而是：
+基于这轮分析，本方案的推荐方向不是“先上一个全局自然语言分类器”，而是：
 
 1. 先用 deterministic guard 把 checkpoint machine facts 定死
 2. 再在局部语境里定义“当前可判动作面”
@@ -99,13 +99,13 @@ Plan A 当前要解决的问题，不是再修一轮 `Plan H` 那类状态机 co
 
 ### 风险 2
 
-把 Plan H correctness、Plan A recall debt、以及产品行为拍板问题混成一轮。
+把既有 correctness hotfix 主线问题、本方案 recall debt、以及产品行为拍板问题混成一轮。
 
 缓解：
 
 - 明确列出 non-goals
-- 把 `plan_proposal_pending + command prefix` 单独标成待产品确认项
-- 把 A-6 的 state-conflict case 当成 Plan A 的设计门禁，而不是顺手修补项
+- `plan_proposal_pending + command prefix` 已冻结为显式 fail-close，不视为自动继续信号
+- 把 A-6 的 state-conflict case 当成本方案的设计门禁，而不是顺手修补项
 
 验证入口：见 tasks.md §B.2.1/2.2。
 
@@ -136,4 +136,4 @@ Plan A 当前要解决的问题，不是再修一轮 `Plan H` 那类状态机 co
 
 - 方案质量: 9/10
 - 落地就绪: 7/10
-- 评分理由: Plan A 的目标、边界、样本与兼容性约束已经足够清楚，适合正式拆成 standard 子 plan；但真正进入实施前，仍需先收口产品行为拍板项、状态不变量、以及“parser-first 还是 hybrid classifier”的阶段化策略。
+- 评分理由: 本方案的目标、边界、样本与兼容性约束已经足够清楚，适合正式拆成 standard 子 plan；但真正进入实施前，仍需先收口产品行为拍板项、状态不变量、以及“parser-first 还是 hybrid classifier”的阶段化策略。
