@@ -41,8 +41,8 @@ archive_ready: false
 - [x] 4.3 在 `20260327_hotfix` 中冻结 `snapshot-only resolver / proposal session-only / state_conflict + abort / unique handoff exit`
 - [x] 4.4 在升级版 Plan B1 中将 thin stub 校验、dual-host host-aware、payload index、ignore 默认值、legacy fallback reason code 作为硬门禁
   验收记录：上述硬门禁已在 B1 子 plan 中通过实现、回归与 smoke 验证收口；program plan 与 child plan 现已同步该验收结论，后续只保留 post-B1 polish，不再回流到 B1 主线。
-- [ ] 4.5 在 Plan A 子 plan 启动前登记 carry-over recall debt 与明确 non-goals，明确挂住 2026-03-31 这轮 `A-1 / A-3 / A-4 / A-5` 追溯样本（如“还剩什么需要你确认”“为啥被网关卡住”“不要建包，只做确认项分析”“取消这个 proposal checkpoint”），避免把 Plan H correctness hotfix 与后续语义召回增强混做一轮
-- [ ] 4.6 为 Plan A 子 plan 明确启动触发条件（真实漏判样本 / 用户反馈阈值），并要求先补齐 `A-1 / A-3 / A-4 / A-5` 的正反例矩阵与状态不变量断言（`required_host_action / checkpoint_id / current_plan_proposal / current_decision / plan/` 副作用），避免长期后延或提前侵入 B1 窗口
+- [ ] 4.5 在 Plan A 子 plan 启动前登记 carry-over recall debt 与明确 non-goals，明确挂住 `2026-03-31 / 2026-04-03` 这两轮 `A-1 / A-3 / A-4 / A-5 / A-8` 追溯样本（如“还剩什么需要你确认”“为啥被网关卡住”“不要建包，只做确认项分析”“取消这个 proposal checkpoint”“做 Plan A，但先不写方案包，只分析，不改”“只做 Plan A 样本矩阵草案，不建包、不改代码”），避免把 Plan H correctness hotfix 与后续语义召回增强混做一轮
+- [ ] 4.6 为 Plan A 子 plan 明确启动触发条件（真实漏判样本 / 用户反馈阈值），并要求先补齐 `A-1 / A-3 / A-4 / A-5 / A-6 / A-8` 的正反例矩阵与状态不变量断言（`required_host_action / checkpoint_id / current_plan_proposal / current_decision / plan/` 副作用）；`A-7` 作为冻结回归基线持续保留，`A-2` 归入 `V1.x parser robustness backlog`，避免长期后延或提前侵入 B1 窗口
 - [ ] 4.7 在 Plan A 中冻结 `ExecutionGate` 核心字段名与 `gate_status` 值集
 - [ ] 4.8 在 Plan B2 中明确“不改变 plan/blueprint/history contract”
 - [ ] 4.9 在 Plan C 中明确“bounded side task，不允许自由漫游”
@@ -52,6 +52,9 @@ archive_ready: false
 - [x] 4.13 在 Plan A 子 plan 中为 `question signal + retopic signal + plan referent` 建立结构化语义类矩阵（后缀/前置/中置疑问）
 - [x] 4.14 将 Case A-7 的验收矩阵固化为 parser 正反例与回归用例；通过标准必须包含“inspect fail-close + revise 保持 + mixed case 保持”
 - [ ] 4.15 将 `plan_proposal_pending + command prefix` 标记为“行为约束待产品确认”并与 parser 收口任务解耦，避免在同一轮混改
+- [x] 4.16 冻结 Plan A 实施切片边界：`V1 parser-first -> rollout/observability -> V2 guarded hybrid classifier`；其中 `A-2` 归入 `V1.x parser robustness backlog`，不阻塞当前 v1 开工门禁
+- [x] 4.17 冻结 Plan A 三张表的跨切层边界：表层保持语言无关、宿主无关；locale 只落在 `Signal Extraction`，宿主差异只落在 `Handoff / Output Adapter`
+- [x] 4.18 冻结总纲口径：classifier(v2) 仅作为 Plan A 的后置 gate 能力，不作为总纲独立执行分支，也不作为主路由替换方案
 
 ## 5. 明确延后方向
 - [ ] 5.1 若未来启动 B3，单独拍板 `plan_path` 新语义

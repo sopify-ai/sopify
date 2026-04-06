@@ -77,14 +77,27 @@
 - 仅在 `Plan H + Plan B1` 各自收口后，才进入 Plan A 子 plan
 - 启动前必须先登记真实漏判样本或用户反馈阈值，避免长期欠债无限后延，也避免过早侵入 control-plane 迁移窗口
 
+实施切片（冻结口径）:
+- Plan A V1: 采用 parser-first，仅覆盖局部 checkpoint / execution gate 语境下的高风险样本收口；当前实现门禁以 `A-1 / A-3 / A-4 / A-5 / A-6 / A-8` 为主，`A-7` 作为冻结回归基线持续保留。
+- Plan A V1.x: 保留 parser robustness backlog，承接类似 `A-2` 这类稳健性增强，但不阻塞当前 v1 开工门禁。
+- Plan A rollout: 在 v1 后先观察 `reason_code / ambiguous_rate / fail_close_rate / manual_resolution_rate`，用事实判定是否仍存在值得引入 classifier 的 residual ambiguity。
+- Plan A V2: 仅在 v1 与 rollout 都稳定后，才评估 guarded hybrid classifier；classifier 只允许产出结构化候选信号，不得旁路 guard、三张表或直接写状态。
+- locale / host adaptation 是跨切层，不是后置时间片；语言差异只允许落在 `Signal Extraction`，宿主差异只允许落在 `Handoff / Output Adapter`，三张表本身保持语言无关、宿主无关。
+
+classifier(v2) 在总纲中的定位（冻结口径）:
+- classifier(v2) 不是总纲独立执行分支，也不单独并入 `H / B1 / D / B2 / C / B3` 顺序。
+- classifier(v2) 作为 Plan A 的后置 gate 能力，仅在 `Plan A V1 + rollout` 收敛后进入评估或灰度。
+- 即便进入 v2，默认也只能作为 guarded side path，不作为主路由替换方案。
+
 设计前置（A0，进入 Plan A 子计划前先冻结）:
 - 背景:
   - 近期在 proposal pending 语境里，多次出现“补一个表述、漏一个表述”的 parser 修复循环。
   - 核心痛点不是实现复杂度，而是语义边界未一次定义清楚，导致同类句式不断返工。
-- 本轮新增追溯样本（2026-03-31）:
+- 本轮新增追溯样本（2026-03-31 / 2026-04-03）:
   - 样本组 1: `直接继续分析这个分支还剩什么需要你确认`、`分析下 为啥一件简单的事被网关卡成这样`、`说下怎么补case`
   - 样本组 2: `不要建包，只做确认项分析`、`取消这个 proposal checkpoint`
-  - 追溯结论: 这组样本共同暴露的是 pending checkpoint 语境下的 host-facing recall debt，而不是 `Plan H` 已收口的 state correctness 问题；后续应在 Plan A 统一覆盖 explain-only、existing plan referent、cancel checkpoint、mixed clause 四类语义，不在当前 `B1` 分支顺手落实现。
+  - 样本组 3: `做 Plan A，但先不写方案包。先看总纲中 Plan A 的规划；...只分析，不改。`、`只做 Plan A 样本矩阵草案，不建包、不改代码`
+  - 追溯结论: 这组样本共同暴露的是 pending checkpoint 语境下的 host-facing recall debt，而不是 `Plan H` 已收口的 state correctness 问题；后续应在 Plan A 统一覆盖 explain-only、existing plan referent、cancel checkpoint、mixed clause、explicit no-write + process semantic 五类语义，不在当前 `B1` 分支顺手落实现。
 - 当前方案现状（已收口）:
   - referential retopic 基本句式（如“这个方案改成 ...”）已进入 retopic 识别路径。
   - constraint follow-up question（如“继续按这个方案会有什么风险”）已按 fail-closed 处理，不再误改 checkpoint。
@@ -168,6 +181,25 @@ Case（后续拆分 Plan A 子计划时必须覆盖）:
   - 约束:
     1. 仅允许改 parser，不改 engine/router 主流程。
     2. 不接受“补一个词”式修复；必须以语义类矩阵验证收口。
+- Case A-8 | explicit no-write 分析请求不应被 process semantic 重新物化
+  - 场景: 用户显式要求“只分析 / 不建包 / 不改代码 / 先学习”，但消息同时包含 `Plan A / proposal / 样本 / 整理` 等过程语义词，当前实现会重新落入 `plan_proposal_pending + confirm_plan_package`。
+  - 追溯样本: `做 Plan A，但先不写方案包。先看总纲中 Plan A 的规划；...只分析，不改。`、`只做 Plan A 样本矩阵草案，不建包、不改代码`
+  - 期望: `no-write / analysis-only` brake signal 优先级高于 process semantic，优先回到 consult / inspect，不得因为带有流程语义就重新生成 proposal。
+  - 验收: 同一 session 在取消 proposal 后继续追问“为什么误起 proposal / 怎么整理样本矩阵”时，不得再次写出 `confirm_plan_package`；若仅作分析，不得新建 plan 包目录。
+  - 验收补充: 只有当用户显式提交 `继续 / next / 生成方案包 / 建包` 一类物化动作时，才允许从该类请求回到 proposal materialization。
+
+Plan A 样本矩阵 v0.2（用于后续拆分子计划时统一评审）:
+
+| Case | 正例 | 反例 | 边界例 | 禁止副作用 |
+| --- | --- | --- | --- | --- |
+| A-1 | `直接继续分析这个分支还剩什么需要你确认` | `继续 / next 生成方案包` | `分析下当前方案还差什么，如果没问题再继续` | 新建 proposal checkpoint；新建 `plan/` 目录；`current_decision` / `current_handoff` 身份漂移 |
+| A-2 | `1，并把 case 补进总纲` | `我倾向 1，但先分析 tradeoff` | `1，先别执行` | decision 选择未稳定消费；后续文本被吞掉；重复拉起 decision checkpoint |
+| A-3 | `分析下 <plan_id> 可以执行了吗还有什么需要确认` | `继续执行 <plan_id>` | `看下当前方案是否认可，不改文件` | 因 plan 引用直接升级为新的 `confirm_*`；误建 proposal；无显式确认却消费 existing checkpoint |
+| A-4 | `取消这个 checkpoint` | `不要取消这个 checkpoint` | `取消这个 checkpoint，不要取消全部` | 派生新的 pending checkpoint；切到其他 checkpoint 类型；残留 `current_plan_proposal/current_decision/current_clarification` |
+| A-5 | `不要建包，只做确认项分析` | `继续，这次直接建包` | `取消这个 checkpoint，为什么还会回到 pending` | 误命中 cancel；误建 proposal；忽略否定补充、解释补充与疑问补充的局部差异 |
+| A-6 | `开始执行 -> 取消 -> 再次开始执行` | `开始执行（无冲突单次通过）` | `abort_conflict 后立即再次开始执行` | 再次回到同一 `state_conflict`；`run_stage_handoff_mismatch` 循环；`ready_for_execution + continue_host_workflow` 非法配对 |
+| A-7 | `这个方案能不能改成 X` | `这个方案改成 X` | `为什么先做这个？按这个最小范围直接进 3.1 -> 3.6` | 改写 `checkpoint_id / reserved_plan_id / proposed_path / request_text`；把疑问式 retopic 错走 revise 或重新物化 |
+| A-8 | `做 Plan A，但先不写方案包，只分析，不改` | `继续生成 Plan A 方案包` | `只做 Plan A 样本矩阵草案，不建包、不改代码` | 命中 `plan_proposal_pending + confirm_plan_package`；`analysis-only` 请求被重新物化；写入新 plan 包目录 |
 
 ### Plan D | 对外定位与文档
 状态: committed after Plan A scope is stable
