@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-import sys
 import unittest
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from tests.runtime_test_support import *
 
 from runtime.failure_recovery import (
     DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH,
