@@ -1,5 +1,5 @@
 schema_version: decision_tables.v1
-asset_version: 2026-04-06-p0
+asset_version: 2026-04-08-v1
 invariants:
   stable_truth_required_for_resolution: true
   consult_readonly_default_deny: true
@@ -58,7 +58,6 @@ consult_readonly_contract:
   required_when:
     - side_effect_mapping_routes_to_continue_host_consult
     - consult_exit_is_under_validation
-  # Exclusion list: consult_readonly_contract is not applicable under these host actions.
   ignored_required_host_actions:
     - confirm_decision
     - confirm_plan_package
@@ -110,3 +109,498 @@ best_proven_resume_target:
     - kind: workflow_safe_start
       proof:
         - machine_contract_produces_safe_workflow_entry
+signal_priority_table:
+  schema_version: signal_priority_table.v1
+  asset_version: 2026-04-08-v1
+  origin_precedence:
+    deterministic_rule: 300
+    parser_clause_inference: 200
+    semantic_classifier: 100
+  evidence_rank:
+    literal_alias: 400
+    explicit_pattern: 300
+    local_clause_inference: 200
+    weak_semantic_hint: 100
+  rows:
+    - signal_id: inspect_current_checkpoint_status
+      enabled_checkpoint_kinds:
+        - answer_questions
+        - confirm_decision
+        - confirm_plan_package
+        - confirm_execute
+        - review_or_execute_plan
+      signal_group: inspect_request
+      target_kind: checkpoint
+      target_slot: checkpoint_view
+      allowed_origins:
+        - deterministic_rule
+        - parser_clause_inference
+      origin_evidence_cap:
+        deterministic_rule: literal_alias
+        parser_clause_inference: local_clause_inference
+      mutually_exclusive_with: []
+      can_coexist_with:
+        - analysis_only_no_write_brake
+      suppresses: []
+      priority: 70
+      winner_action: stay_in_checkpoint_and_inspect
+      fallback_on_conflict: inspect
+      reason_code: signal.inspect_request.status_to_inspect
+    - signal_id: analysis_only_no_write_brake
+      enabled_checkpoint_kinds:
+        - answer_questions
+        - confirm_decision
+        - confirm_plan_package
+        - confirm_execute
+        - review_or_execute_plan
+      signal_group: hard_constraint
+      target_kind: write_scope
+      target_slot: materialize_or_execute
+      allowed_origins:
+        - deterministic_rule
+        - parser_clause_inference
+        - semantic_classifier
+      origin_evidence_cap:
+        deterministic_rule: explicit_pattern
+        parser_clause_inference: local_clause_inference
+        semantic_classifier: weak_semantic_hint
+      mutually_exclusive_with:
+        - continue_current_checkpoint
+      can_coexist_with:
+        - inspect_current_checkpoint_status
+      suppresses:
+        - continue_current_checkpoint
+        - continue_execute
+        - submit_revision_feedback
+      priority: 80
+      winner_action: switch_to_consult_readonly
+      fallback_on_conflict: explicit_choice_required
+      reason_code: signal.hard_constraint.analysis_only_routes_consult_readonly
+    - signal_id: continue_current_checkpoint
+      enabled_checkpoint_kinds:
+        - answer_questions
+        - confirm_decision
+        - confirm_plan_package
+        - confirm_execute
+        - review_or_execute_plan
+      signal_group: progress_action
+      target_kind: checkpoint
+      target_slot: checkpoint_lifecycle
+      allowed_origins:
+        - deterministic_rule
+        - parser_clause_inference
+        - semantic_classifier
+      origin_evidence_cap:
+        deterministic_rule: literal_alias
+        parser_clause_inference: local_clause_inference
+        semantic_classifier: weak_semantic_hint
+      mutually_exclusive_with:
+        - cancel_current_checkpoint
+      can_coexist_with:
+        - inspect_current_checkpoint_status
+      suppresses: []
+      priority: 50
+      winner_action: continue_checkpoint_confirmation
+      fallback_on_conflict: ambiguous
+      reason_code: signal.progress_action.continue_to_confirmation
+    - signal_id: cancel_current_checkpoint
+      enabled_checkpoint_kinds:
+        - answer_questions
+        - confirm_decision
+        - confirm_plan_package
+        - confirm_execute
+        - review_or_execute_plan
+      signal_group: hard_stop
+      target_kind: checkpoint
+      target_slot: checkpoint_lifecycle
+      allowed_origins:
+        - deterministic_rule
+        - parser_clause_inference
+      origin_evidence_cap:
+        deterministic_rule: literal_alias
+        parser_clause_inference: local_clause_inference
+      mutually_exclusive_with:
+        - continue_current_checkpoint
+      can_coexist_with: []
+      suppresses:
+        - continue_current_checkpoint
+      priority: 90
+      winner_action: cancel_current_checkpoint
+      fallback_on_conflict: inspect
+      reason_code: signal.hard_stop.cancel_overrides_progress
+    - signal_id: retopic_current_subject
+      enabled_checkpoint_kinds:
+        - answer_questions
+        - confirm_decision
+        - confirm_plan_package
+        - review_or_execute_plan
+      signal_group: route_shift
+      target_kind: host_action
+      target_slot: current_subject_retopic
+      allowed_origins:
+        - parser_clause_inference
+        - semantic_classifier
+      origin_evidence_cap:
+        parser_clause_inference: local_clause_inference
+        semantic_classifier: weak_semantic_hint
+      mutually_exclusive_with: []
+      can_coexist_with:
+        - inspect_current_checkpoint_status
+      suppresses: []
+      priority: 40
+      winner_action: retopic_with_current_machine_truth
+      fallback_on_conflict: inspect
+      reason_code: signal.route_shift.retopic_without_implicit_progress
+failure_recovery_table:
+  schema_version: failure_recovery.v1
+  asset_version: 2026-04-08-v1
+  rows:
+    - primary_failure_type: non_stable_truth
+      required_host_action: answer_questions
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.non_stable_truth.fail_closed.answer_questions
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: non_stable_truth
+      required_host_action: confirm_decision
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.non_stable_truth.fail_closed.confirm_decision
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: non_stable_truth
+      required_host_action: confirm_plan_package
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.non_stable_truth.fail_closed.confirm_plan_package
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: non_stable_truth
+      required_host_action: confirm_execute
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.non_stable_truth.fail_closed.confirm_execute
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: non_stable_truth
+      required_host_action: review_or_execute_plan
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.non_stable_truth.fail_closed.review_or_execute_plan
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: truth_layer_contract_invalid
+      required_host_action: answer_questions
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.truth_layer_contract_invalid.fail_closed.answer_questions
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: truth_layer_contract_invalid
+      required_host_action: confirm_decision
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.truth_layer_contract_invalid.fail_closed.confirm_decision
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: truth_layer_contract_invalid
+      required_host_action: confirm_plan_package
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.truth_layer_contract_invalid.fail_closed.confirm_plan_package
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: truth_layer_contract_invalid
+      required_host_action: confirm_execute
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.truth_layer_contract_invalid.fail_closed.confirm_execute
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: truth_layer_contract_invalid
+      required_host_action: review_or_execute_plan
+      fallback_action: enter_blocking_recovery_branch
+      prompt_mode: request_state_recovery
+      retry_policy: manual_recovery_only
+      reason_code: recovery.truth_layer_contract_invalid.fail_closed.review_or_execute_plan
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: resolution_failure
+      required_host_action: answer_questions
+      fallback_action: repeat_current_checkpoint
+      prompt_mode: reask_answer_questions
+      retry_policy: allow_retry_after_user_input
+      reason_code: recovery.resolution_failure.inspect_required.answer_questions
+      unresolved_outcome_family: inspect_required
+      counts_toward_streak: true
+    - primary_failure_type: resolution_failure
+      required_host_action: confirm_decision
+      fallback_action: repeat_current_checkpoint
+      prompt_mode: reask_confirm_decision
+      retry_policy: allow_retry_after_user_input
+      reason_code: recovery.resolution_failure.inspect_required.confirm_decision
+      unresolved_outcome_family: inspect_required
+      counts_toward_streak: true
+    - primary_failure_type: resolution_failure
+      required_host_action: confirm_plan_package
+      fallback_action: repeat_current_checkpoint
+      prompt_mode: reask_confirm_plan_package
+      retry_policy: allow_retry_after_user_input
+      reason_code: recovery.resolution_failure.inspect_required.confirm_plan_package
+      unresolved_outcome_family: inspect_required
+      counts_toward_streak: true
+    - primary_failure_type: resolution_failure
+      required_host_action: confirm_execute
+      fallback_action: repeat_current_checkpoint
+      prompt_mode: reask_confirm_execute
+      retry_policy: allow_retry_after_user_input
+      reason_code: recovery.resolution_failure.inspect_required.confirm_execute
+      unresolved_outcome_family: inspect_required
+      counts_toward_streak: true
+    - primary_failure_type: resolution_failure
+      required_host_action: review_or_execute_plan
+      fallback_action: repeat_current_checkpoint
+      prompt_mode: reask_plan_review
+      retry_policy: allow_retry_after_user_input
+      reason_code: recovery.resolution_failure.inspect_required.review_or_execute_plan
+      unresolved_outcome_family: inspect_required
+      counts_toward_streak: true
+    - primary_failure_type: effect_contract_invalid
+      required_host_action: answer_questions
+      fallback_action: block_side_effect_and_retry_when_safe
+      prompt_mode: safe_retry_after_contract_fix
+      retry_policy: retry_after_contract_fix
+      reason_code: recovery.effect_contract_invalid.fail_closed.answer_questions
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: effect_contract_invalid
+      required_host_action: confirm_decision
+      fallback_action: block_side_effect_and_retry_when_safe
+      prompt_mode: safe_retry_after_contract_fix
+      retry_policy: retry_after_contract_fix
+      reason_code: recovery.effect_contract_invalid.fail_closed.confirm_decision
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: effect_contract_invalid
+      required_host_action: confirm_plan_package
+      fallback_action: block_side_effect_and_retry_when_safe
+      prompt_mode: safe_retry_after_contract_fix
+      retry_policy: retry_after_contract_fix
+      reason_code: recovery.effect_contract_invalid.fail_closed.confirm_plan_package
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: effect_contract_invalid
+      required_host_action: confirm_execute
+      fallback_action: block_side_effect_and_retry_when_safe
+      prompt_mode: safe_retry_after_contract_fix
+      retry_policy: retry_after_contract_fix
+      reason_code: recovery.effect_contract_invalid.fail_closed.confirm_execute
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+    - primary_failure_type: effect_contract_invalid
+      required_host_action: review_or_execute_plan
+      fallback_action: block_side_effect_and_retry_when_safe
+      prompt_mode: safe_retry_after_contract_fix
+      retry_policy: retry_after_contract_fix
+      reason_code: recovery.effect_contract_invalid.fail_closed.review_or_execute_plan
+      unresolved_outcome_family: fail_closed
+      counts_toward_streak: true
+side_effect_mapping_table:
+  schema_version: side_effect_mapping.v1
+  asset_version: 2026-04-08-v1
+  rows:
+    - resolved_action: stay_in_checkpoint_and_inspect
+      checkpoint_kind: confirm_plan_package
+      state_mutators:
+        preserve:
+          - current_plan_proposal
+          - current_run
+        clear: []
+        update: []
+        write: []
+      forbidden_state_effects:
+        - materialize_new_plan_package
+        - clear_current_plan_proposal
+        - advance_to_develop
+      preserved_identity:
+        - checkpoint_id
+        - reserved_plan_id
+        - topic_key
+      handoff_protocol:
+        required_host_action: confirm_plan_package
+        artifact_keys:
+          - checkpoint_request
+          - proposal
+        resume_route: plan_proposal_pending
+        output_mode: inspect_only
+      terminality: checkpoint_terminal
+      reason_code: effect.checkpoint.inspect_preserve_proposal
+    - resolved_action: submit_revision_feedback
+      checkpoint_kind: confirm_plan_package
+      state_mutators:
+        preserve:
+          - current_run
+        clear: []
+        update:
+          - current_plan_proposal
+        write: []
+      forbidden_state_effects:
+        - materialize_new_plan_package
+        - clear_current_plan_proposal
+        - rewrite_reserved_plan_id
+      preserved_identity:
+        - checkpoint_id
+        - reserved_plan_id
+        - topic_key
+      handoff_protocol:
+        required_host_action: confirm_plan_package
+        artifact_keys:
+          - checkpoint_request
+          - proposal
+        resume_route: plan_proposal_pending
+        output_mode: checkpoint_only
+      terminality: checkpoint_terminal
+      reason_code: effect.checkpoint.revise_preserve_identity
+    - resolved_action: switch_to_consult_readonly
+      checkpoint_kind: confirm_decision
+      state_mutators:
+        preserve:
+          - current_decision
+          - current_run
+        clear: []
+        update: []
+        write: []
+      forbidden_state_effects:
+        - submit_decision_selection
+        - clear_current_decision
+        - materialize_new_plan_package
+        - advance_to_develop
+      preserved_identity:
+        - checkpoint_id
+        - decision_id
+        - plan_id
+      handoff_protocol:
+        required_host_action: continue_host_consult
+        artifact_keys:
+          - checkpoint_request
+          - decision_checkpoint
+          - decision_submission_state
+        resume_route: decision_pending
+        output_mode: consult_answer
+      terminality: route_terminal
+      reason_code: effect.hard_constraint.analysis_only_consult_readonly
+    - resolved_action: continue_checkpoint_confirmation
+      checkpoint_kind: confirm_execute
+      state_mutators:
+        preserve:
+          - current_plan
+        clear: []
+        update:
+          - current_run
+        write: []
+      forbidden_state_effects:
+        - recreate_execution_confirm_checkpoint
+        - mutate_plan_identity
+      preserved_identity:
+        - plan_id
+      handoff_protocol:
+        required_host_action: continue_host_develop
+        artifact_keys:
+          - execution_summary
+          - execution_gate
+        resume_route: develop
+        output_mode: continue_develop
+      terminality: route_terminal
+      reason_code: effect.execution.confirm_to_develop
+host_message_templates:
+  schema_version: host_message_templates.v1
+  asset_version: 2026-04-08-v1
+  default_locale: zh-CN
+  lookup_order:
+    - exact_reason_code
+    - reason_code_family_prefix
+    - prompt_mode_fallback
+  allowed_variables:
+    - required_host_action_label
+    - checkpoint_kind_label
+    - checkpoint_id
+    - plan_id
+    - plan_path
+    - resume_target_kind
+    - truth_status
+    - primary_failure_type
+    - unresolved_outcome_family
+    - analysis_summary
+    - risk_level
+    - key_risk
+    - missing_facts_summary
+    - decision_question
+    - escape_hatch_hint
+    - contract_fix_hint
+    - rephrase_hint
+    - safe_retry_hint
+  templates:
+    - match_kind: reason_code_family_prefix
+      match_value: recovery.non_stable_truth.fail_closed
+      prompt_modes:
+        - request_state_recovery
+      locales:
+        zh-CN: 当前运行态无法安全继续{required_host_action_label}；我会保持 fail-close。请先{escape_hatch_hint}。
+        en-US: Runtime state cannot safely continue {required_host_action_label}; staying fail-closed. Please {escape_hatch_hint} first.
+    - match_kind: reason_code_family_prefix
+      match_value: recovery.truth_layer_contract_invalid.fail_closed
+      prompt_modes:
+        - request_state_recovery
+      locales:
+        zh-CN: 当前机器契约不完整，无法安全执行{required_host_action_label}；请先{contract_fix_hint}后重试。
+        en-US: The machine contract is incomplete, so {required_host_action_label} cannot run safely. Please {contract_fix_hint} before retrying.
+    - match_kind: reason_code_family_prefix
+      match_value: recovery.resolution_failure.inspect_required
+      prompt_modes:
+        - reask_answer_questions
+        - reask_confirm_decision
+        - reask_confirm_plan_package
+        - reask_confirm_execute
+        - reask_plan_review
+      locales:
+        zh-CN: 当前输入还不足以唯一判定{required_host_action_label}；我先保持在当前 checkpoint。请{rephrase_hint}。
+        en-US: The current input is still insufficient to uniquely resolve {required_host_action_label}; staying on the current checkpoint. Please {rephrase_hint}.
+    - match_kind: reason_code_family_prefix
+      match_value: recovery.effect_contract_invalid.fail_closed
+      prompt_modes:
+        - safe_retry_after_contract_fix
+      locales:
+        zh-CN: 当前动作已识别，但执行副作用未通过校验；不会继续推进。请先{safe_retry_hint}。
+        en-US: The action was identified, but the side-effect contract did not pass validation; no progress will continue. Please {safe_retry_hint} first.
+  prompt_mode_fallbacks:
+    request_state_recovery:
+      zh-CN: 当前运行态暂不允许继续；已保持 fail-close。请先执行恢复动作后重试。
+      en-US: Runtime cannot continue safely; it remains fail-closed. Recover the state and retry.
+    reask_answer_questions:
+      zh-CN: 当前输入还不足以继续；我先停在当前 checkpoint。请换一种更明确的说法。
+      en-US: The current input is still insufficient to continue; staying on the current checkpoint. Please restate it more explicitly.
+    reask_confirm_decision:
+      zh-CN: 当前输入还不足以继续；我先停在当前 checkpoint。请换一种更明确的说法。
+      en-US: The current input is still insufficient to continue; staying on the current checkpoint. Please restate it more explicitly.
+    reask_confirm_plan_package:
+      zh-CN: 当前输入还不足以继续；我先停在当前 checkpoint。请换一种更明确的说法。
+      en-US: The current input is still insufficient to continue; staying on the current checkpoint. Please restate it more explicitly.
+    reask_confirm_execute:
+      zh-CN: 当前输入还不足以继续；我先停在当前 checkpoint。请换一种更明确的说法。
+      en-US: The current input is still insufficient to continue; staying on the current checkpoint. Please restate it more explicitly.
+    reask_plan_review:
+      zh-CN: 当前输入还不足以继续；我先停在当前 checkpoint。请换一种更明确的说法。
+      en-US: The current input is still insufficient to continue; staying on the current checkpoint. Please restate it more explicitly.
+    safe_retry_after_contract_fix:
+      zh-CN: 当前动作已识别，但暂时不能安全执行；请修复契约后重试。
+      en-US: The action was identified, but it still cannot execute safely. Fix the contract and retry.

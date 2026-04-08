@@ -2389,6 +2389,13 @@ class RuntimeGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             script_path = REPO_ROOT / "scripts" / "runtime_gate.py"
+            git_init = subprocess.run(
+                ["git", "init", str(workspace)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(git_init.returncode, 0, msg=git_init.stderr)
 
             completed = subprocess.run(
                 [

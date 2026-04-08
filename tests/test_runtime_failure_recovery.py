@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from tests.runtime_test_support import *
 
-from runtime.decision_tables import load_default_decision_tables
+from runtime.decision_tables import DEFAULT_DECISION_TABLES_PATH, load_default_decision_tables
 from runtime.failure_recovery import (
     DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH,
     DEFAULT_FAILURE_RECOVERY_TABLE_PATH,
     FailureRecoveryError,
+    LEGACY_FAILURE_RECOVERY_TABLE_PATH,
+    assert_failure_recovery_tables_consistent,
     evaluate_failure_recovery_case,
     evaluate_case_matrix,
     load_default_failure_recovery_table,
@@ -154,9 +156,66 @@ class FailureRecoveryTests(unittest.TestCase):
     def test_default_failure_recovery_table_loads(self) -> None:
         table = load_default_failure_recovery_table()
         self.assertEqual(table["schema_version"], "failure_recovery.v1")
-        self.assertEqual(Path(table["source_path"]), DEFAULT_FAILURE_RECOVERY_TABLE_PATH.resolve())
+        self.assertEqual(Path(table["source_path"]), DEFAULT_DECISION_TABLES_PATH.resolve())
         self.assertEqual(Path(table["schema_source_path"]), DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH.resolve())
+        self.assertEqual(Path(table["decision_tables_source_path"]), DEFAULT_DECISION_TABLES_PATH.resolve())
         self.assertEqual(len(table["rows"]), 20)
+
+    def test_legacy_standalone_recovery_asset_can_still_load_explicitly(self) -> None:
+        table = load_failure_recovery_table(LEGACY_FAILURE_RECOVERY_TABLE_PATH)
+        self.assertEqual(Path(table["source_path"]), LEGACY_FAILURE_RECOVERY_TABLE_PATH.resolve())
+        self.assertEqual(Path(table["decision_tables_source_path"]), DEFAULT_DECISION_TABLES_PATH.resolve())
+        self.assertEqual(table["schema_version"], "failure_recovery.v1")
+
+    def test_default_and_legacy_recovery_tables_stay_in_sync(self) -> None:
+        embedded = load_default_failure_recovery_table()
+        legacy = load_failure_recovery_table(LEGACY_FAILURE_RECOVERY_TABLE_PATH)
+        assert_failure_recovery_tables_consistent(embedded, legacy)
+        self.assertEqual(embedded["rows"], legacy["rows"])
+
+    def test_embedded_decision_table_errors_are_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            asset_path = Path(temp_dir) / "decision_tables.yaml"
+            asset_path.write_text(
+                "schema_version: decision_tables.v1\nasset_version: broken\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                FailureRecoveryError,
+                r"Failed to load embedded failure recovery asset",
+            ):
+                load_failure_recovery_table(asset_path)
+
+    def test_unified_asset_detection_does_not_depend_on_v1_schema_literal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            asset_path = Path(temp_dir) / "decision_tables.yaml"
+            asset_text = DEFAULT_DECISION_TABLES_PATH.read_text(encoding="utf-8").replace(
+                "schema_version: decision_tables.v1\n",
+                "schema_version: decision_tables.v2\n",
+                1,
+            )
+            asset_path.write_text(asset_text, encoding="utf-8")
+            with self.assertRaisesRegex(
+                FailureRecoveryError,
+                r"Failed to load embedded failure recovery asset: Unsupported decision table schema_version",
+            ):
+                load_failure_recovery_table(asset_path)
+
+    def test_decision_table_context_errors_are_normalized_for_legacy_load(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            decision_asset_path = Path(temp_dir) / "decision_tables.yaml"
+            decision_asset_path.write_text(
+                "schema_version: decision_tables.v1\nasset_version: broken\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                FailureRecoveryError,
+                r"Failed to load failure recovery decision table context",
+            ):
+                load_failure_recovery_table(
+                    LEGACY_FAILURE_RECOVERY_TABLE_PATH,
+                    decision_tables_path=decision_asset_path,
+                )
 
     def test_case_matrix_evaluates_against_frozen_priority(self) -> None:
         decision_tables = load_default_decision_tables()
@@ -285,7 +344,7 @@ class FailureRecoveryTests(unittest.TestCase):
             cwd=REPO_ROOT,
         )
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
-        self.assertIn(str(DEFAULT_FAILURE_RECOVERY_TABLE_PATH.resolve()), result.stdout)
+        self.assertIn(str(DEFAULT_DECISION_TABLES_PATH.resolve()), result.stdout)
         self.assertIn(str(CASE_MATRIX_PATH.resolve()), result.stdout)
 
     def test_offline_check_script_accepts_explicit_recovery_paths(self) -> None:
@@ -294,7 +353,7 @@ class FailureRecoveryTests(unittest.TestCase):
                 sys.executable,
                 str(REPO_ROOT / "scripts" / "check-fail-close-contract.py"),
                 "--recovery-asset",
-                str(DEFAULT_FAILURE_RECOVERY_TABLE_PATH),
+                str(LEGACY_FAILURE_RECOVERY_TABLE_PATH),
                 "--recovery-schema",
                 str(DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH),
                 "--case-matrix",

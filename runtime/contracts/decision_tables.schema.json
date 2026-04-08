@@ -10,7 +10,11 @@
     "primary_failure_priority",
     "primary_failure_families",
     "consult_readonly_contract",
-    "best_proven_resume_target"
+    "best_proven_resume_target",
+    "signal_priority_table",
+    "failure_recovery_table",
+    "side_effect_mapping_table",
+    "host_message_templates"
   ],
   "invariants_required_true": [
     "stable_truth_required_for_resolution",

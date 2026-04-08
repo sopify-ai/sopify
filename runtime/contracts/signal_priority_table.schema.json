@@ -1,0 +1,87 @@
+{
+  "schema_file_version": "1",
+  "asset_schema_version": "signal_priority_table.v1",
+  "root_order": [
+    "schema_version",
+    "asset_version",
+    "origin_precedence",
+    "evidence_rank",
+    "rows"
+  ],
+  "ordered_origins": [
+    "deterministic_rule",
+    "parser_clause_inference",
+    "semantic_classifier"
+  ],
+  "origin_precedence": {
+    "deterministic_rule": 300,
+    "parser_clause_inference": 200,
+    "semantic_classifier": 100
+  },
+  "ordered_evidence_ranks": [
+    "literal_alias",
+    "explicit_pattern",
+    "local_clause_inference",
+    "weak_semantic_hint"
+  ],
+  "evidence_rank": {
+    "literal_alias": 400,
+    "explicit_pattern": 300,
+    "local_clause_inference": 200,
+    "weak_semantic_hint": 100
+  },
+  "row_order": [
+    "signal_id",
+    "enabled_checkpoint_kinds",
+    "signal_group",
+    "target_kind",
+    "target_slot",
+    "allowed_origins",
+    "origin_evidence_cap",
+    "mutually_exclusive_with",
+    "can_coexist_with",
+    "suppresses",
+    "priority",
+    "winner_action",
+    "fallback_on_conflict",
+    "reason_code"
+  ],
+  "ordered_signal_ids": [
+    "inspect_current_checkpoint_status",
+    "analysis_only_no_write_brake",
+    "continue_current_checkpoint",
+    "cancel_current_checkpoint",
+    "retopic_current_subject"
+  ],
+  "allowed_checkpoint_kinds": [
+    "answer_questions",
+    "confirm_decision",
+    "confirm_plan_package",
+    "confirm_execute",
+    "review_or_execute_plan"
+  ],
+  "signal_groups": [
+    "inspect_request",
+    "hard_constraint",
+    "progress_action",
+    "hard_stop",
+    "route_shift"
+  ],
+  "target_kinds": [
+    "checkpoint",
+    "write_scope",
+    "host_action"
+  ],
+  "winner_actions": [
+    "stay_in_checkpoint_and_inspect",
+    "switch_to_consult_readonly",
+    "continue_checkpoint_confirmation",
+    "cancel_current_checkpoint",
+    "retopic_with_current_machine_truth"
+  ],
+  "fallback_on_conflicts": [
+    "inspect",
+    "explicit_choice_required",
+    "ambiguous"
+  ]
+}

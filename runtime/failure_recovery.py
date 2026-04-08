@@ -11,11 +11,16 @@ from typing import Any, Mapping
 
 from ._yaml import YamlParseError, load_yaml
 from .decision_tables import (
+    DEFAULT_DECISION_TABLES_PATH,
+    DecisionTableError,
     load_decision_tables,
     load_default_decision_tables,
 )
 
-DEFAULT_FAILURE_RECOVERY_TABLE_PATH = (
+DEFAULT_FAILURE_RECOVERY_TABLE_PATH = DEFAULT_DECISION_TABLES_PATH
+# Keep the standalone file as a compatibility snapshot until explicit
+# recovery-only callers are fully migrated to the unified decision asset.
+LEGACY_FAILURE_RECOVERY_TABLE_PATH = (
     Path(__file__).resolve().parent / "contracts" / "failure_recovery_table.yaml"
 )
 DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH = (
@@ -23,6 +28,15 @@ DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH = (
 )
 
 _REASON_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,3}$")
+_DECISION_TABLE_ASSET_SENTINEL_KEYS = frozenset(
+    {
+        "primary_failure_priority",
+        "failure_recovery_table",
+        "signal_priority_table",
+        "side_effect_mapping_table",
+        "host_message_templates",
+    }
+)
 
 
 class FailureRecoveryError(ValueError):
@@ -36,8 +50,9 @@ def load_default_failure_recovery_table(
 ) -> dict[str, Any]:
     """Load the repository-default failure recovery table asset."""
 
+    default_path = decision_tables_path or DEFAULT_FAILURE_RECOVERY_TABLE_PATH
     return load_failure_recovery_table(
-        DEFAULT_FAILURE_RECOVERY_TABLE_PATH,
+        default_path,
         schema_path=schema_path,
         decision_tables_path=decision_tables_path,
     )
@@ -53,15 +68,33 @@ def load_failure_recovery_table(
 
     source_path = _resolve_existing_file(path, label="Failure recovery asset")
     schema = load_failure_recovery_schema(schema_path or DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH)
-    decision_tables = (
-        load_decision_tables(decision_tables_path)
-        if decision_tables_path is not None
-        else load_default_decision_tables()
-    )
     raw_text = source_path.read_text(encoding="utf-8")
     data = _parse_yaml(raw_text)
     if not isinstance(data, dict):
         raise FailureRecoveryError(f"Failure recovery root must be a mapping: {source_path}")
+    if _looks_like_decision_tables_asset(data):
+        decision_tables = _load_decision_tables_for_failure_recovery(
+            source_path,
+            context_label="embedded failure recovery asset",
+        )
+        embedded = decision_tables["failure_recovery_table"]
+        return _validate_failure_recovery_table(
+            {
+                "schema_version": embedded["schema_version"],
+                "asset_version": embedded["asset_version"],
+                "rows": deepcopy(embedded["rows"]),
+            },
+            schema=deepcopy(schema),
+            decision_tables={
+                "primary_failure_priority": decision_tables["primary_failure_priority"],
+                "source_path": decision_tables["source_path"],
+            },
+            source_path=source_path,
+        )
+    decision_tables = _load_decision_tables_for_failure_recovery(
+        decision_tables_path,
+        context_label="failure recovery decision table context",
+    )
     return _validate_failure_recovery_table(
         deepcopy(data),
         schema=deepcopy(schema),
@@ -217,6 +250,54 @@ def evaluate_failure_recovery_case(
     return result
 
 
+def assert_failure_recovery_tables_consistent(
+    primary: Mapping[str, Any],
+    legacy: Mapping[str, Any],
+    *,
+    primary_label: str = "embedded failure_recovery_table",
+    legacy_label: str = "legacy failure_recovery_table",
+) -> None:
+    """Assert that two validated recovery tables expose the same effective rows."""
+
+    primary_schema_version = primary.get("schema_version")
+    legacy_schema_version = legacy.get("schema_version")
+    if primary_schema_version != legacy_schema_version:
+        raise FailureRecoveryError(
+            f"{primary_label} schema_version {primary_schema_version!r} does not match "
+            f"{legacy_label} schema_version {legacy_schema_version!r}"
+        )
+
+    primary_rows = primary.get("rows")
+    legacy_rows = legacy.get("rows")
+    if not isinstance(primary_rows, list) or not isinstance(legacy_rows, list):
+        raise FailureRecoveryError("Validated recovery tables must expose rows as lists")
+    if len(primary_rows) != len(legacy_rows):
+        raise FailureRecoveryError(
+            f"{primary_label} row count {len(primary_rows)} does not match "
+            f"{legacy_label} row count {len(legacy_rows)}"
+        )
+
+    for index, (primary_row, legacy_row) in enumerate(zip(primary_rows, legacy_rows)):
+        if primary_row == legacy_row:
+            continue
+        if isinstance(primary_row, Mapping) and isinstance(legacy_row, Mapping):
+            primary_key = (
+                primary_row.get("primary_failure_type"),
+                primary_row.get("required_host_action"),
+            )
+            legacy_key = (
+                legacy_row.get("primary_failure_type"),
+                legacy_row.get("required_host_action"),
+            )
+            raise FailureRecoveryError(
+                f"{primary_label} diverged from {legacy_label} at row {index}: "
+                f"{primary_key!r} != {legacy_key!r}"
+            )
+        raise FailureRecoveryError(
+            f"{primary_label} diverged from {legacy_label} at row {index}"
+        )
+
+
 def _resolve_existing_file(path: str | Path, *, label: str) -> Path:
     source_path = Path(path).resolve()
     if not source_path.exists():
@@ -231,6 +312,30 @@ def _parse_yaml(text: str) -> Any:
         return load_yaml(text)
     except YamlParseError as exc:
         raise FailureRecoveryError(str(exc)) from exc
+
+
+def _load_decision_tables_for_failure_recovery(
+    path: str | Path | None,
+    *,
+    context_label: str,
+) -> dict[str, Any]:
+    try:
+        if path is not None:
+            return load_decision_tables(path)
+        return load_default_decision_tables()
+    except DecisionTableError as exc:
+        raise FailureRecoveryError(
+            f"Failed to load {context_label}: {exc}"
+        ) from exc
+
+
+def _looks_like_decision_tables_asset(data: Mapping[str, Any]) -> bool:
+    """Detect unified decision-table assets without hard-coding one schema literal."""
+
+    schema_version = data.get("schema_version")
+    if isinstance(schema_version, str) and schema_version.startswith("decision_tables."):
+        return True
+    return _DECISION_TABLE_ASSET_SENTINEL_KEYS.issubset(data.keys())
 
 
 def _validate_failure_recovery_schema(schema: dict[str, Any], *, source_path: Path) -> dict[str, Any]:

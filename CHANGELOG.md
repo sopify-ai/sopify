@@ -6,6 +6,35 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-04-08.160810] - 2026-04-08
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/contracts/decision_tables.schema.json`
+  - `runtime/contracts/decision_tables.yaml`
+  - `runtime/contracts/host_message_templates.schema.json`
+  - `runtime/contracts/side_effect_mapping_table.schema.json`
+  - `runtime/contracts/signal_priority_table.schema.json`
+  - `runtime/decision_tables.py`
+  - `runtime/failure_recovery.py`
+  - `runtime/message_templates.py`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-fail-close-contract.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/fixtures/context_fail_close_contract.yaml`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_failure_recovery.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_message_templates.py`
+
 ## [2026-04-02.224459] - 2026-04-02
 
 ### Docs

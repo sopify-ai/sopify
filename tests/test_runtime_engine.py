@@ -2984,6 +2984,13 @@ class EngineIntegrationTests(unittest.TestCase):
             workspace = temp_root / "workspace"
             target_root.mkdir()
             workspace.mkdir()
+            git_init = subprocess.run(
+                ["git", "init", str(workspace)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(git_init.returncode, 0, msg=git_init.stderr)
 
             sync_script = REPO_ROOT / "scripts" / "sync-runtime-assets.sh"
             sync_completed = subprocess.run(

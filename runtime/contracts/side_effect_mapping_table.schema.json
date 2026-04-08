@@ -1,0 +1,61 @@
+{
+  "schema_file_version": "1",
+  "asset_schema_version": "side_effect_mapping.v1",
+  "root_order": [
+    "schema_version",
+    "asset_version",
+    "rows"
+  ],
+  "row_order": [
+    "resolved_action",
+    "checkpoint_kind",
+    "state_mutators",
+    "forbidden_state_effects",
+    "preserved_identity",
+    "handoff_protocol",
+    "terminality",
+    "reason_code"
+  ],
+  "ordered_resolved_actions": [
+    "stay_in_checkpoint_and_inspect",
+    "submit_revision_feedback",
+    "switch_to_consult_readonly",
+    "continue_checkpoint_confirmation"
+  ],
+  "checkpoint_kinds": [
+    "confirm_plan_package",
+    "confirm_decision",
+    "confirm_execute"
+  ],
+  "state_mutators": {
+    "ordered_keys": [
+      "preserve",
+      "clear",
+      "update",
+      "write"
+    ]
+  },
+  "handoff_protocol": {
+    "ordered_keys": [
+      "required_host_action",
+      "artifact_keys",
+      "resume_route",
+      "output_mode"
+    ],
+    "required_host_actions": [
+      "confirm_plan_package",
+      "continue_host_consult",
+      "continue_host_develop"
+    ],
+    "output_modes": [
+      "inspect_only",
+      "checkpoint_only",
+      "consult_answer",
+      "continue_develop"
+    ]
+  },
+  "terminalities": [
+    "checkpoint_terminal",
+    "route_terminal"
+  ]
+}

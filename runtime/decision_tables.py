@@ -6,6 +6,8 @@ from copy import deepcopy
 import json
 from json import JSONDecodeError
 from pathlib import Path
+import re
+from string import Formatter
 from typing import Any, Mapping
 
 from ._yaml import YamlParseError, load_yaml
@@ -19,6 +21,18 @@ DEFAULT_DECISION_TABLES_PATH = Path(__file__).resolve().parent / "contracts" / "
 DEFAULT_DECISION_TABLES_SCHEMA_PATH = (
     Path(__file__).resolve().parent / "contracts" / "decision_tables.schema.json"
 )
+DEFAULT_SIGNAL_PRIORITY_SCHEMA_PATH = (
+    Path(__file__).resolve().parent / "contracts" / "signal_priority_table.schema.json"
+)
+DEFAULT_SIDE_EFFECT_MAPPING_SCHEMA_PATH = (
+    Path(__file__).resolve().parent / "contracts" / "side_effect_mapping_table.schema.json"
+)
+DEFAULT_HOST_MESSAGE_TEMPLATES_SCHEMA_PATH = (
+    Path(__file__).resolve().parent / "contracts" / "host_message_templates.schema.json"
+)
+
+_REASON_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,3}$")
+_FORMATTER = Formatter()
 
 
 def load_default_decision_tables(*, schema_path: str | Path | None = None) -> dict[str, Any]:
@@ -38,6 +52,13 @@ def load_decision_tables(path: str | Path, *, schema_path: str | Path | None = N
 
     source_path = _resolve_existing_file(path, label="Decision table asset")
     schema = load_decision_tables_schema(schema_path or DEFAULT_DECISION_TABLES_SCHEMA_PATH)
+    signal_priority_schema = load_signal_priority_table_schema(DEFAULT_SIGNAL_PRIORITY_SCHEMA_PATH)
+    side_effect_mapping_schema = load_side_effect_mapping_table_schema(
+        DEFAULT_SIDE_EFFECT_MAPPING_SCHEMA_PATH
+    )
+    host_message_templates_schema = load_host_message_templates_schema(
+        DEFAULT_HOST_MESSAGE_TEMPLATES_SCHEMA_PATH
+    )
     raw_text = source_path.read_text(encoding="utf-8")
     data = _parse_yaml(raw_text)
     if not isinstance(data, dict):
@@ -45,6 +66,9 @@ def load_decision_tables(path: str | Path, *, schema_path: str | Path | None = N
     return _validate_decision_tables(
         deepcopy(data),
         schema=deepcopy(schema),
+        signal_priority_schema=deepcopy(signal_priority_schema),
+        side_effect_mapping_schema=deepcopy(side_effect_mapping_schema),
+        host_message_templates_schema=deepcopy(host_message_templates_schema),
         source_path=source_path,
     )
 
@@ -52,18 +76,43 @@ def load_decision_tables(path: str | Path, *, schema_path: str | Path | None = N
 def load_decision_tables_schema(path: str | Path) -> dict[str, Any]:
     """Load and validate the independent decision table schema asset."""
 
-    source_path = _resolve_existing_file(path, label="Decision table schema")
+    data, source_path = _load_json_mapping(path, label="Decision table schema")
+    return _validate_decision_table_schema(deepcopy(data), source_path=source_path)
+
+
+def load_signal_priority_table_schema(path: str | Path) -> dict[str, Any]:
+    """Load and validate the signal-priority schema asset."""
+
+    data, source_path = _load_json_mapping(path, label="Signal priority schema")
+    return _validate_signal_priority_table_schema(deepcopy(data), source_path=source_path)
+
+
+def load_side_effect_mapping_table_schema(path: str | Path) -> dict[str, Any]:
+    """Load and validate the side-effect mapping schema asset."""
+
+    data, source_path = _load_json_mapping(path, label="Side-effect mapping schema")
+    return _validate_side_effect_mapping_table_schema(deepcopy(data), source_path=source_path)
+
+
+def load_host_message_templates_schema(path: str | Path) -> dict[str, Any]:
+    """Load and validate the host-facing message template schema asset."""
+
+    data, source_path = _load_json_mapping(path, label="Host message template schema")
+    return _validate_host_message_templates_schema(deepcopy(data), source_path=source_path)
+
+
+def _load_json_mapping(path: str | Path, *, label: str) -> tuple[dict[str, Any], Path]:
+    source_path = _resolve_existing_file(path, label=label)
     raw_text = source_path.read_text(encoding="utf-8")
     try:
         data = json.loads(raw_text)
     except JSONDecodeError as exc:
         raise DecisionTableError(
-            "Invalid decision table schema JSON "
-            f"at {source_path}:{exc.lineno}:{exc.colno}: {exc.msg}"
+            f"Invalid {label.lower()} JSON at {source_path}:{exc.lineno}:{exc.colno}: {exc.msg}"
         ) from exc
     if not isinstance(data, dict):
-        raise DecisionTableError(f"Decision table schema root must be a mapping: {source_path}")
-    return _validate_decision_table_schema(deepcopy(data), source_path=source_path)
+        raise DecisionTableError(f"{label} root must be a mapping: {source_path}")
+    return data, source_path
 
 
 def _resolve_existing_file(path: str | Path, *, label: str) -> Path:
@@ -394,10 +443,312 @@ def _validate_best_resume_target_schema(value: Any) -> dict[str, Any]:
     }
 
 
+def _validate_signal_priority_table_schema(schema: dict[str, Any], *, source_path: Path) -> dict[str, Any]:
+    _assert_exact_keys(
+        schema,
+        (
+            "schema_file_version",
+            "asset_schema_version",
+            "root_order",
+            "ordered_origins",
+            "origin_precedence",
+            "ordered_evidence_ranks",
+            "evidence_rank",
+            "row_order",
+            "ordered_signal_ids",
+            "allowed_checkpoint_kinds",
+            "signal_groups",
+            "target_kinds",
+            "winner_actions",
+            "fallback_on_conflicts",
+        ),
+        path="schema.signal_priority_table",
+    )
+    if schema.get("schema_file_version") != "1":
+        raise DecisionTableError(
+            "Unsupported signal priority schema_file_version: "
+            f"{schema.get('schema_file_version')!r}"
+        )
+    ordered_origins = _expect_string_list(
+        schema.get("ordered_origins"),
+        path="schema.signal_priority_table.ordered_origins",
+    )
+    origin_precedence = _expect_int_mapping(
+        schema.get("origin_precedence"),
+        expected_keys=ordered_origins,
+        path="schema.signal_priority_table.origin_precedence",
+    )
+    ordered_evidence_ranks = _expect_string_list(
+        schema.get("ordered_evidence_ranks"),
+        path="schema.signal_priority_table.ordered_evidence_ranks",
+    )
+    evidence_rank = _expect_int_mapping(
+        schema.get("evidence_rank"),
+        expected_keys=ordered_evidence_ranks,
+        path="schema.signal_priority_table.evidence_rank",
+    )
+    row_order = _expect_string_list(
+        schema.get("row_order"),
+        path="schema.signal_priority_table.row_order",
+    )
+    _assert_exact_list(
+        row_order,
+        (
+            "signal_id",
+            "enabled_checkpoint_kinds",
+            "signal_group",
+            "target_kind",
+            "target_slot",
+            "allowed_origins",
+            "origin_evidence_cap",
+            "mutually_exclusive_with",
+            "can_coexist_with",
+            "suppresses",
+            "priority",
+            "winner_action",
+            "fallback_on_conflict",
+            "reason_code",
+        ),
+        path="schema.signal_priority_table.row_order",
+    )
+    schema["root_order"] = _expect_string_list(
+        schema.get("root_order"),
+        path="schema.signal_priority_table.root_order",
+    )
+    schema["ordered_origins"] = ordered_origins
+    schema["origin_precedence"] = origin_precedence
+    schema["ordered_evidence_ranks"] = ordered_evidence_ranks
+    schema["evidence_rank"] = evidence_rank
+    schema["row_order"] = row_order
+    schema["ordered_signal_ids"] = _expect_string_list(
+        schema.get("ordered_signal_ids"),
+        path="schema.signal_priority_table.ordered_signal_ids",
+    )
+    schema["allowed_checkpoint_kinds"] = _expect_string_list(
+        schema.get("allowed_checkpoint_kinds"),
+        path="schema.signal_priority_table.allowed_checkpoint_kinds",
+    )
+    schema["signal_groups"] = _expect_string_list(
+        schema.get("signal_groups"),
+        path="schema.signal_priority_table.signal_groups",
+    )
+    schema["target_kinds"] = _expect_string_list(
+        schema.get("target_kinds"),
+        path="schema.signal_priority_table.target_kinds",
+    )
+    schema["winner_actions"] = _expect_string_list(
+        schema.get("winner_actions"),
+        path="schema.signal_priority_table.winner_actions",
+    )
+    schema["fallback_on_conflicts"] = _expect_string_list(
+        schema.get("fallback_on_conflicts"),
+        path="schema.signal_priority_table.fallback_on_conflicts",
+    )
+    schema["source_path"] = str(source_path)
+    return schema
+
+
+def _validate_side_effect_mapping_table_schema(
+    schema: dict[str, Any],
+    *,
+    source_path: Path,
+) -> dict[str, Any]:
+    _assert_exact_keys(
+        schema,
+        (
+            "schema_file_version",
+            "asset_schema_version",
+            "root_order",
+            "row_order",
+            "ordered_resolved_actions",
+            "checkpoint_kinds",
+            "state_mutators",
+            "handoff_protocol",
+            "terminalities",
+        ),
+        path="schema.side_effect_mapping_table",
+    )
+    if schema.get("schema_file_version") != "1":
+        raise DecisionTableError(
+            "Unsupported side-effect mapping schema_file_version: "
+            f"{schema.get('schema_file_version')!r}"
+        )
+    root_order = _expect_string_list(
+        schema.get("root_order"),
+        path="schema.side_effect_mapping_table.root_order",
+    )
+    row_order = _expect_string_list(
+        schema.get("row_order"),
+        path="schema.side_effect_mapping_table.row_order",
+    )
+    _assert_exact_list(
+        row_order,
+        (
+            "resolved_action",
+            "checkpoint_kind",
+            "state_mutators",
+            "forbidden_state_effects",
+            "preserved_identity",
+            "handoff_protocol",
+            "terminality",
+            "reason_code",
+        ),
+        path="schema.side_effect_mapping_table.row_order",
+    )
+    ordered_resolved_actions = _expect_string_list(
+        schema.get("ordered_resolved_actions"),
+        path="schema.side_effect_mapping_table.ordered_resolved_actions",
+    )
+    checkpoint_kinds = _expect_string_list(
+        schema.get("checkpoint_kinds"),
+        path="schema.side_effect_mapping_table.checkpoint_kinds",
+    )
+    state_mutators = _expect_mapping(
+        schema.get("state_mutators"),
+        path="schema.side_effect_mapping_table.state_mutators",
+    )
+    _assert_exact_keys(
+        state_mutators,
+        ("ordered_keys",),
+        path="schema.side_effect_mapping_table.state_mutators",
+    )
+    state_mutator_keys = _expect_string_list(
+        state_mutators.get("ordered_keys"),
+        path="schema.side_effect_mapping_table.state_mutators.ordered_keys",
+    )
+    _assert_exact_list(
+        state_mutator_keys,
+        ("preserve", "clear", "update", "write"),
+        path="schema.side_effect_mapping_table.state_mutators.ordered_keys",
+    )
+    handoff_protocol = _expect_mapping(
+        schema.get("handoff_protocol"),
+        path="schema.side_effect_mapping_table.handoff_protocol",
+    )
+    _assert_exact_keys(
+        handoff_protocol,
+        ("ordered_keys", "required_host_actions", "output_modes"),
+        path="schema.side_effect_mapping_table.handoff_protocol",
+    )
+    handoff_protocol_keys = _expect_string_list(
+        handoff_protocol.get("ordered_keys"),
+        path="schema.side_effect_mapping_table.handoff_protocol.ordered_keys",
+    )
+    _assert_exact_list(
+        handoff_protocol_keys,
+        ("required_host_action", "artifact_keys", "resume_route", "output_mode"),
+        path="schema.side_effect_mapping_table.handoff_protocol.ordered_keys",
+    )
+    schema["root_order"] = root_order
+    schema["row_order"] = row_order
+    schema["ordered_resolved_actions"] = ordered_resolved_actions
+    schema["checkpoint_kinds"] = checkpoint_kinds
+    schema["state_mutators"] = {"ordered_keys": state_mutator_keys}
+    schema["handoff_protocol"] = {
+        "ordered_keys": handoff_protocol_keys,
+        "required_host_actions": _expect_string_list(
+            handoff_protocol.get("required_host_actions"),
+            path="schema.side_effect_mapping_table.handoff_protocol.required_host_actions",
+        ),
+        "output_modes": _expect_string_list(
+            handoff_protocol.get("output_modes"),
+            path="schema.side_effect_mapping_table.handoff_protocol.output_modes",
+        ),
+    }
+    schema["terminalities"] = _expect_string_list(
+        schema.get("terminalities"),
+        path="schema.side_effect_mapping_table.terminalities",
+    )
+    schema["source_path"] = str(source_path)
+    return schema
+
+
+def _validate_host_message_templates_schema(
+    schema: dict[str, Any],
+    *,
+    source_path: Path,
+) -> dict[str, Any]:
+    _assert_exact_keys(
+        schema,
+        (
+            "schema_file_version",
+            "asset_schema_version",
+            "root_order",
+            "default_locale",
+            "locales",
+            "lookup_order",
+            "allowed_variables",
+            "template_order",
+            "match_kinds",
+            "prompt_modes",
+        ),
+        path="schema.host_message_templates",
+    )
+    if schema.get("schema_file_version") != "1":
+        raise DecisionTableError(
+            "Unsupported host message templates schema_file_version: "
+            f"{schema.get('schema_file_version')!r}"
+        )
+    default_locale = _expect_non_empty_string(
+        schema.get("default_locale"),
+        path="schema.host_message_templates.default_locale",
+    )
+    locales = _expect_string_list(
+        schema.get("locales"),
+        path="schema.host_message_templates.locales",
+    )
+    if default_locale not in locales:
+        raise DecisionTableError("schema.host_message_templates.default_locale must exist in locales")
+    root_order = _expect_string_list(
+        schema.get("root_order"),
+        path="schema.host_message_templates.root_order",
+    )
+    lookup_order = _expect_string_list(
+        schema.get("lookup_order"),
+        path="schema.host_message_templates.lookup_order",
+    )
+    _assert_exact_list(
+        lookup_order,
+        ("exact_reason_code", "reason_code_family_prefix", "prompt_mode_fallback"),
+        path="schema.host_message_templates.lookup_order",
+    )
+    template_order = _expect_string_list(
+        schema.get("template_order"),
+        path="schema.host_message_templates.template_order",
+    )
+    _assert_exact_list(
+        template_order,
+        ("match_kind", "match_value", "prompt_modes", "locales"),
+        path="schema.host_message_templates.template_order",
+    )
+    schema["default_locale"] = default_locale
+    schema["locales"] = locales
+    schema["root_order"] = root_order
+    schema["lookup_order"] = lookup_order
+    schema["allowed_variables"] = _expect_string_list(
+        schema.get("allowed_variables"),
+        path="schema.host_message_templates.allowed_variables",
+    )
+    schema["template_order"] = template_order
+    schema["match_kinds"] = _expect_string_list(
+        schema.get("match_kinds"),
+        path="schema.host_message_templates.match_kinds",
+    )
+    schema["prompt_modes"] = _expect_string_list(
+        schema.get("prompt_modes"),
+        path="schema.host_message_templates.prompt_modes",
+    )
+    schema["source_path"] = str(source_path)
+    return schema
+
+
 def _validate_decision_tables(
     data: dict[str, Any],
     *,
     schema: dict[str, Any],
+    signal_priority_schema: dict[str, Any],
+    side_effect_mapping_schema: dict[str, Any],
+    host_message_templates_schema: dict[str, Any],
     source_path: Path,
 ) -> dict[str, Any]:
     _assert_exact_keys(data, tuple(schema["root_order"]), path="root")
@@ -443,6 +794,42 @@ def _validate_decision_tables(
     data["best_proven_resume_target"] = _validate_best_proven_resume_target(
         data.get("best_proven_resume_target"),
         schema=schema["best_proven_resume_target"],
+    )
+    data["signal_priority_table"] = _validate_signal_priority_table(
+        data.get("signal_priority_table"),
+        schema=signal_priority_schema,
+        source_path=source_path,
+    )
+
+    from .failure_recovery import (
+        DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH,
+        _validate_failure_recovery_table,
+        load_failure_recovery_schema,
+    )
+
+    recovery_schema = load_failure_recovery_schema(DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH)
+    embedded_recovery = _expect_mapping(
+        data.get("failure_recovery_table"),
+        path="failure_recovery_table",
+    )
+    data["failure_recovery_table"] = _validate_failure_recovery_table(
+        deepcopy(dict(embedded_recovery)),
+        schema=deepcopy(recovery_schema),
+        decision_tables={
+            "primary_failure_priority": data["primary_failure_priority"],
+            "source_path": str(source_path),
+        },
+        source_path=source_path,
+    )
+    data["side_effect_mapping_table"] = _validate_side_effect_mapping_table(
+        data.get("side_effect_mapping_table"),
+        schema=side_effect_mapping_schema,
+        source_path=source_path,
+    )
+    data["host_message_templates"] = _validate_host_message_templates(
+        data.get("host_message_templates"),
+        schema=host_message_templates_schema,
+        source_path=source_path,
     )
     data["source_path"] = str(source_path)
     data["schema_source_path"] = schema["source_path"]
@@ -626,9 +1013,520 @@ def _validate_best_proven_resume_target(
     return {"kinds": kinds, "proof_order": normalized_proof_order}
 
 
+def _validate_signal_priority_table(
+    value: Any,
+    *,
+    schema: dict[str, Any],
+    source_path: Path,
+) -> dict[str, Any]:
+    mapping = _expect_mapping(value, path="signal_priority_table")
+    _assert_exact_keys(mapping, tuple(schema["root_order"]), path="signal_priority_table")
+    if mapping.get("schema_version") != schema["asset_schema_version"]:
+        raise DecisionTableError(
+            "Unsupported signal_priority_table.schema_version: "
+            f"{mapping.get('schema_version')!r}"
+        )
+    asset_version = _expect_non_empty_string(
+        mapping.get("asset_version"),
+        path="signal_priority_table.asset_version",
+    )
+    origin_precedence = _validate_const_int_mapping(
+        mapping.get("origin_precedence"),
+        expected=schema["origin_precedence"],
+        path="signal_priority_table.origin_precedence",
+    )
+    evidence_rank = _validate_const_int_mapping(
+        mapping.get("evidence_rank"),
+        expected=schema["evidence_rank"],
+        path="signal_priority_table.evidence_rank",
+    )
+    rows = mapping.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise DecisionTableError("signal_priority_table.rows must be a non-empty list")
+    if len(rows) != len(schema["ordered_signal_ids"]):
+        raise DecisionTableError(
+            "signal_priority_table.rows must contain "
+            f"{len(schema['ordered_signal_ids'])} rows; got {len(rows)}"
+        )
+
+    normalized_rows: list[dict[str, Any]] = []
+    for index, signal_id in enumerate(schema["ordered_signal_ids"]):
+        row = _expect_mapping(rows[index], path=f"signal_priority_table.rows[{index}]")
+        _assert_exact_keys(
+            row,
+            tuple(schema["row_order"]),
+            path=f"signal_priority_table.rows[{index}]",
+        )
+        actual_signal_id = _expect_non_empty_string(
+            row.get("signal_id"),
+            path=f"signal_priority_table.rows[{index}].signal_id",
+        )
+        if actual_signal_id != signal_id:
+            raise DecisionTableError(
+                "signal_priority_table.rows must follow frozen order "
+                f"{signal_id} at index {index}; got {actual_signal_id}"
+            )
+        enabled_checkpoint_kinds = _validate_ordered_subset_list(
+            row.get("enabled_checkpoint_kinds"),
+            allowed=schema["allowed_checkpoint_kinds"],
+            path=f"signal_priority_table.rows[{index}].enabled_checkpoint_kinds",
+        )
+        signal_group = _expect_enum(
+            row.get("signal_group"),
+            schema["signal_groups"],
+            path=f"signal_priority_table.rows[{index}].signal_group",
+        )
+        target_kind = _expect_enum(
+            row.get("target_kind"),
+            schema["target_kinds"],
+            path=f"signal_priority_table.rows[{index}].target_kind",
+        )
+        target_slot = _expect_non_empty_string(
+            row.get("target_slot"),
+            path=f"signal_priority_table.rows[{index}].target_slot",
+        )
+        allowed_origins = _validate_ordered_subset_list(
+            row.get("allowed_origins"),
+            allowed=schema["ordered_origins"],
+            path=f"signal_priority_table.rows[{index}].allowed_origins",
+        )
+        origin_evidence_cap = _validate_origin_evidence_cap(
+            row.get("origin_evidence_cap"),
+            allowed_origins=allowed_origins,
+            allowed_evidence_ranks=schema["ordered_evidence_ranks"],
+            path=f"signal_priority_table.rows[{index}].origin_evidence_cap",
+        )
+        mutually_exclusive_with = _validate_ordered_subset_list(
+            _normalize_yaml_empty_list(row.get("mutually_exclusive_with")),
+            allowed=schema["ordered_signal_ids"],
+            path=f"signal_priority_table.rows[{index}].mutually_exclusive_with",
+            allow_empty=True,
+        )
+        can_coexist_with = _validate_ordered_subset_list(
+            _normalize_yaml_empty_list(row.get("can_coexist_with")),
+            allowed=schema["ordered_signal_ids"],
+            path=f"signal_priority_table.rows[{index}].can_coexist_with",
+            allow_empty=True,
+        )
+        suppresses = _expect_string_list(
+            _normalize_yaml_empty_list(row.get("suppresses")),
+            path=f"signal_priority_table.rows[{index}].suppresses",
+        )
+        priority = _expect_positive_int(
+            row.get("priority"),
+            path=f"signal_priority_table.rows[{index}].priority",
+        )
+        winner_action = _expect_enum(
+            row.get("winner_action"),
+            schema["winner_actions"],
+            path=f"signal_priority_table.rows[{index}].winner_action",
+        )
+        fallback_on_conflict = _expect_enum(
+            row.get("fallback_on_conflict"),
+            schema["fallback_on_conflicts"],
+            path=f"signal_priority_table.rows[{index}].fallback_on_conflict",
+        )
+        reason_code = _expect_reason_code(
+            row.get("reason_code"),
+            path=f"signal_priority_table.rows[{index}].reason_code",
+        )
+        normalized_rows.append(
+            {
+                "signal_id": actual_signal_id,
+                "enabled_checkpoint_kinds": enabled_checkpoint_kinds,
+                "signal_group": signal_group,
+                "target_kind": target_kind,
+                "target_slot": target_slot,
+                "allowed_origins": allowed_origins,
+                "origin_evidence_cap": origin_evidence_cap,
+                "mutually_exclusive_with": mutually_exclusive_with,
+                "can_coexist_with": can_coexist_with,
+                "suppresses": suppresses,
+                "priority": priority,
+                "winner_action": winner_action,
+                "fallback_on_conflict": fallback_on_conflict,
+                "reason_code": reason_code,
+            }
+        )
+
+    return {
+        "schema_version": mapping.get("schema_version"),
+        "asset_version": asset_version,
+        "origin_precedence": origin_precedence,
+        "evidence_rank": evidence_rank,
+        "rows": normalized_rows,
+        "source_path": str(source_path),
+        "schema_source_path": schema["source_path"],
+    }
+
+
+def _validate_side_effect_mapping_table(
+    value: Any,
+    *,
+    schema: dict[str, Any],
+    source_path: Path,
+) -> dict[str, Any]:
+    mapping = _expect_mapping(value, path="side_effect_mapping_table")
+    _assert_exact_keys(
+        mapping,
+        tuple(schema["root_order"]),
+        path="side_effect_mapping_table",
+    )
+    if mapping.get("schema_version") != schema["asset_schema_version"]:
+        raise DecisionTableError(
+            "Unsupported side_effect_mapping_table.schema_version: "
+            f"{mapping.get('schema_version')!r}"
+        )
+    asset_version = _expect_non_empty_string(
+        mapping.get("asset_version"),
+        path="side_effect_mapping_table.asset_version",
+    )
+    rows = mapping.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise DecisionTableError("side_effect_mapping_table.rows must be a non-empty list")
+    if len(rows) != len(schema["ordered_resolved_actions"]):
+        raise DecisionTableError(
+            "side_effect_mapping_table.rows must contain "
+            f"{len(schema['ordered_resolved_actions'])} rows; got {len(rows)}"
+        )
+
+    normalized_rows: list[dict[str, Any]] = []
+    for index, resolved_action in enumerate(schema["ordered_resolved_actions"]):
+        row = _expect_mapping(rows[index], path=f"side_effect_mapping_table.rows[{index}]")
+        _assert_exact_keys(
+            row,
+            tuple(schema["row_order"]),
+            path=f"side_effect_mapping_table.rows[{index}]",
+        )
+        actual_resolved_action = _expect_non_empty_string(
+            row.get("resolved_action"),
+            path=f"side_effect_mapping_table.rows[{index}].resolved_action",
+        )
+        if actual_resolved_action != resolved_action:
+            raise DecisionTableError(
+                "side_effect_mapping_table.rows must follow frozen order "
+                f"{resolved_action} at index {index}; got {actual_resolved_action}"
+            )
+        checkpoint_kind = _expect_enum(
+            row.get("checkpoint_kind"),
+            schema["checkpoint_kinds"],
+            path=f"side_effect_mapping_table.rows[{index}].checkpoint_kind",
+        )
+        state_mutators = _validate_state_mutators(
+            row.get("state_mutators"),
+            schema=schema["state_mutators"],
+            path=f"side_effect_mapping_table.rows[{index}].state_mutators",
+        )
+        forbidden_state_effects = _expect_string_list(
+            row.get("forbidden_state_effects"),
+            path=f"side_effect_mapping_table.rows[{index}].forbidden_state_effects",
+        )
+        preserved_identity = _expect_string_list(
+            row.get("preserved_identity"),
+            path=f"side_effect_mapping_table.rows[{index}].preserved_identity",
+        )
+        handoff_protocol = _validate_side_effect_handoff_protocol(
+            row.get("handoff_protocol"),
+            schema=schema["handoff_protocol"],
+            path=f"side_effect_mapping_table.rows[{index}].handoff_protocol",
+        )
+        terminality = _expect_enum(
+            row.get("terminality"),
+            schema["terminalities"],
+            path=f"side_effect_mapping_table.rows[{index}].terminality",
+        )
+        reason_code = _expect_reason_code(
+            row.get("reason_code"),
+            path=f"side_effect_mapping_table.rows[{index}].reason_code",
+        )
+        normalized_rows.append(
+            {
+                "resolved_action": actual_resolved_action,
+                "checkpoint_kind": checkpoint_kind,
+                "state_mutators": state_mutators,
+                "forbidden_state_effects": forbidden_state_effects,
+                "preserved_identity": preserved_identity,
+                "handoff_protocol": handoff_protocol,
+                "terminality": terminality,
+                "reason_code": reason_code,
+            }
+        )
+
+    return {
+        "schema_version": mapping.get("schema_version"),
+        "asset_version": asset_version,
+        "rows": normalized_rows,
+        "source_path": str(source_path),
+        "schema_source_path": schema["source_path"],
+    }
+
+
+def _validate_host_message_templates(
+    value: Any,
+    *,
+    schema: dict[str, Any],
+    source_path: Path,
+) -> dict[str, Any]:
+    mapping = _expect_mapping(value, path="host_message_templates")
+    _assert_exact_keys(
+        mapping,
+        tuple(schema["root_order"]),
+        path="host_message_templates",
+    )
+    if mapping.get("schema_version") != schema["asset_schema_version"]:
+        raise DecisionTableError(
+            "Unsupported host_message_templates.schema_version: "
+            f"{mapping.get('schema_version')!r}"
+        )
+    asset_version = _expect_non_empty_string(
+        mapping.get("asset_version"),
+        path="host_message_templates.asset_version",
+    )
+    default_locale = _expect_enum(
+        mapping.get("default_locale"),
+        schema["locales"],
+        path="host_message_templates.default_locale",
+    )
+    if default_locale != schema["default_locale"]:
+        raise DecisionTableError(
+            f"host_message_templates.default_locale must be {schema['default_locale']}"
+        )
+    lookup_order = _validate_const_string_list(
+        mapping.get("lookup_order"),
+        expected=schema["lookup_order"],
+        path="host_message_templates.lookup_order",
+    )
+    allowed_variables = _validate_const_string_list(
+        mapping.get("allowed_variables"),
+        expected=schema["allowed_variables"],
+        path="host_message_templates.allowed_variables",
+    )
+    templates = mapping.get("templates")
+    if not isinstance(templates, list) or not templates:
+        raise DecisionTableError("host_message_templates.templates must be a non-empty list")
+    normalized_templates: list[dict[str, Any]] = []
+    seen_matchers: set[tuple[str, str]] = set()
+    for index, entry in enumerate(templates):
+        row = _expect_mapping(entry, path=f"host_message_templates.templates[{index}]")
+        _assert_exact_keys(
+            row,
+            tuple(schema["template_order"]),
+            path=f"host_message_templates.templates[{index}]",
+        )
+        match_kind = _expect_enum(
+            row.get("match_kind"),
+            schema["match_kinds"],
+            path=f"host_message_templates.templates[{index}].match_kind",
+        )
+        match_value = _expect_non_empty_string(
+            row.get("match_value"),
+            path=f"host_message_templates.templates[{index}].match_value",
+        )
+        matcher_key = (match_kind, match_value)
+        if matcher_key in seen_matchers:
+            raise DecisionTableError(
+                f"Duplicate host_message_templates matcher: {match_kind}/{match_value}"
+            )
+        seen_matchers.add(matcher_key)
+        prompt_modes = _validate_ordered_subset_list(
+            row.get("prompt_modes"),
+            allowed=schema["prompt_modes"],
+            path=f"host_message_templates.templates[{index}].prompt_modes",
+        )
+        locales = _validate_localized_template_mapping(
+            row.get("locales"),
+            locales=schema["locales"],
+            allowed_variables=allowed_variables,
+            path=f"host_message_templates.templates[{index}].locales",
+        )
+        normalized_templates.append(
+            {
+                "match_kind": match_kind,
+                "match_value": match_value,
+                "prompt_modes": prompt_modes,
+                "locales": locales,
+            }
+        )
+
+    prompt_mode_fallbacks = _expect_mapping(
+        mapping.get("prompt_mode_fallbacks"),
+        path="host_message_templates.prompt_mode_fallbacks",
+    )
+    _assert_exact_keys(
+        prompt_mode_fallbacks,
+        tuple(schema["prompt_modes"]),
+        path="host_message_templates.prompt_mode_fallbacks",
+    )
+    normalized_fallbacks: dict[str, dict[str, str]] = {}
+    for prompt_mode in schema["prompt_modes"]:
+        normalized_fallbacks[prompt_mode] = _validate_localized_template_mapping(
+            prompt_mode_fallbacks.get(prompt_mode),
+            locales=schema["locales"],
+            allowed_variables=allowed_variables,
+            path=f"host_message_templates.prompt_mode_fallbacks.{prompt_mode}",
+        )
+
+    return {
+        "schema_version": mapping.get("schema_version"),
+        "asset_version": asset_version,
+        "default_locale": default_locale,
+        "lookup_order": lookup_order,
+        "allowed_variables": allowed_variables,
+        "templates": normalized_templates,
+        "prompt_mode_fallbacks": normalized_fallbacks,
+        "source_path": str(source_path),
+        "schema_source_path": schema["source_path"],
+    }
+
+
+def _validate_state_mutators(value: Any, *, schema: dict[str, Any], path: str) -> dict[str, list[str]]:
+    mapping = _expect_mapping(value, path=path)
+    _assert_exact_keys(mapping, tuple(schema["ordered_keys"]), path=path)
+    normalized: dict[str, list[str]] = {}
+    for key in schema["ordered_keys"]:
+        normalized[key] = _expect_string_list(
+            _normalize_yaml_empty_list(mapping.get(key)),
+            path=f"{path}.{key}",
+        )
+    return normalized
+
+
+def _validate_side_effect_handoff_protocol(
+    value: Any,
+    *,
+    schema: dict[str, Any],
+    path: str,
+) -> dict[str, Any]:
+    mapping = _expect_mapping(value, path=path)
+    _assert_exact_keys(mapping, tuple(schema["ordered_keys"]), path=path)
+    return {
+        "required_host_action": _expect_enum(
+            mapping.get("required_host_action"),
+            schema["required_host_actions"],
+            path=f"{path}.required_host_action",
+        ),
+        "artifact_keys": _expect_string_list(
+            mapping.get("artifact_keys"),
+            path=f"{path}.artifact_keys",
+        ),
+        "resume_route": _expect_non_empty_string(
+            mapping.get("resume_route"),
+            path=f"{path}.resume_route",
+        ),
+        "output_mode": _expect_enum(
+            mapping.get("output_mode"),
+            schema["output_modes"],
+            path=f"{path}.output_mode",
+        ),
+    }
+
+
+def _validate_localized_template_mapping(
+    value: Any,
+    *,
+    locales: list[str],
+    allowed_variables: list[str],
+    path: str,
+) -> dict[str, str]:
+    mapping = _expect_mapping(value, path=path)
+    _assert_exact_keys(mapping, tuple(locales), path=path)
+    normalized: dict[str, str] = {}
+    for locale in locales:
+        text = _expect_non_empty_string(mapping.get(locale), path=f"{path}.{locale}")
+        _validate_template_placeholders(
+            text,
+            allowed_variables=allowed_variables,
+            path=f"{path}.{locale}",
+        )
+        normalized[locale] = text
+    return normalized
+
+
+def _validate_template_placeholders(
+    template: str,
+    *,
+    allowed_variables: list[str],
+    path: str,
+) -> None:
+    try:
+        parsed = list(_FORMATTER.parse(template))
+    except ValueError as exc:
+        raise DecisionTableError(f"{path} contains invalid format syntax: {exc}") from exc
+    for _, field_name, format_spec, conversion in parsed:
+        if field_name is None:
+            continue
+        if conversion is not None:
+            raise DecisionTableError(f"{path} does not allow format conversion syntax")
+        if format_spec:
+            raise DecisionTableError(f"{path} does not allow format specifiers")
+        if field_name not in allowed_variables:
+            raise DecisionTableError(
+                f"{path} contains unsupported placeholder: {field_name}"
+            )
+
+
+def _validate_origin_evidence_cap(
+    value: Any,
+    *,
+    allowed_origins: list[str],
+    allowed_evidence_ranks: list[str],
+    path: str,
+) -> dict[str, str]:
+    mapping = _expect_mapping(value, path=path)
+    _assert_exact_keys(mapping, tuple(allowed_origins), path=path)
+    normalized: dict[str, str] = {}
+    for origin in allowed_origins:
+        normalized[origin] = _expect_enum(
+            mapping.get(origin),
+            allowed_evidence_ranks,
+            path=f"{path}.{origin}",
+        )
+    return normalized
+
+
 def _validate_const_string_list(value: Any, *, expected: list[str], path: str) -> list[str]:
     items = _expect_string_list(value, path=path)
     _assert_exact_list(items, tuple(expected), path=path)
+    return items
+
+
+def _validate_const_int_mapping(
+    value: Any,
+    *,
+    expected: Mapping[str, int],
+    path: str,
+) -> dict[str, int]:
+    mapping = _expect_mapping(value, path=path)
+    _assert_exact_keys(mapping, tuple(expected.keys()), path=path)
+    normalized: dict[str, int] = {}
+    for key, expected_value in expected.items():
+        actual_value = _expect_positive_int(mapping.get(key), path=f"{path}.{key}")
+        if actual_value != expected_value:
+            raise DecisionTableError(f"{path}.{key} must be {expected_value}")
+        normalized[key] = actual_value
+    return normalized
+
+
+def _validate_ordered_subset_list(
+    value: Any,
+    *,
+    allowed: list[str],
+    path: str,
+    allow_empty: bool = False,
+) -> list[str]:
+    items = _expect_string_list(value, path=path)
+    if not items and not allow_empty:
+        raise DecisionTableError(f"{path} must not be empty")
+    for item in items:
+        if item not in allowed:
+            raise DecisionTableError(f"{path} contains unsupported value: {item}")
+    expected_order = [candidate for candidate in allowed if candidate in items]
+    if items != expected_order:
+        wanted = ", ".join(expected_order)
+        current = ", ".join(items)
+        raise DecisionTableError(
+            f"{path} must follow frozen subset order: {wanted}; got: {current}"
+        )
     return items
 
 
@@ -649,6 +1547,46 @@ def _expect_string_list(value: Any, *, path: str) -> list[str]:
     if len(set(normalized)) != len(normalized):
         raise DecisionTableError(f"Duplicate values are not allowed at {path}")
     return normalized
+
+
+def _expect_non_empty_string(value: Any, *, path: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise DecisionTableError(f"Expected non-empty string at {path}")
+    return value
+
+
+def _expect_int_mapping(value: Any, *, expected_keys: list[str], path: str) -> dict[str, int]:
+    mapping = _expect_mapping(value, path=path)
+    _assert_exact_keys(mapping, tuple(expected_keys), path=path)
+    normalized: dict[str, int] = {}
+    for key in expected_keys:
+        normalized[key] = _expect_positive_int(mapping.get(key), path=f"{path}.{key}")
+    return normalized
+
+
+def _normalize_yaml_empty_list(value: Any) -> Any:
+    if value == "[]":
+        return []
+    return value
+
+
+def _expect_positive_int(value: Any, *, path: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise DecisionTableError(f"Expected positive integer at {path}")
+    return value
+
+
+def _expect_reason_code(value: Any, *, path: str) -> str:
+    text = _expect_non_empty_string(value, path=path)
+    if not _REASON_CODE_RE.match(text):
+        raise DecisionTableError(f"{path} must match frozen lexical form: {text!r}")
+    return text
+
+
+def _expect_enum(value: Any, allowed: list[str], *, path: str) -> str:
+    if value not in allowed:
+        raise DecisionTableError(f"{path} must be one of: {', '.join(allowed)}")
+    return str(value)
 
 
 def _assert_exact_keys(data: Mapping[str, Any], expected: tuple[str, ...], *, path: str) -> None:

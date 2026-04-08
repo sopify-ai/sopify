@@ -30,12 +30,20 @@ class DecisionTablesTests(unittest.TestCase):
             tables["best_proven_resume_target"]["kinds"],
             ["checkpoint", "plan_review", "workflow_safe_start"],
         )
+        self.assertEqual(tables["signal_priority_table"]["schema_version"], "signal_priority_table.v1")
+        self.assertEqual(tables["failure_recovery_table"]["schema_version"], "failure_recovery.v1")
+        self.assertEqual(tables["side_effect_mapping_table"]["schema_version"], "side_effect_mapping.v1")
+        self.assertEqual(tables["host_message_templates"]["schema_version"], "host_message_templates.v1")
+        self.assertEqual(tables["signal_priority_table"]["rows"][0]["mutually_exclusive_with"], [])
+        self.assertEqual(tables["side_effect_mapping_table"]["rows"][0]["state_mutators"]["clear"], [])
         self.assertEqual(Path(tables["source_path"]), DEFAULT_DECISION_TABLES_PATH.resolve())
         self.assertEqual(Path(tables["schema_source_path"]), DEFAULT_DECISION_TABLES_SCHEMA_PATH.resolve())
 
     def test_fixture_asset_loads(self) -> None:
         tables = load_decision_tables(FIXTURE_PATH)
         self.assertEqual(Path(tables["source_path"]), FIXTURE_PATH.resolve())
+        self.assertEqual(Path(tables["signal_priority_table"]["source_path"]), FIXTURE_PATH.resolve())
+        self.assertEqual(Path(tables["host_message_templates"]["source_path"]), FIXTURE_PATH.resolve())
 
     def test_reordered_resume_target_proof_is_rejected(self) -> None:
         original = FIXTURE_PATH.read_text(encoding="utf-8")
@@ -300,6 +308,22 @@ best_proven_resume_target:
                 encoding="utf-8",
             )
             with self.assertRaises(DecisionTableError):
+                load_decision_tables(asset)
+
+    def test_template_placeholder_outside_allowlist_is_rejected(self) -> None:
+        original = FIXTURE_PATH.read_text(encoding="utf-8")
+        mutated = original.replace(
+            "请先{safe_retry_hint}。",
+            "请先{unsafe_retry_hint}。",
+            1,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            asset = Path(temp_dir) / "decision_tables.yaml"
+            asset.write_text(mutated, encoding="utf-8")
+            with self.assertRaisesRegex(
+                DecisionTableError,
+                r"unsupported placeholder: unsafe_retry_hint",
+            ):
                 load_decision_tables(asset)
 
     def test_offline_check_script_passes(self) -> None:
