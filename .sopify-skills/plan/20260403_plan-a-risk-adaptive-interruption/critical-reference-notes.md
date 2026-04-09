@@ -32,6 +32,7 @@
 | 4 | Ch.5 — Skills, Hooks, Local Governance | 值得学"本地治理资产化"，不值得学"治理点越多越强" | 规则、表、模板、schema 优先落成版本化资产 | 治理层不应反过来成为新复杂度来源 |
 | 5 | Ch.6 — Delegation, Verification, State | 委派、验证、状态恢复不能混成一团；live truth / audit trail / resume hint 各有归属 | `current_handoff`（live truth） · `replay/`（audit trail） · `best_proven_resume_target`（resume hint） | 三类信息分层独立 |
 | 6 | Ch.7 — Convergence & Divergence | 殊途同归——harness 才是秩序源；但骨架分运行时共和制 vs 控制面立宪制 | Sopify 偏重**显式控制面纪律**，而非运行时临场装配 | machine truth 先于 prose；checkpoint/handoff 先于自由恢复 |
+| 7 | Ch.8 — Choose or Build | 先明确主矛盾，再决定先长哪根骨头；按事故发生顺序建，不按演示好看程度建；§8.5 顺序：高风险权限 → 主循环 → 恢复路径 → 技能/规则 → 多代理 | 已按 §8.5 顺序落地：gate（权限）→ run-id + stage 状态机（主循环）→ quarantine/escape hatch（恢复路径）→ skills 按需 + decision_tables（规则资产）；多代理尚未进入 | 当前主矛盾仍是控制面收口，不是扩展能力面；§8.3 对"先注入再抢救"的批评是 CLAUDE.md 全量注入的参照坐标（见 §3.6） |
 
 ---
 
@@ -98,6 +99,31 @@ deterministic guard   →  排除不可能动作
 ```
 
 二者不应混为同一层。
+
+### 3.6 上下文注入主轴的未收口张力（Ch.8 §8.3 延伸）
+
+**分类：可借鉴 / v1 不动注入层**
+
+文章 §8.3 批评的模式：
+
+> "先注入，再抢救。把大量 bootstrap 文件、技能说明、身份设定和工作区文本尽量塞进 prompt，超了再靠截断、compact 和恢复链补锅。"
+
+| 维度 | 现状 | 评估 |
+|------|------|------|
+| CLAUDE.md 注入方式 | 常驻全量注入，每次请求都在 context 里 | 属于"先装进去"，不是"先决定哪层需要保住" |
+| 缓解手段 | skills 按需读取；`preferences_preload_runtime.py` 在 gate 内限范围注入；session 状态不平铺在 prompt 里 | 已做 Codex 式治理，但仅覆盖注入层的边缘 |
+| 尚未收口的点 | CLAUDE.md 本体体量若持续增长，是宿主 context 膨胀的第一个暴露点 | 当前程度下不是颠覆性问题 |
+
+**与 Plan A 的钩子：**
+
+`3.x Local Context Builder`（最小上下文块、限制 assistant prose 污染）是这个问题在**分类器输入侧**的响应——收窄进入裁决链的信号源，防止 prose 稀释有效信号。这与注入主轴是同一问题的两个截面：
+
+```
+注入侧（当前不动）   ←  CLAUDE.md 全量注入
+输入侧（Plan A v1）  ←  3.x Local Context Builder 压缩分类器输入
+```
+
+注入侧本身的治理（把 CLAUDE.md 某些块做成按需激活的 typed fragment）参照的是文章 §8.3 + L1 路线（`路线图 §6.4`），不在 v1 范围，不应为此提前引入复杂度。
 
 ---
 

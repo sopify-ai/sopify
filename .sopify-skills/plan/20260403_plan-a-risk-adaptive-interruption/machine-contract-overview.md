@@ -224,7 +224,7 @@ Side-Effect Mapping
 
 | 阶段 | 输入 | 输出 | 不能做什么 |
 | --- | --- | --- | --- |
-| `Deterministic Guard` | `allowed_response_mode`, `required_host_action`, `current_run.stage`, `checkpoint_request`, `execution_gate` | 裁掉当前不可能动作 | 不能让语义层越过 machine fact |
+| `Deterministic Guard` | 基于 machine fact 的 proof surface：`allowed_response_mode` × `required_host_action` 一致性、`checkpoint_request.checkpoint_kind` 与 action 的映射校验（`_CHECKPOINT_REQUEST_KIND_BY_ACTION`）、plan identity proof（`plan_id` / `plan_path` / `current_plan`）、`current_run.stage`、`execution_gate` | 裁掉当前不可能动作；proof 不够时 fail-close 到 `contract_invalid` | 不能让语义层越过 machine fact |
 | `Local Context Builder` | 当前用户输入、最近 1-3 条相关用户消息、checkpoint 摘要、允许动作集合 | 局部上下文块 | 不能直接下放整段聊天与 assistant prose |
 | `Signal Extraction + Action Projection` | parser-first 候选信号 + 当前 checkpoint 的最小动作面 | 候选信号与动作面 | classifier 不能直接输出最终动作 |
 | `Signal Priority Resolution` | 候选信号 | `resolved / ambiguous / no_candidate` | 规则信号不能被弱语义提示压过 |
@@ -235,10 +235,13 @@ Side-Effect Mapping
 
 | checkpoint / 场景 | 最小动作面 | 当前状态 |
 | --- | --- | --- |
+| `answer_questions` | `missing_facts`, `questions`, `allowed_actions=[answer, inspect, cancel]` | 设计已明确 |
+| `confirm_decision` | `question`, `options`, `recommended_option_id`, `allowed_actions=[choose, status, cancel]` | 设计已明确 |
 | `confirm_plan_package` | `analysis_summary`, `proposed_path`, `estimated_task_count`, `allowed_actions=[confirm, inspect, revise, cancel, retopic]` | 设计已明确 |
 | `confirm_execute` | `plan_path`, `risk_level`, `key_risk`, `mitigation`, `allowed_actions=[confirm, inspect, revise, cancel]` | 设计已明确 |
+| `review_or_execute_plan` | `plan_id`, `plan_path`, `run_stage`, `next_required_action`, `summary`(可选), `task_count`(可选), `risk_level`(可选), `key_risk`(可选), `mitigation`(可选), `allowed_actions=[continue, inspect, revise, cancel]` | 设计已明确 |
+| `continue_host_consult` | `consult_mode`, `allowed_actions=[consult, block]` | 设计已明确 |
 | `continue_host_develop` | `active_run_stage`, `task_refs`, `changed_files`, `verification_todo`, `allowed_actions=[continue, checkpoint, consult, block]` | 设计已明确 |
-| `confirm_decision` | `question`, `options`, `recommended_option_id`，运行态允许 `choose / status / cancel` | runtime 已有语义面，Plan A 设计稿尚未单列 projection 表 |
 
 ## 10. 信号、恢复与副作用闭环
 
@@ -307,9 +310,10 @@ Side-Effect Mapping
 
 以下内容应继续视为设计空档，而不是已完整落地的 live runtime matrix：
 
-1. `confirm_decision` 的 Action Projection 尚未像 proposal / execute 一样单独冻结成表
-2. Host Output Adapter Matrix 仍未完整成型，目前冻结的是模板规则，不是完整 adapter 层
-3. `cancel_current_checkpoint` 的副作用映射样例仍可继续补齐
+1. Host Output Adapter Matrix 仍未完整成型，目前冻结的是模板规则，不是完整 adapter 层
+2. `cancel_current_checkpoint` 的副作用映射样例仍可继续补齐
+3. **handoff 导出层缺入口**：每次 guarded handoff 会附带 `deterministic_guard`、`action_projection`、`resolution_planner`、`sidecar_classifier_boundary`、`vnext_phase_boundary` 五个 artifact（见 `runtime/handoff.py` `_attach_v1_guardrail_artifacts`），但本文尚未为它们建立交叉引用入口
+4. **V1 scope registry 缺入口**：`runtime/context_v1_scope.py` 作为 V1 边界常量注册表与越界阻断守卫，本文尚未在 V1 scope / side-effect guard 位置建立引用
 
 ## 14. Read Next
 
