@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
 SUPPORTED_CHECKPOINT_KINDS_V1 = (
@@ -89,6 +89,8 @@ V1_ROLLBACK_POLICY = (
     "do_not_reopen_observe_only_contract_assets_in_scope_finalize",
     "move_out_of_scope_contract_expansion_to_followup_branch",
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ContextV1ScopeError(ValueError):
@@ -321,6 +323,14 @@ def _normalize_repo_path(path: str) -> str:
         normalized = normalized[2:]
     if not normalized:
         raise ContextV1ScopeError("Repository path must be non-empty")
+    candidate_path = Path(normalized)
+    if candidate_path.is_absolute():
+        try:
+            normalized = candidate_path.resolve(strict=False).relative_to(_REPO_ROOT).as_posix()
+        except ValueError as exc:
+            raise ContextV1ScopeError(
+                f"Repository path must stay within workspace root: {path!r}"
+            ) from exc
     collapsed = str(PurePosixPath(normalized))
     if collapsed in {".", ""} or collapsed.startswith("../"):
         raise ContextV1ScopeError(f"Repository path must stay within workspace root: {path!r}")

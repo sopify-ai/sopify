@@ -34,7 +34,12 @@ from runtime.deterministic_guard import (
     evaluate_deterministic_guard,
     expected_allowed_response_mode,
 )
-from runtime.decision_tables import load_default_decision_tables
+from runtime.decision_tables import (
+    DEFAULT_DECISION_TABLES_PATH,
+    DecisionTableError,
+    load_decision_tables,
+    load_default_decision_tables,
+)
 from runtime.resolution_planner import (
     ResolutionPlanner,
     ResolutionPlannerError,
@@ -200,6 +205,22 @@ class ContextV1ScopeTests(unittest.TestCase):
                 ["runtime/decision.py"],
                 checkpoint_b_passed=True,
             )
+
+    def test_v1_file_map_normalizes_repo_internal_absolute_paths(self) -> None:
+        accepted = assert_v1_implementation_file_map(
+            [str(REPO_ROOT / "runtime" / "handoff.py")],
+            checkpoint_b_passed=True,
+        )
+
+        self.assertEqual(accepted, ("runtime/handoff.py",))
+
+    def test_v1_file_map_rejects_absolute_paths_outside_workspace_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(ContextV1ScopeError, r"workspace root"):
+                assert_v1_implementation_file_map(
+                    [str(Path(temp_dir) / "outside.py")],
+                    checkpoint_b_passed=True,
+                )
 
     def test_v1_ready_to_start_requires_checkpoint_a_b_and_local_freeze(self) -> None:
         with self.assertRaisesRegex(ContextV1ScopeError, r"Checkpoint A"):
@@ -556,6 +577,35 @@ class ResolutionPlannerTests(unittest.TestCase):
     def test_resolution_planner_only_applies_to_signal_resolution_actions(self) -> None:
         self.assertTrue(supports_resolution_planner("confirm_execute"))
         self.assertFalse(supports_resolution_planner("continue_host_develop"))
+
+    def test_resolution_planner_fails_closed_when_default_tables_escape_v1_scope(self) -> None:
+        guard = evaluate_deterministic_guard(
+            allowed_response_mode=CHECKPOINT_ONLY,
+            required_host_action="confirm_execute",
+            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+        )
+        mutated_asset = DEFAULT_DECISION_TABLES_PATH.read_text(encoding="utf-8").replace(
+            "        update:\n          - current_run\n",
+            "        update:\n          - current_handoff\n",
+            1,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            asset_path = Path(temp_dir) / "decision_tables.yaml"
+            asset_path.write_text(mutated_asset, encoding="utf-8")
+
+            with patch(
+                "runtime.resolution_planner.load_default_decision_tables",
+                side_effect=lambda: load_decision_tables(asset_path),
+            ):
+                import runtime.resolution_planner as resolution_planner
+
+                resolution_planner._load_resolution_registry.cache_clear()
+                try:
+                    with self.assertRaisesRegex(DecisionTableError, r"exceed current V1 scope"):
+                        build_resolution_planner(guard)
+                finally:
+                    resolution_planner._load_resolution_registry.cache_clear()
 
 
 class SidecarClassifierBoundaryTests(unittest.TestCase):
