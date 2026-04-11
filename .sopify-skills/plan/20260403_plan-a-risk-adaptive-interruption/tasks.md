@@ -26,6 +26,86 @@ plan_status: design_active
 - 后续文档更新以实施期账本维护为主，不再阻断 v1 implementation 启动。
 - `feature/context-boundary-core` 的历史 spike 身份仍保留为 `tracked spike / non-checkpoint-credit / no runtime wiring`；但其资产已通过 A/B/C 治理门并并入当前单一账本。
 
+## V1 收尾 Checklist（2026-04-11 对齐）
+
+> 说明：本节用于区分 `Ready-for-V1-Execution`、`Implementation-Closed`、`State-Clean`、`Finalized` 四层口径。
+> 其中 `Ready-for-V1-Execution` 只表示允许进入受控 implementation，不等同于 V1 已真实收尾。
+
+### 1. V1-Execution-Ready
+
+硬门槛：
+
+- Checkpoint A/B/C 已通过，满足 `Ready-for-V1-Execution` 的 Acceptance Gate。
+- runtime 当前活动真相显示 `gate_status=ready`、`next_required_action=confirm_execute`、`run_stage=ready_for_execution`。
+
+软门槛：
+
+- handoff 对外摘要与 execution gate 主结论一致，且不会把遗留 checkpoint carrier 误读为新的执行阻断。
+
+当前状态：
+
+- 硬门槛已达成。
+- 软门槛存在已知偏差；active handoff 仍带有 legacy checkpoint carrier，需在 `V1-State-Clean` 层收口。
+
+### 2. V1-Implementation-Closed
+
+硬门槛：
+
+- 实现仅落在 v1 allowlist：`runtime/action_projection.py`、`runtime/context_builder.py`、`runtime/context_v1_scope.py`、`runtime/deterministic_guard.py`、`runtime/handoff.py`、`runtime/resolution_planner.py`，以及配套测试 `tests/test_context_v1_scope.py`、`tests/test_runtime_engine.py`。
+- observe-only surfaces 保持只读，不越界修改。
+- scope guard / runtime 回归测试通过。
+- `13.1` 的 v1 基础统计口径（`reason_code / outcome / fallback_path / checkpoint_kind`）完成收口。
+
+软门槛：
+
+- rollout / rollback 说明可回放，可说明“本轮改了什么 / 没改什么”。
+
+当前状态：
+
+- 部分达成。
+- allowlist、observe-only 边界和回归资产已落地；但 `13.1` 仍未完成，因此本层不判定为已闭环。
+
+### 3. V1-State-Clean
+
+硬门槛：
+
+- `current_run / current_handoff / current_decision` 对外只表达一套活跃事实。
+- 不再出现一边显示 `confirm_execute`，另一边仍保留旧 `decision_pending / auth_boundary` 阻断 carrier 的情况。
+- legacy/quarantine debt 已迁移为非活跃债务载体，或被明确清理。
+
+软门槛：
+
+- 重复进入 gate 时，无需依赖人工解释“这是旧 carrier”，系统可稳定返回同一执行真相。
+
+当前状态：
+
+- 未达成。
+- 当前 active `current_run` 已显示 `confirm_execute`，但 active `current_handoff` 仍挂有旧 `checkpoint_request` 与 `decision_status=pending`。
+
+### 4. V1-Finalized
+
+硬门槛：
+
+- `knowledge_sync` 不再为 `review`。
+- `plan_status` 不再为 `design_active`。
+- `archive_ready=true`。
+- blueprint / history / finalize 流程完成，plan 从“设计中/待评审”切换为“已收口/可归档真相”。
+
+软门槛：
+
+- 后续读者无需再读取 session state 才能理解 V1 的收口结论、遗留债与进入 v2 的前提。
+
+当前状态：
+
+- 未达成。
+
+### 建议先后顺序
+
+1. 固化 `V1-Execution-Ready` 为已完成前提，不再重复讨论。
+2. 先补完 `V1-Implementation-Closed`，优先完成 `13.1`。
+3. 再清理 `V1-State-Clean`，把旧 `auth_boundary` pending carrier 从 active truth 中移除。
+4. 最后完成 `V1-Finalized`，再判断是否允许进入 v2。
+
 **导航：** Checkpoint A 前的颗粒度补齐范围，以 design.md §分支拆分、分批合并与 Checkpoint 卡点 和各 Checkpoint 必填决策为准；本任务清单各条任务是执行真相源。
 
 **解锁索引（导航，非第二份真相源）：**

@@ -1073,6 +1073,8 @@ v1 的标准逃生动作默认冻结为自然语言 `取消` / `强制取消`；
 
 ## Acceptance Gate（分层）
 
+补充说明：V1 的真实收尾口径采用 `Execution-Ready / Implementation-Closed / State-Clean / Finalized` 四层定义；执行期真相源与当前状态判断见 `tasks.md` 对应章节。
+
 ### Ready-for-V1-Execution 必须满足
 
 1. A-1 ~ A-8 已完成按语义类分组与优先级排序
