@@ -17,6 +17,7 @@ from installer.hosts import get_host_capability, iter_declared_hosts, iter_insta
 from installer.hosts.base import install_host_assets
 from installer.hosts.claude import CLAUDE_ADAPTER
 from installer.hosts.codex import CODEX_ADAPTER
+from installer.hosts.trae_cn import TRAE_CN_ADAPTER
 from installer.inspection import build_doctor_payload, build_status_payload, render_doctor_text, render_status_text
 from installer.payload import _REQUIRED_BUNDLE_CAPABILITIES, install_global_payload, run_workspace_bootstrap
 from installer.validate import validate_host_install, validate_payload_install
@@ -112,23 +113,76 @@ class HostCapabilityRegistryTests(unittest.TestCase):
     def test_registry_returns_complete_capabilities_for_declared_hosts(self) -> None:
         codex = get_host_capability("codex")
         claude = get_host_capability("claude")
+        trae_cn = get_host_capability("trae-cn")
 
         self.assertEqual(codex.support_tier.value, "deep_verified")
         self.assertEqual(claude.support_tier.value, "deep_verified")
+        self.assertEqual(trae_cn.support_tier.value, "experimental")
         self.assertTrue(codex.install_enabled)
         self.assertTrue(claude.install_enabled)
+        self.assertTrue(trae_cn.install_enabled)
         self.assertIn("runtime_gate", [feature.value for feature in codex.verified_features])
         self.assertIn("smoke_verified", [feature.value for feature in claude.verified_features])
+        self.assertEqual(
+            [feature.value for feature in trae_cn.verified_features],
+            ["prompt_install", "payload_install"],
+        )
+        self.assertIn("workspace_ingress_proof", trae_cn.doctor_checks)
 
     def test_installable_hosts_only_return_install_enabled_entries(self) -> None:
         installable = [capability.host_id for capability in iter_installable_hosts()]
         declared = [capability.host_id for capability in iter_declared_hosts()]
 
-        self.assertEqual(set(installable), {"codex", "claude"})
-        self.assertEqual(set(declared), {"codex", "claude"})
+        self.assertEqual(set(installable), {"codex", "claude", "trae-cn"})
+        self.assertEqual(set(declared), {"codex", "claude", "trae-cn"})
 
 
 class StatusDoctorContractTests(unittest.TestCase):
+    def test_trae_cn_status_and_doctor_with_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as workspace_dir:
+            home_root = Path(home_dir)
+            workspace_root = Path(workspace_dir)
+            now = datetime(2026, 4, 13, 12, 0, tzinfo=timezone.utc)
+
+            install_host_assets(TRAE_CN_ADAPTER, repo_root=REPO_ROOT, home_root=home_root, language_directory="CN")
+            install_global_payload(TRAE_CN_ADAPTER, repo_root=REPO_ROOT, home_root=home_root)
+            run_workspace_bootstrap(TRAE_CN_ADAPTER.payload_root(home_root), workspace_root)
+            _write_gate_receipt(
+                workspace_root,
+                ingress_mode="runtime_gate_enter",
+                written_at=now.isoformat(),
+            )
+
+            with mock.patch("installer.inspection._utc_now", return_value=now):
+                status_payload = build_status_payload(home_root=home_root, workspace_root=workspace_root)
+                trae_cn_host = next(host for host in status_payload["hosts"] if host["host_id"] == "trae-cn")
+                self.assertEqual(trae_cn_host["support_tier"], "experimental")
+                self.assertEqual(trae_cn_host["state"]["installed"], "yes")
+                self.assertEqual(trae_cn_host["state"]["configured"], "yes")
+                self.assertEqual(trae_cn_host["state"]["workspace_bundle_healthy"], "yes")
+                self.assertEqual(trae_cn_host["state"]["workspace_ingress_proof"], "yes")
+                self.assertEqual(trae_cn_host["payload_bundle"]["reason_code"], "PAYLOAD_BUNDLE_READY")
+                self.assertEqual(
+                    trae_cn_host["workspace_ingress_proof"]["reason_code"],
+                    "INGRESS_PROOF_GATE_ENTER_OBSERVED",
+                )
+
+                doctor_payload = build_doctor_payload(home_root=home_root, workspace_root=workspace_root)
+                ingress_check = next(
+                    check
+                    for check in doctor_payload["checks"]
+                    if check["host_id"] == "trae-cn" and check["check_id"] == "workspace_ingress_proof"
+                )
+                workspace_check = next(
+                    check
+                    for check in doctor_payload["checks"]
+                    if check["host_id"] == "trae-cn" and check["check_id"] == "workspace_bundle_manifest"
+                )
+                self.assertEqual(workspace_check["status"], "pass")
+                self.assertEqual(workspace_check["reason_code"], "STUB_SELECTED")
+                self.assertEqual(ingress_check["status"], "pass")
+                self.assertEqual(ingress_check["reason_code"], "INGRESS_PROOF_GATE_ENTER_OBSERVED")
+
     def test_status_payload_supports_workspace_not_requested(self) -> None:
         with tempfile.TemporaryDirectory() as home_dir:
             home_root = Path(home_dir)

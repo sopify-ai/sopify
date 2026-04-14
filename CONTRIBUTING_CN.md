@@ -12,7 +12,7 @@
 ## Prompt 层与 Skill Authoring
 
 - `Codex/Skills/{CN,EN}` 是 prompt-layer 真源。
-- `Claude/Skills/{CN,EN}` 是宿主镜像层，不应独立手工维护。
+- `Claude/Skills/{CN,EN}` 与 `TraeCn/Skills/{CN,EN}` 是宿主镜像层，不应独立手工维护。
 - `runtime/builtin_skill_packages/*/skill.yaml` 是 builtin machine metadata 真源。
 - Skill package 变更时，参考 [Codex/Skills/CN/skills/sopify/](./Codex/Skills/CN/skills/sopify/) / [Codex/Skills/EN/skills/sopify/](./Codex/Skills/EN/skills/sopify/) 下各自的 `SKILL.md`。
 
@@ -46,7 +46,7 @@ python3 scripts/check-install-payload-bundle-smoke.py
 
 Bundle 规则：
 
-- 全局 payload 位于 `~/.codex/sopify/` 或 `~/.claude/sopify/`
+- 全局 payload 位于 `~/.codex/sopify/`、`~/.claude/sopify/` 或 `~/.trae-cn/sopify/`
 - 工作区内的 `.sopify-runtime/manifest.json` 只作为 thin stub，不再承诺携带 `limits.runtime_gate_entry / limits.preferences_preload_entry`
 - 宿主必须结合 workspace stub 与 payload manifest 解析 selected global bundle，再从选中 bundle contract 或等价 preflight contract 发现 helper 入口
 - 宿主第一跳统一走 selected bundle 的 `runtime_gate_entry`；只有 repo-local 开发态才直接调用 `scripts/runtime_gate.py enter`
@@ -82,7 +82,7 @@ curl -fsSL https://github.com/sopify-ai/sopify/releases/latest/download/install.
 - root `install.sh` / `install.ps1` 必须保持 thin wrapper，只负责下载同 ref 的 GitHub source archive 并调用 `scripts/install_sopify.py`
 - `main` 分支里的 root 脚本保留 dev 默认值（`SOURCE_CHANNEL=dev`、`SOURCE_REF=main`）
 - stable release asset 必须由 root 脚本按 release tag 渲染后上传，不能直接上传 `main` 上的原文件
-- 分发层必须继续走 host registry，不允许在 installer 入口里硬编码 `codex` / `claude` 分支；README 只控制当前正式支持面的展示
+- 分发层必须继续走 host registry，不允许在 installer 入口里硬编码 `codex` / `claude` 分支；README 应展示宿主可用性矩阵，并在 repo 侧路径就绪后纳入实验性 install target
 - `--workspace <path>` 当前只保留给 maintainer / internal prewarm 调试，不属于 B1 默认用户路径；正式路径是先完成全局安装，再在项目里第一次触发 Sopify，由 runtime gate 完成 bootstrap
 
 release asset 渲染 checklist：

@@ -8,7 +8,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![Version](https://img.shields.io/badge/version-2026--04--13.144221-orange.svg)](#version-history)
+[![Version](https://img.shields.io/badge/version-2026--04--14.175552-orange.svg)](#version-history)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 English · [简体中文](./README.zh-CN.md) · [Quick Start](#quick-start) · [Configuration](#configuration) · [Contributors](./CONTRIBUTORS.md)
@@ -73,25 +73,27 @@ bash scripts/install-sopify.sh --target codex:en-US
 python3 scripts/install_sopify.py --target claude:en-US --workspace /path/to/project
 ```
 
-Supported `target` values:
+Install targets:
 
 - `codex:zh-CN`
 - `codex:en-US`
 - `claude:zh-CN`
 - `claude:en-US`
+- `trae-cn:zh-CN`
+- `trae-cn:en-US`
 
-Current supported host matrix:
+Host availability matrix:
 
-| Host | Support Level | Validation Coverage | Notes |
-|------|---------------|---------------------|-------|
-| `codex` | Fully supported | Host install flow, workspace bootstrap, and runtime package smoke are verified | Suitable for daily use |
-| `claude` | Fully supported | Host install flow, workspace bootstrap, and runtime package smoke are verified | Suitable for daily use |
+| Host | Install target | Availability | Validation coverage | Notes |
+|------|----------------|--------------|---------------------|-------|
+| `codex` | `codex:zh-CN` / `codex:en-US` | Deep verified | Host install flow, workspace bootstrap, and runtime package smoke are verified | Suitable for daily use |
+| `claude` | `claude:zh-CN` / `claude:en-US` | Deep verified | Host install flow, workspace bootstrap, and runtime package smoke are verified | Suitable for daily use |
+| `trae-cn` | `trae-cn:zh-CN` / `trae-cn:en-US` | Experimental | Repo-side host install, payload install, workspace bootstrap, and status/doctor coverage are in place | Install target available. Repo-side integration ready. Trae CN IDE smoke is still pending. |
 
 Notes:
 
-- Only `codex / claude` are formally supported in the current release
-- README only lists formally supported hosts; use `sopify status` / `sopify doctor` for detailed capability claims and live diagnostics
-- `Support Level` expresses product commitment, while `Validation Coverage` describes what has already been validated
+- Use `sopify status` / `sopify doctor` for detailed capability claims and live diagnostics
+- `Availability` expresses the current delivery tier, while `Validation coverage` describes what has already been validated
 
 Installer behavior:
 
@@ -121,7 +123,7 @@ python3 scripts/sopify_doctor.py --format text
 
 ### First Use
 
-After install, open Codex or Claude inside a repository and paste one of the prompts below.
+After install, open your selected host inside a repository and paste one of the prompts below.
 
 ```bash
 # Simple task

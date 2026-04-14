@@ -8,7 +8,7 @@
 
 [![许可证](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![文档](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![版本](https://img.shields.io/badge/version-2026--04--13.144221-orange.svg)](#版本历史)
+[![版本](https://img.shields.io/badge/version-2026--04--14.175552-orange.svg)](#版本历史)
 [![欢迎PR](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING_CN.md)
 
 [English](./README.md) · 简体中文 · [快速开始](#快速开始) · [配置说明](#配置说明) · [贡献者](./CONTRIBUTORS.md)
@@ -73,25 +73,27 @@ bash scripts/install-sopify.sh --target codex:zh-CN
 python3 scripts/install_sopify.py --target claude:zh-CN --workspace /path/to/project
 ```
 
-支持的 `target`：
+安装 target：
 
 - `codex:zh-CN`
 - `codex:en-US`
 - `claude:zh-CN`
 - `claude:en-US`
+- `trae-cn:zh-CN`
+- `trae-cn:en-US`
 
-当前正式支持矩阵：
+当前宿主可用性矩阵：
 
-| 宿主 | 支持级别 | 验证范围 | 说明 |
-|------|----------|----------|------|
-| `codex` | 正式支持 | 已验证宿主安装链路、workspace bootstrap，且运行时包已通过 smoke 验证 | 适合日常使用 |
-| `claude` | 正式支持 | 已验证宿主安装链路、workspace bootstrap，且运行时包已通过 smoke 验证 | 适合日常使用 |
+| 宿主 | 安装 target | 可用性 | 验证范围 | 说明 |
+|------|-------------|--------|----------|------|
+| `codex` | `codex:zh-CN` / `codex:en-US` | Deep verified | 已验证宿主安装链路、workspace bootstrap，且运行时包已通过 smoke 验证 | 适合日常使用 |
+| `claude` | `claude:zh-CN` / `claude:en-US` | Deep verified | 已验证宿主安装链路、workspace bootstrap，且运行时包已通过 smoke 验证 | 适合日常使用 |
+| `trae-cn` | `trae-cn:zh-CN` / `trae-cn:en-US` | Experimental | 已具备 repo 侧宿主安装、payload 安装、workspace bootstrap 与 status/doctor 覆盖 | install target 已可用，repo 侧接入已就绪，Trae CN IDE smoke 仍待完成 |
 
 说明：
 
-- 当前正式支持只有 `codex / claude`
-- README 只展示当前正式支持宿主；更细的 capability claim 与现场诊断请看 `sopify status` / `sopify doctor`
-- “支持级别”表示产品承诺层级；“验证范围”表示当前已经验证到哪一层
+- 更细的 capability claim 与现场诊断请看 `sopify status` / `sopify doctor`
+- “可用性”表示当前交付层级；“验证范围”表示当前已经验证到哪一层
 
 安装后行为：
 
@@ -121,7 +123,7 @@ python3 scripts/sopify_doctor.py --format text
 
 ### 首次使用
 
-安装完成后，在仓库目录中打开 Codex 或 Claude，直接粘贴下面任一条提示即可开始。
+安装完成后，在仓库目录中打开你选择的宿主，直接粘贴下面任一条提示即可开始。
 
 ```bash
 # 简单任务

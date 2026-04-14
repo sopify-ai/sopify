@@ -95,6 +95,7 @@ def install_host_assets(
     destination_root.mkdir(parents=True, exist_ok=True)
 
     header_destination = destination_root / adapter.header_filename
+    header_destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(header_source, header_destination)
 
     skills_destination = destination_root / "skills" / "sopify"
