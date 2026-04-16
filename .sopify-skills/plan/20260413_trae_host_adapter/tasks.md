@@ -16,8 +16,9 @@ archive_ready: false
 ## 当前切片边界
 
 - 第一切片与 README / CONTRIBUTING 口径调整原子绑定
-- 第一切片执行范围：`1.1-1.6 + 2.8-2.11`
-- `1.7-1.9 + 2.12/2.13` 后移到第二切片，避免在首轮把 sync / release hook fixture 一并做重
+- 第一切片执行范围：`1.1-1.6 + 2.8-2.11` ✅ 已完成
+- 第二切片执行范围：`1.7-1.9 + 2.4-2.7 + 2.12-2.13` ✅ 已完成
+- 下一步：Phase 3（真实 IDE smoke + tier 升级）
 
 ## Phase 0 — 范围澄清与可行性记录
 
@@ -78,18 +79,20 @@ archive_ready: false
 
 ### 1D. prompt-layer source of truth / sync
 
-- [ ] 1.7 明确并落地 canonical source
+- [x] 1.7 明确并落地 canonical source
   - `Codex/Skills/{CN,EN}` 作为 canonical source
   - `Claude/Skills/*` 与 `TraeCn/Skills/*` 视为 generated mirrors
 
-- [ ] 1.8 改造 `scripts/sync-skills.sh`
+- [x] 1.8 改造 `scripts/sync-skills.sh`
   - 在现有 `Codex -> Claude` 同步基础上，增加 `Codex -> TraeCn`
   - header 路径替换覆盖 `~/.codex/` → `~/.trae-cn/`
   - 输出 `user_rules/sopify.md` 与 `skills/sopify/*`
+  - 新增 `render_trae_cn_header()` + `sync_trae_cn_lang()`
 
-- [ ] 1.9 改造 `scripts/check-skills-sync.sh`
+- [x] 1.9 改造 `scripts/check-skills-sync.sh`
   - 校验 Trae CN 镜像是否与 canonical source 一致
   - 校验 header 路径替换结果与目标文件布局
+  - 新增 `render_expected_trae_cn_header()` + `check_trae_cn_lang()`
 
 - [ ] 1.10 明确 runtime config v1 策略
   - 不修改 `runtime/config.py`
@@ -128,21 +131,24 @@ archive_ready: false
 
 ### 2C. release / doc / version 自动化接入
 
-- [ ] 2.4 改造 `scripts/release-sync.sh`
-  - release 时同步更新 Trae CN header 的 `SOPIFY_VERSION`
-  - 不再假设只有 Codex / Claude 两宿主
+- [x] 2.4 改造 `scripts/release-sync.sh`
+  - 确认 release-sync.sh 更新 Codex version → sync-skills.sh 已自动传播到 TraeCn
+  - 无需额外改动，版本通过 sync 管线传播
 
-- [ ] 2.5 改造 `scripts/check-version-consistency.sh`
+- [x] 2.5 改造 `scripts/check-version-consistency.sh`
   - 将 Trae CN header 纳入版本一致性检查
   - 版本 mismatch 时对 `trae-cn` 给出明确报错
+  - 添加 TRAE_CN_CN / TRAE_CN_EN 到 required_files 和 header_versions
 
-- [ ] 2.6 改造 `scripts/check-readme-links.py`
+- [x] 2.6 改造 `scripts/check-readme-links.py`
   - 将 Trae CN 文档入口/版本头纳入公共文档校验
   - 保证 README/贡献文档中新增的 Trae CN 链接可校验
+  - 补充 EXPECTED_LEVEL2_SECTIONS: "What You Get After Install" / "安装后你会得到什么"
 
-- [ ] 2.7 改造 `.githooks/pre-commit`
+- [x] 2.7 改造 `.githooks/pre-commit`
   - 将 Trae CN prompt-layer 产物加入 release snapshot 与 `git add` 管理范围
   - 保持 release hook 对受管文件集的原子回滚语义
+  - 三处更新: managed_paths / is_release_relevant_file / git add
 
 ### 2D. 测试补充
 
@@ -163,13 +169,15 @@ archive_ready: false
 - [x] 2.11 新增 `test_trae_cn_install_does_not_affect_claude_codex`
   - 安装 `trae-cn` 前后，claude/codex 的 expected_paths 不变
 
-- [ ] 2.12 在 `tests/test_release_hooks.py` 中补充 Trae CN 受管文件集断言
+- [x] 2.12 在 `tests/test_release_hooks.py` 中补充 Trae CN 受管文件集断言
   - fixture 初始化 `TraeCn` 目录
   - release hook snapshot / restore / add 覆盖 Trae CN 产物
+  - 新增 `_minimal_trae_cn_rules()` helper + version propagation assertion
 
-- [ ] 2.13 在 `tests/test_check_readme_links.py` 中补充 Trae CN 文档/版本头断言
+- [x] 2.13 在 `tests/test_check_readme_links.py` 中补充 Trae CN 文档/版本头断言
   - README 新增的 Trae CN 链接可被校验
   - Trae CN 版本头缺失或不一致时会失败
+  - 新增 `_minimal_trae_cn_rules()` helper + TraeCn fixture in `_configure_module` / `_init_fixture`
 
 ## Phase 3 — 真实 Trae CN IDE Smoke + Tier 升级
 
