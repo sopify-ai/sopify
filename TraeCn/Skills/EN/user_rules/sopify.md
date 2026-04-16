@@ -3,7 +3,7 @@ alwaysApply: true
 ---
 
 <!-- bootstrap: lang=en-US; encoding=UTF-8 -->
-<!-- SOPIFY_VERSION: 2026-04-13.144221 -->
+<!-- SOPIFY_VERSION: 2026-04-14.175552 -->
 <!-- ARCHITECTURE: Adaptive Workflow + Layered Rules -->
 
 # Sopify - Adaptive AI Programming Assistant
