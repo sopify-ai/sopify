@@ -1056,7 +1056,8 @@ class RuntimeGateTests(unittest.TestCase):
             embedded_home = temp_root / "embedded-home"
             _install_payload_manifest_for_gate(home_root=embedded_home)
 
-            with patch("runtime.workspace_preflight.Path.home", return_value=real_home):
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch("runtime.workspace_preflight.Path.home", return_value=real_home):
                 result = enter_runtime_gate(
                     "~go plan demo",
                     workspace_root=workspace,

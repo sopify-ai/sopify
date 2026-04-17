@@ -315,7 +315,7 @@ def _run_gate_scenario(
 
 def _run_gate_cli(*, workspace: Path, home_root: Path, request: str) -> tuple[dict[str, Any], int]:
     script_path = REPO_ROOT / "scripts" / "runtime_gate.py"
-    env = dict(os.environ)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE_", "CODEX_"))}
     env["HOME"] = str(home_root)
     completed = subprocess.run(
         [
