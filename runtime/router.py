@@ -97,6 +97,20 @@ _QUESTION_PREFIXES = (
     "能否",
     "可以",
 )
+_STRONG_INTERROGATIVE_PREFIXES = (
+    "为什么",
+    "为何",
+    "如何",
+    "怎么",
+    "解释",
+    "说明",
+    "what",
+    "why",
+    "how",
+)
+_SHORT_ACTION_REQUEST_THRESHOLD = 80
+_FOLLOWUP_ACTION_CONNECTORS = ("并", "再", "然后", "顺便", "and", "then")
+_ACTION_IMPACT_QUESTION_KEYWORDS = ("影响", "风险", "后果", "依赖", "波及")
 _FILE_REF_RE = re.compile(r"(?:[\w.-]+/)+[\w.-]+|[\w.-]+\.(?:ts|tsx|js|jsx|py|md|json|yaml|yml|vue|rs|go)")
 _PROCESS_FORCE_KEYWORDS_EN = ("design", "develop", "decision", "checkpoint", "handoff")
 _PROCESS_FORCE_KEYWORDS_ZH = ("规划", "方案设计", "开发实施", "决策", "检查点", "交接", "门禁", "蓝图")
@@ -967,6 +981,8 @@ def _estimate_complexity(text: str) -> _ComplexitySignal:
     if has_action and 3 <= file_refs <= 5:
         return _ComplexitySignal("medium", "Detected multi-file but bounded implementation request", "light")
     if has_action and file_refs == 0:
+        if len(text.strip()) < _SHORT_ACTION_REQUEST_THRESHOLD:
+            return _ComplexitySignal("medium", "Short action request without explicit file scope", "light")
         return _ComplexitySignal("complex", "Detected change intent without bounded file scope", "standard")
     if has_action:
         return _ComplexitySignal("simple", "Detected focused implementation request with limited scope", None)
@@ -1074,11 +1090,32 @@ def _is_consultation(text: str) -> bool:
     normalized = text.strip().lower()
     if not normalized:
         return True
-    if any(keyword.lower() in normalized for keyword in _ACTION_KEYWORDS):
+    has_action = any(keyword.lower() in normalized for keyword in _ACTION_KEYWORDS)
+    if has_action:
+        if normalized.startswith(("解释", "说明")) and _has_followup_action_clause(normalized):
+            return False
+        if normalized.startswith(_STRONG_INTERROGATIVE_PREFIXES):
+            return True
+        if (text.endswith("?") or text.endswith("？")) and _looks_like_action_impact_question(normalized):
+            return True
         return False
     if text.endswith("?") or text.endswith("？"):
         return True
     return normalized.startswith(_QUESTION_PREFIXES)
+
+
+def _has_followup_action_clause(normalized: str) -> bool:
+    for connector in _FOLLOWUP_ACTION_CONNECTORS:
+        index = normalized.find(connector)
+        if index >= 0:
+            tail = normalized[index + len(connector) :]
+            if any(keyword.lower() in tail for keyword in _ACTION_KEYWORDS):
+                return True
+    return False
+
+
+def _looks_like_action_impact_question(normalized: str) -> bool:
+    return any(keyword in normalized for keyword in _ACTION_IMPACT_QUESTION_KEYWORDS)
 
 
 def _is_protected_plan_asset_request(text: str) -> bool:

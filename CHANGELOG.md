@@ -6,6 +6,19 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-04-27.191703] - 2026-04-27
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/output.py`
+  - `runtime/router.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_runtime_router.py`
+
 ## [2026-04-27.163354] - 2026-04-27
 
 ### Docs

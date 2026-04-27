@@ -118,7 +118,7 @@
 - [ ] lifecycle 约定（plan → history 生命周期、归档规则、blueprint 更新触发）
 - [ ] SKILL.md 编排规范（表单式格式、`[ACTION:]` 模式、分支结构、弱模型下界要求）
 - [ ] checkpoint schema（4 种内置 checkpoint 的字段约定与 side_effect 标注）
-- [ ] 最小行为契约清单（8-12 个 case）：checkpoint resume、handoff action、plan proposal、execution confirm、no-write consult、history archive 等协议语义
+- [ ] 最小行为契约示例（8-12 个 protocol examples，非执行性）：checkpoint resume、handoff action、plan proposal、execution confirm、no-write consult、history archive 等协议语义
 - [ ] scripts/*.py 一等公民约定：每个确定性脚本须满足 stdin/stdout/JSON + exit code 接口，可在无 runtime 下直接 shell 调用（参考 `score_requirement.py`、`extract_pending_tasks.py`）
 - 产出：docs/protocol/ 或 .sopify-skills/protocol/
 - 纯文档，0 行代码变更。不与任何 Phase 冲突；只列契约，不实现 validator / test runner。
@@ -290,7 +290,6 @@ P0 任务必须增强至少一项核心能力：adaptive route/workflow、state 
 
 | # | 讨论项 | 何时 | 依赖 |
 |---|--------|------|------|
-| 1 | Phase 0.2-B router 修正是否触及 V2 classifier | 编码前 | 如需更深改造则单独立项 |
 | 2 | CR fixture provenance 复核 | CR release gate 前 | 以 CR 总纲事实为准 |
 | 3 | Phase 4b 启动时机 | Phase 3 临近 + 4a 有价值 | Phase 3 + 4a + CR gate 三条件 |
 | 4 | Plan B3 是否被 Phase 2 覆盖 | Phase 2 完成后 | Phase 2 实际效果 |
@@ -311,6 +310,7 @@ P0 任务必须增强至少一项核心能力：adaptive route/workflow、state 
 | D9 | 知识工程优先级 | 降为 P2/P3，不作为 CR/Sopify 任何阶段前置；blueprint/knowledge/ 随 P2 启动再定 |
 | D10 | Phase 4a scope | 确认既有共识：advisory only，无 bridge.py/pipeline_hooks |
 | D11 | GraphifyEnhancer vs Graphify Advisory Skill | 两个独立概念：前者知识资产生成（知识工程 P2），后者 Sopify Phase 5 用户插件 |
-| D12 | Action Schema Boundary | ADR-017：不维护用户话术白名单；LLM 只提议结构化 action，Core/Validator 基于机器事实、side_effect 和风险策略授权 |
+| D12 | Action Schema Boundary | ADR-017：不维护用户话术白名单；LLM 只提议结构化 action，Core/Validator 基于机器事实、side_effect 和风险策略授权。Phase 0.2-B/C 的 router/output 修正不属于 ADR-017 实现；任何 action schema / checkpoint / plugin verdict 映射改动必须独立立项或修订 ADR |
 | D13 | 遗留 surface 退出路径 | ADR-018：改造时必须声明退出路径；frozen surface 不计入 release gate；Trae CN 归档后不作为新宿主示例 |
 | D14 | 分发架构：thin-stub + 集中管理 | ADR-019：项目本地零拷贝，全局 payload 单点管理版本与更新；后续 ADR 接入不得引入本地冷拷贝 |
+| D15 | Phase 0.2-B/C 不触及 V2 classifier | 修正范围锁定 `_is_consultation()` 和 `_estimate_complexity()`；新增 `_STRONG_INTERROGATIVE_PREFIXES` 子集替代宽泛前缀覆盖动作词逻辑；`_SHORT_REQUEST_THRESHOLD = 80`；不改 engine.py、V2 classifier、handoff 契约 |

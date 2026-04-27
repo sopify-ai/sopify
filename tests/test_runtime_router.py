@@ -4,6 +4,94 @@ from tests.runtime_test_support import *
 
 
 class RouterTests(unittest.TestCase):
+    def test_strong_interrogative_action_question_prefers_consult(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+            router = Router(config, state_store=store)
+            skills = SkillRegistry(config, user_home=workspace / "home").discover()
+
+            route = router.classify("删除操作会影响哪些表？", skills=skills)
+
+            self.assertEqual(route.route_name, "consult")
+
+    def test_request_like_question_with_action_does_not_route_to_consult(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+            router = Router(config, state_store=store)
+            skills = SkillRegistry(config, user_home=workspace / "home").discover()
+
+            route = router.classify("能否帮我修改这段代码？", skills=skills)
+
+            self.assertNotEqual(route.route_name, "consult")
+
+    def test_question_mark_edit_request_does_not_route_to_consult(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+            router = Router(config, state_store=store)
+            skills = SkillRegistry(config, user_home=workspace / "home").discover()
+
+            route = router.classify("帮我删除这个文件？", skills=skills)
+
+            self.assertNotEqual(route.route_name, "consult")
+
+    def test_short_action_request_without_file_scope_routes_to_light_iterate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+            router = Router(config, state_store=store)
+            skills = SkillRegistry(config, user_home=workspace / "home").discover()
+
+            route = router.classify("帮我添加日志", skills=skills)
+
+            self.assertEqual(route.route_name, "light_iterate")
+            self.assertEqual(route.plan_level, "light")
+
+    def test_short_architecture_action_request_still_routes_to_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+            router = Router(config, state_store=store)
+            skills = SkillRegistry(config, user_home=workspace / "home").discover()
+
+            route = router.classify("重构整个认证模块，把 session 改成 JWT", skills=skills)
+
+            self.assertEqual(route.route_name, "workflow")
+
+    def test_quick_fix_and_consult_output_hide_repo_local_runtime_wording(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            quick_fix_output = render_runtime_output(
+                run_runtime("修改 README.md 的错别字", workspace_root=workspace, user_home=workspace / "home"),
+                brand="demo-ai",
+                language="zh-CN",
+            )
+            consult_output = render_runtime_output(
+                run_runtime("为什么删除操作会影响这些表？", workspace_root=workspace, user_home=workspace / "home"),
+                brand="demo-ai",
+                language="zh-CN",
+            )
+
+            self.assertNotIn("repo-local runtime", quick_fix_output)
+            self.assertNotIn("repo-local runtime", consult_output)
+            self.assertNotIn("未执行代码修改", quick_fix_output)
+            self.assertNotIn("不生成正文回答", consult_output)
+            self.assertIn("快速修复", quick_fix_output)
+            self.assertIn("咨询问答", consult_output)
+
     def test_route_classification_and_active_flow_intents(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -279,7 +367,7 @@ class RouterTests(unittest.TestCase):
 
             route = router.classify("这是一个性能问题，需要优化数据库查询", skills=skills)
 
-            self.assertEqual(route.route_name, "workflow")
+            self.assertEqual(route.route_name, "light_iterate")
             self.assertNotIn("meta-debug", route.reason)
 
     def test_explain_only_override_prefers_consult_before_runtime_first_guard(self) -> None:
