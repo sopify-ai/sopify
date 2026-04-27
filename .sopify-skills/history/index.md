@@ -9,6 +9,7 @@
 - `2026-03-21` ~~`20260320_cursor_plugin_install`~~ - abandoned - Cursor 插件安装（on_hold，路线未定，2026-04 主动弃置）
 - `2026-03-24` [`20260324_task`](2026-03/20260324_task/) - standard - Steering: 从 HelloAGENTS/Superpowers 对比收口 Sopify 学习路径（E.1-E.3 全完成）
 - `2026-03-26` [`20260326_5-plan-20260326-phase1-2-3-plan-plan-20260326-ph`](2026-03/20260326_5-plan-20260326-phase1-2-3-plan-plan-20260326-ph/) - standard - B1 文档收口后的实施与验证（全部 79 任务完成）
+- `2026-04-27` ~~[`20260413_trae_host_adapter`](2026-04/20260413_trae_host_adapter/)~~ - retired - Trae CN 宿主适配（Phase 1-2 已完成，宿主面已退役）
 - `2026-04-12` [`20260403_plan-a-risk-adaptive-interruption`](2026-04/20260403_plan-a-risk-adaptive-interruption/) - standard - Plan A 子计划：风险自适应打断与局部语义收敛
 - `2026-03-28` [`20260327_hotfix`](2026-03/20260327_hotfix/) - standard - 状态机 Hotfix（B1 前置门禁）
 - `2026-03-26` [`20260326_planning-materialization-decoupling`](2026-03/20260326_planning-materialization-decoupling/) - standard - 规划流程与方案包物化解耦

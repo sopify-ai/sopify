@@ -9,7 +9,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/check-skills-sync.sh
 
-Check whether Claude/* and TraeCn/* mirror Codex/* for Sopify skills.
+Check whether Claude/* mirrors Codex/* for Sopify skills.
 For header files, host-specific config/helper paths are expected to be rewritten.
 On mismatch, run:
   bash scripts/sync-skills.sh
@@ -30,22 +30,6 @@ render_expected_claude_header() {
     -e 's#~/.codex/sopify\.config\.yaml#~/.claude/sopify.config.yaml#g' \
     -e 's#~/.codex/sopify/#~/.claude/sopify/#g' \
     "$source_file" >"$target_file"
-}
-
-TRAE_CN_FRONTMATTER="---
-alwaysApply: true
----"
-
-render_expected_trae_cn_header() {
-  local source_file="$1"
-  local target_file="$2"
-  {
-    printf '%s\n\n' "$TRAE_CN_FRONTMATTER"
-    sed \
-      -e 's#~/.codex/sopify\.config\.yaml#~/.trae-cn/sopify.config.yaml#g' \
-      -e 's#~/.codex/sopify/#~/.trae-cn/sopify/#g' \
-      "$source_file"
-  } >"$target_file"
 }
 
 check_lang() {
@@ -69,32 +53,8 @@ check_lang() {
   fi
 }
 
-check_trae_cn_lang() {
-  local lang="$1"
-  local codex_dir="$ROOT_DIR/Codex/Skills/$lang"
-  local trae_cn_dir="$ROOT_DIR/TraeCn/Skills/$lang"
-  local diff_file="$TMP_DIR/${lang}_trae_cn.diff"
-
-  render_expected_trae_cn_header "$codex_dir/AGENTS.md" "$TMP_DIR/${lang}_trae_cn.expected.md"
-
-  if ! diff -u "$TMP_DIR/${lang}_trae_cn.expected.md" "$trae_cn_dir/user_rules/sopify.md" >"$diff_file"; then
-    echo "[$lang] Header file mismatch: Codex/Skills/$lang/AGENTS.md != TraeCn/Skills/$lang/user_rules/sopify.md"
-    head -n 40 "$diff_file"
-    status=1
-  fi
-
-  if ! diff -ru -x .DS_Store -x Thumbs.db "$codex_dir/skills/sopify" "$trae_cn_dir/skills/sopify" >"$diff_file"; then
-    echo "[$lang] Skill directory mismatch: Codex/Skills/$lang/skills/sopify != TraeCn/Skills/$lang/skills/sopify"
-    head -n 60 "$diff_file"
-    status=1
-  fi
-}
-
 check_lang "CN"
 check_lang "EN"
-
-check_trae_cn_lang "CN"
-check_trae_cn_lang "EN"
 
 if [[ "$status" -ne 0 ]]; then
   echo
@@ -102,4 +62,4 @@ if [[ "$status" -ne 0 ]]; then
   exit 1
 fi
 
-echo "Sync check passed: Claude/* and TraeCn/* are aligned with Codex/*."
+echo "Sync check passed: Claude/* is aligned with Codex/*."

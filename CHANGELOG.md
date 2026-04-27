@@ -6,6 +6,110 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-04-27.163354] - 2026-04-27
+
+### Docs
+
+- Refined public documentation:
+  - `CONTRIBUTING.md`
+  - `CONTRIBUTING_CN.md`
+  - `README.md`
+  - `README.zh-CN.md`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-readme-links.py`
+  - `scripts/check-skills-sync.sh`
+  - `scripts/check-version-consistency.sh`
+  - `scripts/sync-skills.sh`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_check_readme_links.py`
+  - `tests/test_installer.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_release_hooks.py`
+
+### Changed
+
+- Updated project files:
+  - `.githooks/pre-commit`
+  - `CHANGELOG.md`
+  - `TraeCn/Skills/CN/skills/sopify/analyze/SKILL.md`
+  - `TraeCn/Skills/CN/skills/sopify/analyze/assets/question-output.md`
+  - `TraeCn/Skills/CN/skills/sopify/analyze/assets/success-output.md`
+  - `TraeCn/Skills/CN/skills/sopify/analyze/references/analyze-rules.md`
+  - `TraeCn/Skills/CN/skills/sopify/analyze/scripts/score_requirement.py`
+  - `TraeCn/Skills/CN/skills/sopify/design/SKILL.md`
+  - `TraeCn/Skills/CN/skills/sopify/design/assets/adr-template.md`
+  - `TraeCn/Skills/CN/skills/sopify/design/assets/background-template.md`
+  - `TraeCn/Skills/CN/skills/sopify/design/assets/design-template.md`
+  - `TraeCn/Skills/CN/skills/sopify/design/assets/output-summary.md`
+  - `TraeCn/Skills/CN/skills/sopify/design/assets/plan-light-template.md`
+  - `TraeCn/Skills/CN/skills/sopify/design/assets/tasks-template.md`
+  - `TraeCn/Skills/CN/skills/sopify/design/references/design-rules.md`
+  - `TraeCn/Skills/CN/skills/sopify/design/scripts/select_plan_level.py`
+  - `TraeCn/Skills/CN/skills/sopify/develop/SKILL.md`
+  - `TraeCn/Skills/CN/skills/sopify/develop/assets/output-partial.md`
+  - `TraeCn/Skills/CN/skills/sopify/develop/assets/output-quick-fix.md`
+  - `TraeCn/Skills/CN/skills/sopify/develop/assets/output-success.md`
+  - `TraeCn/Skills/CN/skills/sopify/develop/references/develop-rules.md`
+  - `TraeCn/Skills/CN/skills/sopify/develop/scripts/extract_pending_tasks.py`
+  - `TraeCn/Skills/CN/skills/sopify/kb/SKILL.md`
+  - `TraeCn/Skills/CN/skills/sopify/model-compare/SKILL.md`
+  - `TraeCn/Skills/CN/skills/sopify/templates/SKILL.md`
+  - `TraeCn/Skills/CN/skills/sopify/workflow-learning/CHANGELOG.md`
+  - `TraeCn/Skills/CN/skills/sopify/workflow-learning/SKILL.md`
+  - `TraeCn/Skills/CN/user_rules/sopify.md`
+  - `TraeCn/Skills/EN/skills/sopify/analyze/SKILL.md`
+  - `TraeCn/Skills/EN/skills/sopify/analyze/assets/question-output.md`
+  - `TraeCn/Skills/EN/skills/sopify/analyze/assets/success-output.md`
+  - `TraeCn/Skills/EN/skills/sopify/analyze/references/analyze-rules.md`
+  - `TraeCn/Skills/EN/skills/sopify/analyze/scripts/score_requirement.py`
+  - `TraeCn/Skills/EN/skills/sopify/design/SKILL.md`
+  - `TraeCn/Skills/EN/skills/sopify/design/assets/adr-template.md`
+  - `TraeCn/Skills/EN/skills/sopify/design/assets/background-template.md`
+  - `TraeCn/Skills/EN/skills/sopify/design/assets/design-template.md`
+  - `TraeCn/Skills/EN/skills/sopify/design/assets/output-summary.md`
+  - `TraeCn/Skills/EN/skills/sopify/design/assets/plan-light-template.md`
+  - `TraeCn/Skills/EN/skills/sopify/design/assets/tasks-template.md`
+  - `TraeCn/Skills/EN/skills/sopify/design/references/design-rules.md`
+  - `TraeCn/Skills/EN/skills/sopify/design/scripts/select_plan_level.py`
+  - `TraeCn/Skills/EN/skills/sopify/develop/SKILL.md`
+  - `TraeCn/Skills/EN/skills/sopify/develop/assets/output-partial.md`
+  - `TraeCn/Skills/EN/skills/sopify/develop/assets/output-quick-fix.md`
+  - `TraeCn/Skills/EN/skills/sopify/develop/assets/output-success.md`
+  - `TraeCn/Skills/EN/skills/sopify/develop/references/develop-rules.md`
+  - `TraeCn/Skills/EN/skills/sopify/develop/scripts/extract_pending_tasks.py`
+  - `TraeCn/Skills/EN/skills/sopify/kb/SKILL.md`
+  - `TraeCn/Skills/EN/skills/sopify/model-compare/SKILL.md`
+  - `TraeCn/Skills/EN/skills/sopify/templates/SKILL.md`
+  - `TraeCn/Skills/EN/skills/sopify/workflow-learning/CHANGELOG.md`
+  - `TraeCn/Skills/EN/skills/sopify/workflow-learning/SKILL.md`
+  - `TraeCn/Skills/EN/user_rules/sopify.md`
+  - `installer/hosts/__init__.py`
+  - `installer/hosts/trae_cn.py`
+
+## [2026-04-27.163000] - 2026-04-27
+
+### Removed
+
+- Retired the Trae CN host surface:
+  - removed the `trae-cn:*` install target and host adapter
+  - removed the `TraeCn/` prompt-layer mirror
+  - removed Trae-specific sync, release, status/doctor, README, and installer test coverage
+  - archived the former Trae CN host adapter plan under `.sopify-skills/history/2026-04/`
+
 ## [2026-04-14.175552] - 2026-04-14
 
 ### Docs

@@ -99,22 +99,6 @@ def _minimal_agents(version: str, *, claude: bool, english: bool) -> str:
     )
 
 
-def _minimal_trae_cn_rules(version: str, *, english: bool) -> str:
-    body = "Note: ~/.trae-cn/sopify/" if english else "说明：~/.trae-cn/sopify/"
-    return textwrap.dedent(
-        f"""\
-        ---
-        alwaysApply: true
-        ---
-
-        <!-- SOPIFY_VERSION: {version} -->
-        # Sopify Rules
-
-        {body}
-        """
-    )
-
-
 def _unreleased_body(changelog_text: str) -> str:
     start = changelog_text.index("## [Unreleased]") + len("## [Unreleased]")
     end = changelog_text.find("\n## [", start)
@@ -163,11 +147,6 @@ def _init_release_hook_fixture(root: Path, *, missing_claude_targets: bool = Fal
         _write(root / "Claude/Skills/EN/CLAUDE.md", _minimal_agents(old_version, claude=True, english=True))
         _write(root / "Claude/Skills/CN/skills/sopify/SKILL.md", "# skill\n")
         _write(root / "Claude/Skills/EN/skills/sopify/SKILL.md", "# skill\n")
-
-        _write(root / "TraeCn/Skills/CN/user_rules/sopify.md", _minimal_trae_cn_rules(old_version, english=False))
-        _write(root / "TraeCn/Skills/EN/user_rules/sopify.md", _minimal_trae_cn_rules(old_version, english=True))
-        _write(root / "TraeCn/Skills/CN/skills/sopify/SKILL.md", "# skill\n")
-        _write(root / "TraeCn/Skills/EN/skills/sopify/SKILL.md", "# skill\n")
 
     _write(root / "runtime/gate.py", "print('baseline')\n")
     _write(root / "tests/test_runtime_gate.py", "print('baseline test')\n")
@@ -355,7 +334,6 @@ class ReleaseHookTests(unittest.TestCase):
             self.assertIn("badge/version-2026--03--21.010203-orange.svg", (root / "README.md").read_text(encoding="utf-8"))
             self.assertIn("<!-- SOPIFY_VERSION: 2026-03-21.010203 -->", (root / "Codex/Skills/CN/AGENTS.md").read_text(encoding="utf-8"))
             self.assertIn("<!-- SOPIFY_VERSION: 2026-03-21.010203 -->", (root / "Claude/Skills/CN/CLAUDE.md").read_text(encoding="utf-8"))
-            self.assertIn("<!-- SOPIFY_VERSION: 2026-03-21.010203 -->", (root / "TraeCn/Skills/CN/user_rules/sopify.md").read_text(encoding="utf-8"))
 
     def test_release_draft_only_renders_non_empty_sections(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

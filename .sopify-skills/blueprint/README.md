@@ -14,7 +14,7 @@
 
 <!-- sopify:auto:focus:start -->
 - 当前活动 plan：暂无。
-- history 归档：已可用；最近归档为 `../history/2026-04/20260403_plan-a-risk-adaptive-interruption`。
+- history 归档：已可用；最近归档见 [变更历史索引](../history/index.md)。
 <!-- sopify:auto:focus:end -->
 
 ## 深入阅读入口
@@ -26,5 +26,5 @@
 - [蓝图任务](./tasks.md)
 - [Skill 标准对齐蓝图](./skill-standards-refactor.md)
 - [变更历史](../history/index.md)
-- 最近归档：`../history/2026-04/20260403_plan-a-risk-adaptive-interruption`
+- 最近归档见 [变更历史索引](../history/index.md)
 <!-- sopify:auto:read-next:end -->

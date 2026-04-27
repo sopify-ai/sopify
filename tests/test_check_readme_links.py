@@ -70,22 +70,6 @@ def _minimal_agents(version: str, *, claude: bool, english: bool) -> str:
     )
 
 
-def _minimal_trae_cn_rules(version: str, *, english: bool) -> str:
-    body = "Note: ~/.trae-cn/sopify/" if english else "说明：~/.trae-cn/sopify/"
-    return textwrap.dedent(
-        f"""\
-        ---
-        alwaysApply: true
-        ---
-
-        <!-- SOPIFY_VERSION: {version} -->
-        # Sopify Rules
-
-        {body}
-        """
-    )
-
-
 def _configure_module(module, root: Path) -> None:
     readme_sections_primary = module.EXPECTED_LEVEL2_SECTIONS[module.README_FILES[0]]
     readme_sections_zh = module.EXPECTED_LEVEL2_SECTIONS[module.README_FILES[1]]
@@ -109,8 +93,6 @@ def _configure_module(module, root: Path) -> None:
         root / "Codex/Skills/EN/AGENTS.md",
         root / "Claude/Skills/CN/CLAUDE.md",
         root / "Claude/Skills/EN/CLAUDE.md",
-        root / "TraeCn/Skills/CN/user_rules/sopify.md",
-        root / "TraeCn/Skills/EN/user_rules/sopify.md",
     )
     module.EXPECTED_LEVEL2_SECTIONS = {
         module.README_FILES[0]: readme_sections_primary,
@@ -148,8 +130,6 @@ def _init_fixture(root: Path, module, *, broken_workflow_link: bool = False, reo
     _write(root / "Codex/Skills/EN/AGENTS.md", _minimal_agents(VERSION, claude=False, english=True))
     _write(root / "Claude/Skills/CN/CLAUDE.md", _minimal_agents(VERSION, claude=True, english=False))
     _write(root / "Claude/Skills/EN/CLAUDE.md", _minimal_agents(VERSION, claude=True, english=True))
-    _write(root / "TraeCn/Skills/CN/user_rules/sopify.md", _minimal_trae_cn_rules(VERSION, english=False))
-    _write(root / "TraeCn/Skills/EN/user_rules/sopify.md", _minimal_trae_cn_rules(VERSION, english=True))
 
     _write(
         root / "README.md",

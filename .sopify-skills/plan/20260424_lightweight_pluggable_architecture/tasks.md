@@ -8,7 +8,7 @@
 | `20260417_ux_perception_tuning` | Phase 0.2 | 活跃 (B/C) | `plan/20260417_ux_perception_tuning/` |
 | `20260418_cross_review_engine` | Phase 4 前置 | 已确认 | `plan/20260418_cross_review_engine/` |
 | `20260416_blueprint_graphify_integration` | Phase 5 基础 | 基础集成活跃；Plugin 封装延后 | `plan/20260416_blueprint_graphify_integration/` |
-| `20260413_trae_host_adapter` | 多宿主扩展 | Sunset (ADR-018) | `plan/20260413_trae_host_adapter/` |
+| archived legacy host adapter | 多宿主扩展 | Sunset (ADR-018) | `history/2026-04/` |
 
 ## 旧总纲吸收记录
 
@@ -157,11 +157,11 @@ CR v0 release gate 通过 → Sopify Phase 4a → dogfood 数据 → 决定 Phas
 |------|------|---------|
 | Claude Code | ✅ 深度验证 | — |
 | Codex | ✅ 深度验证 | — |
-| Trae CN | 🔴 Sunset (ADR-018) | `20260413_trae_host_adapter` → history/ 归档 |
+| Retired legacy host | 🔴 Sunset (ADR-018) | history/ 归档 |
 | QCoder | 📋 待调研 | 调研后独立立项 |
 | GitHub Copilot | 📋 待调研 | 调研后独立立项 |
 
-新宿主适配参考三层抽象 (HostAdapter + HostCapability + HostRegistration)，见 design.md §5。Trae 适配经验保留在 history/ 归档中供参考。
+新宿主适配参考三层抽象 (HostAdapter + HostCapability + HostRegistration)，见 design.md §5。retired legacy host 适配经验保留在 history/ 归档中供参考。
 
 ---
 
@@ -194,28 +194,28 @@ CR v0 release gate 通过 → Sopify Phase 4a → dogfood 数据 → 决定 Phas
 - **依赖：** 无
 - **估计：** 0.5 天
 
-### T-cleanup-2：Trae Surface Sunset
+### T-cleanup-2：Legacy Host Surface Retirement
 
 - **行动（顺序遵循 ADR-018 §8 删除顺序）：**
-  1. 从 `installer/hosts/__init__.py` 注册表中移除 trae_cn（CI dry-run）
-  2. 移除 `tests/test_installer.py` / `test_installer_status_doctor.py` / `test_release_hooks.py` 中 trae_cn 测试用例
-  3. 更新 `scripts/check-readme-links.py` / `check-skills-sync.sh` / `check-version-consistency.sh` / `sync-skills.sh` / `.githooks/pre-commit` 跳过 trae
-  4. 移除 `installer/hosts/trae_cn.py`
-  5. 移除 `TraeCn/` 整个目录
-  6. 归档 `.sopify-skills/plan/20260413_trae_host_adapter/` → `.sopify-skills/history/2026-04/`
-  7. 编辑 README.md / README.zh-CN.md / CONTRIBUTING.md / CONTRIBUTING_CN.md 移除 Trae 引用
+  1. 从 `installer/hosts/__init__.py` 注册表中移除 retired host（CI dry-run）
+  2. 移除 installer / status / release hook 中 retired host 测试用例
+  3. 更新 README link、skills sync、version consistency、sync 和 pre-commit 脚本，停止扫描 retired host prompt mirror
+  4. 移除 retired host adapter 实现
+  5. 移除 retired host prompt mirror
+  6. 归档 retired host adapter plan → `.sopify-skills/history/2026-04/`
+  7. 编辑 README.md / README.zh-CN.md / CONTRIBUTING.md / CONTRIBUTING_CN.md 移除 retired host 引用
   8. CHANGELOG.md 保留历史记录，只在最新版本添加 sunset 说明
 - **依赖：** T-cleanup-1
-- **验证：** CI 全量通过；grep -ri "trae" 仅返回 CHANGELOG 和 history/ 中的归档记录
+- **验证：** CI 全量通过；retired host literal 仅返回 CHANGELOG 和 history/ 中的归档记录
 - **估计：** 1 天
 
 ### T-cleanup-3：总纲与文档同步
 
 - **行动：**
   1. 更新总纲 design.md / tasks.md / background.md 中的宿主列表（确认 sunset 口径一致）
-  2. 确认 CI 全量通过，grep -ri "trae" 仅返回 CHANGELOG 和 history/
+  2. 确认 CI 全量通过，retired host literal 仅返回 CHANGELOG 和 history/
 - **依赖：** T-cleanup-2
-- **验证：** CI 全量通过，grep -ri "trae" 仅返回 CHANGELOG 和 history/ 中的归档记录
+- **验证：** CI 全量通过，retired host literal 仅返回 CHANGELOG 和 history/ 中的归档记录
 - **估计：** 0.5 天
 
 ### T-cleanup-4：install-sopify.sh 评估
@@ -251,7 +251,7 @@ P0 任务必须增强至少一项核心能力：adaptive route/workflow、state 
 | Phase 2 | 3 种复杂度工作流手动验证 |
 | Phase 3 | v2 解析无报错，v1 兼容，host_support 多宿主验证（Claude + Codex baseline） |
 | Phase 4b | 冻结，仅在启动条件满足后评审 |
-| ADR-018 cleanup | Trae sunset 完成（grep -ri "trae" 仅返回 CHANGELOG + history/）|
+| ADR-018 cleanup | legacy host sunset 完成（retired host literal 仅返回 CHANGELOG + history/）|
 | 多宿主 | QCoder/Copilot 完成调研 |
 
 ---

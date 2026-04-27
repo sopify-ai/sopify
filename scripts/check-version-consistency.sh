@@ -10,8 +10,6 @@ CODEX_CN="$ROOT_DIR/Codex/Skills/CN/AGENTS.md"
 CODEX_EN="$ROOT_DIR/Codex/Skills/EN/AGENTS.md"
 CLAUDE_CN="$ROOT_DIR/Claude/Skills/CN/CLAUDE.md"
 CLAUDE_EN="$ROOT_DIR/Claude/Skills/EN/CLAUDE.md"
-TRAE_CN_CN="$ROOT_DIR/TraeCn/Skills/CN/user_rules/sopify.md"
-TRAE_CN_EN="$ROOT_DIR/TraeCn/Skills/EN/user_rules/sopify.md"
 
 usage() {
   cat <<'EOF'
@@ -20,7 +18,7 @@ Usage: scripts/check-version-consistency.sh
 Validate version consistency across:
   - README.md / README.zh-CN.md version badges
   - Latest released version in CHANGELOG.md
-  - SOPIFY_VERSION headers in Codex/Claude/TraeCn CN/EN files
+  - SOPIFY_VERSION headers in Codex/Claude CN/EN files
 
 Exit codes:
   0: all checks passed
@@ -41,8 +39,6 @@ required_files=(
   "$CODEX_EN"
   "$CLAUDE_CN"
   "$CLAUDE_EN"
-  "$TRAE_CN_CN"
-  "$TRAE_CN_EN"
 )
 
 for file in "${required_files[@]}"; do
@@ -135,8 +131,6 @@ codex_cn_version="$(extract_sopify_version "$CODEX_CN")"
 codex_en_version="$(extract_sopify_version "$CODEX_EN")"
 claude_cn_version="$(extract_sopify_version "$CLAUDE_CN")"
 claude_en_version="$(extract_sopify_version "$CLAUDE_EN")"
-trae_cn_cn_version="$(extract_sopify_version "$TRAE_CN_CN")"
-trae_cn_en_version="$(extract_sopify_version "$TRAE_CN_EN")"
 
 if [[ -z "$codex_cn_version" ]]; then
   add_error "Codex/Skills/CN/AGENTS.md: missing SOPIFY_VERSION header."
@@ -150,18 +144,12 @@ fi
 if [[ -z "$claude_en_version" ]]; then
   add_error "Claude/Skills/EN/CLAUDE.md: missing SOPIFY_VERSION header."
 fi
-if [[ -z "$trae_cn_cn_version" ]]; then
-  add_error "TraeCn/Skills/CN/user_rules/sopify.md: missing SOPIFY_VERSION header."
-fi
-if [[ -z "$trae_cn_en_version" ]]; then
-  add_error "TraeCn/Skills/EN/user_rules/sopify.md: missing SOPIFY_VERSION header."
-fi
 
-header_versions=("$codex_cn_version" "$codex_en_version" "$claude_cn_version" "$claude_en_version" "$trae_cn_cn_version" "$trae_cn_en_version")
+header_versions=("$codex_cn_version" "$codex_en_version" "$claude_cn_version" "$claude_en_version")
 first_header_version="${header_versions[0]}"
 for version in "${header_versions[@]}"; do
   if [[ -n "$version" && "$version" != "$first_header_version" ]]; then
-    add_error "Header SOPIFY_VERSION mismatch: codex=$codex_cn_version/$codex_en_version, claude=$claude_cn_version/$claude_en_version, trae-cn=$trae_cn_cn_version/$trae_cn_en_version."
+    add_error "Header SOPIFY_VERSION mismatch: codex=$codex_cn_version/$codex_en_version, claude=$claude_cn_version/$claude_en_version."
     break
   fi
 done

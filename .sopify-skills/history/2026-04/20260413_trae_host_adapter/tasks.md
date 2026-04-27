@@ -2,13 +2,13 @@
 plan_id: 20260413_trae_host_adapter
 feature_key: trae_host_adapter
 level: standard
-lifecycle_state: active
+lifecycle_state: archived
 knowledge_sync:
-  project: review
-  background: review
-  design: review
-  tasks: review
-archive_ready: false
+  project: skip
+  background: skip
+  design: skip
+  tasks: skip
+archive_ready: true
 ---
 
 # 任务清单: Sopify 适配 Trae CN 宿主

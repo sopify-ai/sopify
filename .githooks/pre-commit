@@ -24,14 +24,10 @@ snapshot_managed_release_paths() {
     "Codex/Skills/EN/AGENTS.md"
     "Claude/Skills/CN/CLAUDE.md"
     "Claude/Skills/EN/CLAUDE.md"
-    "TraeCn/Skills/CN/user_rules/sopify.md"
-    "TraeCn/Skills/EN/user_rules/sopify.md"
     "Codex/Skills/CN/skills/sopify"
     "Codex/Skills/EN/skills/sopify"
     "Claude/Skills/CN/skills/sopify"
     "Claude/Skills/EN/skills/sopify"
-    "TraeCn/Skills/CN/skills/sopify"
-    "TraeCn/Skills/EN/skills/sopify"
   )
   local path
   local src
@@ -93,7 +89,7 @@ trap on_exit EXIT
 is_release_relevant_file() {
   local path="$1"
   case "$path" in
-    runtime/*|installer/*|Codex/Skills/*|Claude/Skills/*|TraeCn/Skills/*|README.md|README.zh-CN.md|CHANGELOG.md)
+    runtime/*|installer/*|Codex/Skills/*|Claude/Skills/*|README.md|README.zh-CN.md|CHANGELOG.md)
       return 0
       ;;
     scripts/sopify_runtime.py|scripts/go_plan_runtime.py|scripts/model_compare_runtime.py|scripts/clarification_bridge_runtime.py|scripts/decision_bridge_runtime.py|scripts/develop_checkpoint_runtime.py|scripts/sync-runtime-assets.sh|scripts/check-runtime-smoke.sh|scripts/release-sync.sh|scripts/release-preflight.sh|scripts/sync-skills.sh|scripts/check-skills-sync.sh|scripts/check-version-consistency.sh)
@@ -164,14 +160,10 @@ git -C "$ROOT_DIR" add \
   Codex/Skills/EN/AGENTS.md \
   Claude/Skills/CN/CLAUDE.md \
   Claude/Skills/EN/CLAUDE.md \
-  TraeCn/Skills/CN/user_rules/sopify.md \
-  TraeCn/Skills/EN/user_rules/sopify.md \
   Codex/Skills/CN/skills/sopify \
   Codex/Skills/EN/skills/sopify \
   Claude/Skills/CN/skills/sopify \
-  Claude/Skills/EN/skills/sopify \
-  TraeCn/Skills/CN/skills/sopify \
-  TraeCn/Skills/EN/skills/sopify
+  Claude/Skills/EN/skills/sopify
 
 cat >"$STATE_FILE" <<EOF
 RELEASE_VERSION=$RELEASE_VERSION

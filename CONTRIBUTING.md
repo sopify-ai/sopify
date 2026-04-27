@@ -12,7 +12,7 @@ Thanks for your interest in contributing to Sopify.
 ## Prompt-layer and Skill Authoring
 
 - `Codex/Skills/{CN,EN}` is the prompt-layer source of truth.
-- `Claude/Skills/{CN,EN}` and `TraeCn/Skills/{CN,EN}` are mirrored host layers and should be synced, not hand-maintained independently.
+- `Claude/Skills/{CN,EN}` is the mirrored host layer and should be synced, not hand-maintained independently.
 - `runtime/builtin_skill_packages/*/skill.yaml` is the source of truth for builtin machine metadata.
 - For skill package changes, follow the `SKILL.md` files under [Codex/Skills/CN/skills/sopify/](./Codex/Skills/CN/skills/sopify/) / [Codex/Skills/EN/skills/sopify/](./Codex/Skills/EN/skills/sopify/).
 
@@ -44,7 +44,7 @@ bash /path/to/project/.sopify-runtime/scripts/check-runtime-smoke.sh
 
 Bundle rules:
 
-- The global payload lives under `~/.codex/sopify/`, `~/.claude/sopify/`, or `~/.trae-cn/sopify/`.
+- The global payload lives under `~/.codex/sopify/` or `~/.claude/sopify/`.
 - Hosts must read `.sopify-runtime/manifest.json` before falling back to fixed helper paths.
 - The first host hop goes through `.sopify-runtime/scripts/runtime_gate.py enter`.
 - Clarification, decision, and develop checkpoint helpers are internal bridge helpers, not replacement main entries.

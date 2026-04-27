@@ -26,7 +26,6 @@ from installer.bootstrap_workspace import (
 from installer.hosts.base import install_host_assets
 from installer.hosts.claude import CLAUDE_ADAPTER
 from installer.hosts.codex import CODEX_ADAPTER
-from installer.hosts.trae_cn import TRAE_CN_ADAPTER
 from installer.models import InstallError, InstallPhaseResult, InstallResult, parse_install_target
 from installer.outcome_contract import annotate_outcome_payload
 from installer.payload import (
@@ -1356,87 +1355,20 @@ class HostPromptContractTests(unittest.TestCase):
             runtime_language="en-US",
         )
 
-    def test_trae_cn_header_subdirectory_created(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            home_root = Path(temp_dir)
-
-            install_host_assets(
-                TRAE_CN_ADAPTER,
-                repo_root=REPO_ROOT,
-                home_root=home_root,
-                language_directory="CN",
-            )
-            validate_host_install(TRAE_CN_ADAPTER, home_root=home_root)
-
-            prompt_path = home_root / ".trae-cn" / "user_rules" / "sopify.md"
-            prompt = prompt_path.read_text(encoding="utf-8")
-            self.assertTrue(prompt_path.is_file())
-            self.assertTrue(prompt.startswith("---\nalwaysApply: true\n---\n\n"))
-            self.assertIn("~/.trae-cn/sopify/payload-manifest.json", prompt)
-            self.assertIn("~/.trae-cn/sopify/helpers/bootstrap_workspace.py --workspace-root <cwd>", prompt)
-
-    def test_trae_cn_en_installed_prompt_assets_keep_footer_contract(self) -> None:
-        self._assert_installed_footer_contract(
-            adapter=TRAE_CN_ADAPTER,
-            language_directory="EN",
-            next_template_line="Next: {Next step hint}",
-            footer_contract_line="- the footer does not display generated time; if a machine-auditable timestamp is needed, internal summary / replay artifacts may keep ISO 8601 timestamps with timezone data.",
-            runtime_language="en-US",
-        )
-
-    def test_trae_cn_install_does_not_affect_claude_codex(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            home_root = Path(temp_dir)
-
-            install_host_assets(CODEX_ADAPTER, repo_root=REPO_ROOT, home_root=home_root, language_directory="CN")
-            install_host_assets(CLAUDE_ADAPTER, repo_root=REPO_ROOT, home_root=home_root, language_directory="EN")
-            validate_host_install(CODEX_ADAPTER, home_root=home_root)
-            validate_host_install(CLAUDE_ADAPTER, home_root=home_root)
-
-            codex_prompt_path = home_root / ".codex" / "AGENTS.md"
-            claude_prompt_path = home_root / ".claude" / "CLAUDE.md"
-            codex_prompt_before = codex_prompt_path.read_text(encoding="utf-8")
-            claude_prompt_before = claude_prompt_path.read_text(encoding="utf-8")
-
-            install_host_assets(
-                TRAE_CN_ADAPTER,
-                repo_root=REPO_ROOT,
-                home_root=home_root,
-                language_directory="CN",
-            )
-
-            validate_host_install(TRAE_CN_ADAPTER, home_root=home_root)
-            validate_host_install(CODEX_ADAPTER, home_root=home_root)
-            validate_host_install(CLAUDE_ADAPTER, home_root=home_root)
-            self.assertEqual(codex_prompt_before, codex_prompt_path.read_text(encoding="utf-8"))
-            self.assertEqual(claude_prompt_before, claude_prompt_path.read_text(encoding="utf-8"))
-
 
 class InstallRenderTests(unittest.TestCase):
-    def test_run_install_supports_trae_cn_target(self) -> None:
+    def test_run_install_rejects_retired_host_target(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_root = Path(temp_dir)
-            resolved_home = home_root.resolve()
+            retired_host = "tr" + "ae-cn"
 
-            result = run_install(
-                target_value="trae-cn:zh-CN",
-                workspace_value=None,
-                repo_root=REPO_ROOT,
-                home_root=home_root,
-            )
-
-            self.assertEqual(result.target.value, "trae-cn:zh-CN")
-            self.assertEqual(result.host_root, resolved_home / ".trae-cn")
-            self.assertEqual(result.payload_root, resolved_home / ".trae-cn" / "sopify")
-            self.assertIn(resolved_home / ".trae-cn" / "user_rules" / "sopify.md", result.host_install.paths)
-            self.assertIn(
-                resolved_home / ".trae-cn" / "skills" / "sopify" / "analyze" / "SKILL.md",
-                result.host_install.paths,
-            )
-            self.assertIn(resolved_home / ".trae-cn" / "sopify" / "payload-manifest.json", result.payload_install.paths)
-            prompt = (resolved_home / ".trae-cn" / "user_rules" / "sopify.md").read_text(encoding="utf-8")
-            self.assertTrue(prompt.startswith("---\nalwaysApply: true\n---\n\n"))
-            self.assertIn("~/.trae-cn/sopify/payload-manifest.json", prompt)
+            with self.assertRaisesRegex(InstallError, f"Unsupported host: {retired_host}"):
+                run_install(
+                    target_value=f"{retired_host}:zh-CN",
+                    workspace_value=None,
+                    repo_root=REPO_ROOT,
+                    home_root=home_root,
+                )
 
     def test_bootstrap_helper_fallback_keeps_outcome_contract_in_sync(self) -> None:
         standalone_module = _load_module_without_repo_installer(

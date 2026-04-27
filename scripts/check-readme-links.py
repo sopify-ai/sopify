@@ -21,8 +21,6 @@ VERSION_HEADERS = (
     ROOT / "Codex/Skills/EN/AGENTS.md",
     ROOT / "Claude/Skills/CN/CLAUDE.md",
     ROOT / "Claude/Skills/EN/CLAUDE.md",
-    ROOT / "TraeCn/Skills/CN/user_rules/sopify.md",
-    ROOT / "TraeCn/Skills/EN/user_rules/sopify.md",
 )
 LINK_PATTERN = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")

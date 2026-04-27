@@ -7,17 +7,12 @@ usage() {
   cat <<'EOF'
 Usage: scripts/sync-skills.sh
 
-Sync Sopify skill content from Codex/* to Claude/* and TraeCn/*:
+Sync Sopify skill content from Codex/* to Claude/*:
   - Codex/Skills/CN/AGENTS.md -> Claude/Skills/CN/CLAUDE.md
     (auto-rewrite ~/.codex/* to ~/.claude/* paths)
   - Codex/Skills/EN/AGENTS.md -> Claude/Skills/EN/CLAUDE.md
     (auto-rewrite ~/.codex/* to ~/.claude/* paths)
-  - Codex/Skills/CN/AGENTS.md -> TraeCn/Skills/CN/user_rules/sopify.md
-    (auto-rewrite ~/.codex/* to ~/.trae-cn/* paths; prepend alwaysApply frontmatter)
-  - Codex/Skills/EN/AGENTS.md -> TraeCn/Skills/EN/user_rules/sopify.md
-    (auto-rewrite ~/.codex/* to ~/.trae-cn/* paths; prepend alwaysApply frontmatter)
   - Codex/Skills/{CN,EN}/skills/sopify/* -> Claude/Skills/{CN,EN}/skills/sopify/*
-  - Codex/Skills/{CN,EN}/skills/sopify/* -> TraeCn/Skills/{CN,EN}/skills/sopify/*
 EOF
 }
 
@@ -34,23 +29,6 @@ render_claude_header() {
     -e 's#~/.codex/sopify\.config\.yaml#~/.claude/sopify.config.yaml#g' \
     -e 's#~/.codex/sopify/#~/.claude/sopify/#g' \
     "$source_file" >"$target_file"
-}
-
-TRAE_CN_FRONTMATTER="---
-alwaysApply: true
----"
-
-render_trae_cn_header() {
-  local source_file="$1"
-  local target_file="$2"
-
-  {
-    printf '%s\n\n' "$TRAE_CN_FRONTMATTER"
-    sed \
-      -e 's#~/.codex/sopify\.config\.yaml#~/.trae-cn/sopify.config.yaml#g' \
-      -e 's#~/.codex/sopify/#~/.trae-cn/sopify/#g' \
-      "$source_file"
-  } >"$target_file"
 }
 
 sync_lang() {
@@ -82,33 +60,7 @@ sync_lang() {
   rsync -a --delete --exclude .DS_Store --exclude Thumbs.db "$codex_dir/skills/sopify/" "$claude_dir/skills/sopify/"
 }
 
-sync_trae_cn_lang() {
-  local lang="$1"
-  local codex_dir="$ROOT_DIR/Codex/Skills/$lang"
-  local trae_cn_dir="$ROOT_DIR/TraeCn/Skills/$lang"
-
-  if [[ ! -f "$codex_dir/AGENTS.md" ]]; then
-    echo "Missing source file: $codex_dir/AGENTS.md" >&2
-    exit 1
-  fi
-
-  mkdir -p "$trae_cn_dir/user_rules"
-
-  if [[ ! -d "$codex_dir/skills/sopify" ]]; then
-    echo "Missing source directory: $codex_dir/skills/sopify" >&2
-    exit 1
-  fi
-
-  mkdir -p "$trae_cn_dir/skills/sopify"
-
-  render_trae_cn_header "$codex_dir/AGENTS.md" "$trae_cn_dir/user_rules/sopify.md"
-  rsync -a --delete --exclude .DS_Store --exclude Thumbs.db "$codex_dir/skills/sopify/" "$trae_cn_dir/skills/sopify/"
-}
-
 sync_lang "CN"
 sync_lang "EN"
 
-sync_trae_cn_lang "CN"
-sync_trae_cn_lang "EN"
-
-echo "Synced Codex -> Claude and Codex -> TraeCn for CN and EN skill bundles."
+echo "Synced Codex -> Claude for CN and EN skill bundles."

@@ -8,7 +8,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![Version](https://img.shields.io/badge/version-2026--04--14.175552-orange.svg)](#version-history)
+[![Version](https://img.shields.io/badge/version-2026--04--27.163354-orange.svg)](#version-history)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 English · [简体中文](./README.zh-CN.md) · [Quick Start](#quick-start) · [Configuration](#configuration) · [Contributors](./CONTRIBUTORS.md)
@@ -79,8 +79,6 @@ Install targets:
 - `codex:en-US`
 - `claude:zh-CN`
 - `claude:en-US`
-- `trae-cn:zh-CN`
-- `trae-cn:en-US`
 
 Host availability matrix:
 
@@ -88,7 +86,6 @@ Host availability matrix:
 |------|----------------|--------------|---------------------|-------|
 | `codex` | `codex:zh-CN` / `codex:en-US` | Deep verified | Host install flow, workspace bootstrap, and runtime package smoke are verified | Suitable for daily use |
 | `claude` | `claude:zh-CN` / `claude:en-US` | Deep verified | Host install flow, workspace bootstrap, and runtime package smoke are verified | Suitable for daily use |
-| `trae-cn` | `trae-cn:zh-CN` / `trae-cn:en-US` | Experimental | Repo-side host install, payload install, workspace bootstrap, and status/doctor coverage are in place | Install target available. Repo-side integration ready. Trae CN IDE smoke is still pending. |
 
 Notes:
 
@@ -272,7 +269,7 @@ Additional notes:
 - `workflow-learning`: replay, retrospective, and step-by-step explanation
   Docs: [CN](./Codex/Skills/CN/skills/sopify/workflow-learning/SKILL.md) / [EN](./Codex/Skills/EN/skills/sopify/workflow-learning/SKILL.md)
 
-Claude and Trae CN hosts use the mirrored `Claude/Skills/{CN,EN}/...` and `TraeCn/Skills/{CN,EN}/...` layouts; the links above use the Codex tree as the canonical doc entry.
+Claude uses the mirrored `Claude/Skills/{CN,EN}/...` layout; the links above use the Codex tree as the canonical doc entry.
 
 ## Directory Structure
 
@@ -287,8 +284,7 @@ sopify/
 │   ├── plan/              # active plans
 │   └── history/           # archived plans
 ├── Codex/                 # Codex host prompt layer
-├── Claude/                # Claude host prompt layer
-└── TraeCn/                # Trae CN host prompt layer
+└── Claude/                # Claude host prompt layer
 ```
 
 This is a simplified view of the core layout. See [docs/how-sopify-works.en.md](./docs/how-sopify-works.en.md) for the full workflow, checkpoints, and knowledge layout.

@@ -8,7 +8,7 @@
 
 [![许可证](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![文档](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![版本](https://img.shields.io/badge/version-2026--04--14.175552-orange.svg)](#版本历史)
+[![版本](https://img.shields.io/badge/version-2026--04--27.163354-orange.svg)](#版本历史)
 [![欢迎PR](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING_CN.md)
 
 [English](./README.md) · 简体中文 · [快速开始](#快速开始) · [配置说明](#配置说明) · [贡献者](./CONTRIBUTORS.md)
@@ -79,8 +79,6 @@ python3 scripts/install_sopify.py --target claude:zh-CN --workspace /path/to/pro
 - `codex:en-US`
 - `claude:zh-CN`
 - `claude:en-US`
-- `trae-cn:zh-CN`
-- `trae-cn:en-US`
 
 当前宿主可用性矩阵：
 
@@ -88,7 +86,6 @@ python3 scripts/install_sopify.py --target claude:zh-CN --workspace /path/to/pro
 |------|-------------|--------|----------|------|
 | `codex` | `codex:zh-CN` / `codex:en-US` | Deep verified | 已验证宿主安装链路、workspace bootstrap，且运行时包已通过 smoke 验证 | 适合日常使用 |
 | `claude` | `claude:zh-CN` / `claude:en-US` | Deep verified | 已验证宿主安装链路、workspace bootstrap，且运行时包已通过 smoke 验证 | 适合日常使用 |
-| `trae-cn` | `trae-cn:zh-CN` / `trae-cn:en-US` | Experimental | 已具备 repo 侧宿主安装、payload 安装、workspace bootstrap 与 status/doctor 覆盖 | install target 已可用，repo 侧接入已就绪，Trae CN IDE smoke 仍待完成 |
 
 说明：
 
@@ -272,7 +269,7 @@ export DASHSCOPE_API_KEY="your_qwen_key"
 - `workflow-learning`：回放、复盘与逐步讲解
   文档：[中文](./Codex/Skills/CN/skills/sopify/workflow-learning/SKILL.md) / [English](./Codex/Skills/EN/skills/sopify/workflow-learning/SKILL.md)
 
-Claude 与 Trae CN 宿主分别使用镜像结构的 `Claude/Skills/{CN,EN}/...` 和 `TraeCn/Skills/{CN,EN}/...` 路径；上述链接以 Codex 目录作为统一文档入口。
+Claude 使用镜像结构的 `Claude/Skills/{CN,EN}/...` 路径；上述链接以 Codex 目录作为统一文档入口。
 
 ## 目录结构
 
@@ -287,8 +284,7 @@ sopify/
 │   ├── plan/              # 活跃方案
 │   └── history/           # 已归档方案
 ├── Codex/                 # Codex 宿主提示层
-├── Claude/                # Claude 宿主提示层
-└── TraeCn/                # Trae CN 宿主提示层
+└── Claude/                # Claude 宿主提示层
 ```
 
 上面是核心目录的精简视图；完整工作流、checkpoint 和知识库层级说明见 [docs/how-sopify-works.md](./docs/how-sopify-works.md)。

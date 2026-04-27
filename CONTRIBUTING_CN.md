@@ -12,7 +12,7 @@
 ## Prompt 层与 Skill Authoring
 
 - `Codex/Skills/{CN,EN}` 是 prompt-layer 真源。
-- `Claude/Skills/{CN,EN}` 与 `TraeCn/Skills/{CN,EN}` 是宿主镜像层，不应独立手工维护。
+- `Claude/Skills/{CN,EN}` 是宿主镜像层，不应独立手工维护。
 - `runtime/builtin_skill_packages/*/skill.yaml` 是 builtin machine metadata 真源。
 - Skill package 变更时，参考 [Codex/Skills/CN/skills/sopify/](./Codex/Skills/CN/skills/sopify/) / [Codex/Skills/EN/skills/sopify/](./Codex/Skills/EN/skills/sopify/) 下各自的 `SKILL.md`。
 
@@ -46,7 +46,7 @@ python3 scripts/check-install-payload-bundle-smoke.py
 
 Bundle 规则：
 
-- 全局 payload 位于 `~/.codex/sopify/`、`~/.claude/sopify/` 或 `~/.trae-cn/sopify/`
+- 全局 payload 位于 `~/.codex/sopify/` 或 `~/.claude/sopify/`
 - 工作区内的 `.sopify-runtime/manifest.json` 只作为 thin stub，不再承诺携带 `limits.runtime_gate_entry / limits.preferences_preload_entry`
 - 宿主必须结合 workspace stub 与 payload manifest 解析 selected global bundle，再从选中 bundle contract 或等价 preflight contract 发现 helper 入口
 - 宿主第一跳统一走 selected bundle 的 `runtime_gate_entry`；只有 repo-local 开发态才直接调用 `scripts/runtime_gate.py enter`

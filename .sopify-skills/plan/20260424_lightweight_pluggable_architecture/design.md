@@ -117,7 +117,7 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 5. **向后兼容** — skill.yaml v1 继续工作，新字段可选
 6. **Cross-review 分阶段验证** — 先 advisory，验证价值后升级 runtime
 7. **子任务包方向一致** — 所有子任务包必须服务于或不阻碍总纲目标
-8. **多宿主原生支持** — Claude Code / Codex (✅ 深度验证)；QCoder / Copilot (📋 待调研)；Trae CN (🔴 Sunset, ADR-018)
+8. **多宿主原生支持** — Claude Code / Codex (✅ 深度验证)；QCoder / Copilot (📋 待调研)；retired legacy host surface 已按 ADR-018 退出活跃目标
 9. **策展集成** — Plugin 面向维护者集成，用户配置开关控制
 10. **pipeline_hooks 默认关闭** — 心流优先
 11. **Action schema boundary** — LLM 可理解自然语言并提出结构化 action；Core/Validator 只依据 action schema、机器事实、side_effect 与风险策略授权，不维护用户话术白名单
@@ -223,7 +223,7 @@ host_support: ["*"]
 └──────────────────────────────────────────────────────┘
 ```
 
-> `TraeCn/` 属于 ADR-018 sunset surface，保留至 T-cleanup-2 执行，不作为新宿主提示层示例。
+> Retired legacy host prompt mirror 属于 ADR-018 sunset surface，清理后不作为新宿主提示层示例。
 
 ### 5.2 当前宿主支持
 
@@ -231,11 +231,11 @@ host_support: ["*"]
 |------|------|-------|
 | Claude Code | ✅ 深度验证 | `~/.claude/` |
 | Codex | ✅ 深度验证 | `~/.codex/` |
-| Trae CN | 🔴 Sunset (ADR-018) | `~/.trae-cn/` (归档) |
+| Retired legacy host | 🔴 Sunset (ADR-018) | archived |
 | QCoder | 📋 待调研 | 待确定 |
 | GitHub Copilot | 📋 待调研 | 待确定 |
 
-**新宿主适配**：参考 `20260413_trae_host_adapter` 归档后的三层抽象经验，在 `installer/hosts/` 下新建文件。适配清单：Phase 0 调研 (全局配置/规则注入/技能发现) → Phase 1 注册 → Phase 2 提示层 → Phase 3 验证。
+**新宿主适配**：参考 archived legacy host adapter 的三层抽象经验，在 `installer/hosts/` 下新建文件。适配清单：Phase 0 调研 (全局配置/规则注入/技能发现) → Phase 1 注册 → Phase 2 提示层 → Phase 3 验证。
 
 **skill.yaml 宿主兼容声明**：`host_support: ["*"]` (全宿主) 或指定宿主 ID。`skill_registry.py` 按当前宿主过滤。
 

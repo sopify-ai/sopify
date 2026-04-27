@@ -43,7 +43,7 @@ Sopify 的核心价值是让 AI 编程工作流 **自适应推进、状态可交
 | **质量验证** | gate / pipeline_hooks / CrossReview 等机制让关键执行和产出审查可验证 |
 | **项目资产沉淀** | plan / review / history / blueprint 让计划、审查和历史可追踪、可复用 |
 | **集成优质工具** | graphify（蓝图初始化）、cross-review（代码评审）等，默认按需启用/可配置关闭 |
-| **多宿主** | 同一内核优先跑在 Claude Code / Codex，QCoder / Copilot 走调研接入，Trae CN 按 ADR-018 sunset |
+| **多宿主** | 同一内核优先跑在 Claude Code / Codex，QCoder / Copilot 走调研接入，retired legacy host surface 已按 ADR-018 退出活跃目标 |
 | **轻量可插拔** | 内核精简，工具以 plugin 形式接入，维护者可低成本集成新工具 |
 
 **用户感知层：**
@@ -329,7 +329,7 @@ spec-kit/
 
 本方案包（`20260424_lightweight_pluggable_architecture`）是 Sopify 项目当前的**总纲方案包**，统一管辖以下相关子任务包。所有活跃子任务包的方向必须服务于或不阻碍总纲目标；sunset 子任务包按 ADR-018 进入清理链路。
 
-总纲目标：Sopify 从 "runtime 编排一切" → "runtime 只做 gate + state + contract，LLM 读 skill 自编排"，同时保证多宿主原生支持（Claude Code / Codex ✅ 深度验证；QCoder / Copilot 📋 待调研；Trae CN 🔴 Sunset）。
+总纲目标：Sopify 从 "runtime 编排一切" → "runtime 只做 gate + state + contract，LLM 读 skill 自编排"，同时保证多宿主原生支持（Claude Code / Codex ✅ 深度验证；QCoder / Copilot 📋 待调研；retired legacy host surface 已归档）。
 
 ### 子任务包映射
 
@@ -339,7 +339,7 @@ spec-kit/
 | 感知层精度 | `20260417_ux_perception_tuning` | Phase 0.2 | 前置基础改善 |
 | CrossReview v0 核心 | `20260418_cross_review_engine` | Phase 4 前置依赖 | 独立产品线，并行推进 |
 | Blueprint Graphify 增强 | `20260416_blueprint_graphify_integration` | Phase 5 基础设施 | 增强器架构，并行推进 |
-| Trae CN 宿主适配 | `20260413_trae_host_adapter` | 多宿主扩展 | ADR-018 sunset；归档经验，不再作为 Phase 3 验证环境 |
+| Legacy host adapter | archived legacy host adapter plan | 多宿主扩展 | ADR-018 sunset；归档经验，不再作为 Phase 3 验证环境 |
 
 ### 旧总纲残余吸收
 
@@ -390,11 +390,11 @@ spec-kit/
 - 两者互补：20260416 提供自动化基础设施，Phase 5 提供用户面能力
 - 可以独立推进，不依赖 engine 拆分
 
-#### 独立线: `20260413_trae_host_adapter` — Trae CN 🔴 Sunset
+#### 独立线: archived legacy host adapter — Retired Surface
 
 与总纲方向：✅ 已按 ADR-018 降级
 - 宿主适配层（installer, hosts adapter）独立于 engine/skill 层
-- Trae CN 从活跃多宿主目标降为 sunset surface，不再作为 Phase 3 验证环境
+- retired legacy host 从活跃多宿主目标降为 sunset surface，不再作为 Phase 3 验证环境
 - 既有适配经验归档到 history/，作为后续 HostAdapter / HostCapability / HostRegistration 的历史参考
 - 后续目标宿主优先 QCoder、GitHub Copilot，调研后各自独立立项
 - 每个新宿主适配参考三层抽象 (HostAdapter + HostCapability + HostRegistration)
