@@ -25,7 +25,7 @@
 ## 执行路线
 
 > **核心原则**：先验证价值，再决定建多少基础设施。
-> **战略方向 (2026-04-26)**：Protocol-first / Runtime-optional。Protocol 提取不与任何 Phase 冲突，可并行但不抢 P0。详见 design.md §1.2。
+> **战略方向 (2026-04-26)**：Protocol-first / Runtime-optional。Protocol 提取不与任何 Phase 冲突，Protocol Step 1 为 P1（不抢 P0）。Phase 4a 兼做 Convention 模式首次验证。详见 design.md §1.2。
 
 ### 三阶段总览
 
@@ -35,9 +35,26 @@
 | **阶段 2 — 价值验证** | Phase 4a advisory + 3 项目 dogfood | CR gate 通过后 |
 | **阶段 3 — 数据驱动** | advisory 够用 → 继续；不够用 → Phase 1-3 | dogfood 数据后 |
 
+### 轻量化执行链（已确认）
+
+> 目标：先删除不服务主线的维护面，再做小体验修正和协议澄清，最后用 CrossReview 真实 dogfood 决定是否需要新基础设施。
+> 性质：排序护栏，不新增功能范围；不得被解释为提前启动 Validator / Runtime / bridge.py。
+
+1. **ADR-018 Trae sunset**：先移除 Trae CN host surface，降低同步脚本、安装器、测试和提示层维护面；不改变 Core Protocol。
+2. **Phase 0.2-B/C**：完成 router 精度修正与输出瘦身，只改 `router.py` / `output.py`，不改 `engine.py` 或机器契约。
+3. **Protocol Step 1**：提取最小协议文档与 8-12 个行为契约 case；只写文档，不实现 validator / test runner。
+4. **CrossReview Phase 4a**：以 advisory skill 接入 develop 后审查；`SKILL.md` 调用 CLI，不使用 `bridge.py` / `pipeline_hooks`。
+5. **数据驱动后续**：Phase 4a dogfood 后再决定是否启动 Protocol Validator、Action Schema 实现、Phase 1-3 或 Phase 4b。
+
 ---
 
 ### 当前活跃
+
+**轻量化第一刀：ADR-018 Trae cleanup**
+- 优先级说明：这是 P1 治理清理，但可作为轻量化第一刀先做；它不抢 Phase 0.2-B/C 或 CR v0 的 P0，只降低维护面。
+- 执行范围：按 ADR-018 清理 installer host、Trae 相关测试、同步脚本、README/CONTRIBUTING 表述与 `TraeCn/` surface。
+- 约束：只 sunset legacy surface，不改 Core Protocol、runtime gate、handoff/checkpoint 契约。
+- 验证：保留 Codex/Claude host 安装链路与 release smoke；CHANGELOG 保留历史和最新 sunset note。
 
 **Phase 0.2-B: Router 精度修正**
 - [ ] 修正 `_is_consultation()` 问句+动作词判断
@@ -63,7 +80,7 @@
 - 若事件早于 Protocol Step 3，最小审核标准为：① 不以扩用户话术白名单为主方案；② 必须评估 action/side_effect/tool input/diff/plan task 至少一类机器事实；③ 缺机器事实、缺 side_effect 或状态不匹配时 fail-close
 - 详见子任务包 `20260417_risk_engine_upgrade/`
 
-**Phase 4a: CrossReview Advisory Plugin** `可先草拟；E2E 待 CR release gate 通过`
+**Phase 4a: CrossReview Advisory Plugin + Convention 模式验证** `可先草拟；E2E 待 CR release gate 通过`
 - [ ] T4a.1 创建 `.agents/skills/cross-review/` 目录 (SKILL.md + skill.yaml)
 - [ ] T4a.2 编写 SKILL.md：触发时机 (develop 完成后) + CLI 调用步骤 (默认 `verify --diff --format human`) + 4 种 verdict 处理
 - [ ] T4a.3 编写 skill.yaml：advisory mode, triggers=["review","cross-review"], host_support=["*"]
@@ -74,10 +91,11 @@
 
 **Protocol Step 2: Protocol validator CLI** `待需求信号确认`
 - check / doctor / archive，只读优先
-- 触发条件（全部满足）：
-  1. Protocol Step 1 完成
-  2. 至少 2 次实际 plan/state 校验需求出现（手动修正 / 状态损坏 / 迁移校验）
-  3. 不影响 Phase 0.2-B/C 和 CrossReview v0 的 P0 工作
+- 触发条件（满足其一）：
+  1. Protocol Step 1 完成 + 至少 2 次实际 plan/state 校验需求出现（手动修正 / 状态损坏 / 迁移校验）
+  2. Phase 4a Convention 模式验证暴露系统性 SKILL.md 偏离（LLM 不按表单操作需事后校验）
+  3. 新宿主（QCoder / Copilot）接入时需要 Convention 模式支持
+- 约束：不影响 Phase 0.2-B/C 和 CrossReview v0 的 P0 工作
 - 体量 ~2K 行新代码。分发形态待 Step 1 稳定后定。
 
 **Protocol Step 3: Action Schema Boundary / SKILL.md 表单式增强** `P1 架构约束，不抢当前 P0`
@@ -92,11 +110,21 @@
 
 ---
 
-### 可并行 (不抢 P0)
+### P1 (不抢 P0，与 Phase 0.2-B/C 并行)
 
-**Protocol Step 1: 提取 Protocol 文档**
-- 提取 plan schema、state schema、lifecycle 约定、SKILL.md 编排规范
-- 纯文档，0 行代码变更。不与任何 Phase 冲突。
+**Protocol Step 1: 提取 Protocol 文档** `P1 — ADR-016 顶层战略基础`
+- [ ] plan schema（目录约定、文件命名、background/design/tasks 结构）
+- [ ] state schema（current_handoff.json / current_run.json / gate_receipt 契约字段）
+- [ ] lifecycle 约定（plan → history 生命周期、归档规则、blueprint 更新触发）
+- [ ] SKILL.md 编排规范（表单式格式、`[ACTION:]` 模式、分支结构、弱模型下界要求）
+- [ ] checkpoint schema（4 种内置 checkpoint 的字段约定与 side_effect 标注）
+- [ ] 最小行为契约清单（8-12 个 case）：checkpoint resume、handoff action、plan proposal、execution confirm、no-write consult、history archive 等协议语义
+- [ ] scripts/*.py 一等公民约定：每个确定性脚本须满足 stdin/stdout/JSON + exit code 接口，可在无 runtime 下直接 shell 调用（参考 `score_requirement.py`、`extract_pending_tasks.py`）
+- 产出：docs/protocol/ 或 .sopify-skills/protocol/
+- 纯文档，0 行代码变更。不与任何 Phase 冲突；只列契约，不实现 validator / test runner。
+- **三层架构约束**：Protocol 文档仅约束 Layer 1（协议语义）；Layer 2 Validator 是 Step 2 的事；Layer 3 Runtime 是参考实现，不是接入前提条件。文档不得把"调用 engine.py"写成必须步骤。
+- 验证：外部读者（新 host）只读协议文档，应能回答"如何在无 runtime 下操作 `.sopify-skills/` 目录"。至少 1 个非 Sopify 维护者验证可理解性。
+- 不抢 P0：Phase 0.2-B/C 和 CR gate 优先
 
 ---
 
@@ -125,16 +153,16 @@
 ## 依赖关系
 
 ```
-当前活跃                    可并行
-  Phase 0.2-B/C ──┐        Protocol Step 1 (纯文档)
+当前活跃                    P1 (不抢 P0)
+  Phase 0.2-B/C ──┐        Protocol Step 1 (纯文档, ADR-016 基础)
                    │
 待触发              │
   Phase 0.1 (事件) │
                    │
-  CR v0 release ───┼──→ Phase 4a (advisory) ──→ 3 项目 dogfood
-   gate 通过        │                              │
-                   │                     数据驱动决策 ↓
-  Protocol Step 2 ─┤ (Step 1 完成 + 2 次校验需求)
+  CR v0 release ───┼──→ Phase 4a (advisory + Convention 验证) ──→ 3 项目 dogfood
+   gate 通过        │                                               │
+                   │                                      数据驱动决策 ↓
+  Protocol Step 2 ─┤ (Step 1 完成 + 信号触发，含 Phase 4a 验证数据)
   Protocol Step 3 ─┤ (ADR-017；P1 架构约束，不抢 P0)
                    │
 延后                │              ┌── advisory 够用 → 继续
@@ -284,3 +312,5 @@ P0 任务必须增强至少一项核心能力：adaptive route/workflow、state 
 | D10 | Phase 4a scope | 确认既有共识：advisory only，无 bridge.py/pipeline_hooks |
 | D11 | GraphifyEnhancer vs Graphify Advisory Skill | 两个独立概念：前者知识资产生成（知识工程 P2），后者 Sopify Phase 5 用户插件 |
 | D12 | Action Schema Boundary | ADR-017：不维护用户话术白名单；LLM 只提议结构化 action，Core/Validator 基于机器事实、side_effect 和风险策略授权 |
+| D13 | 遗留 surface 退出路径 | ADR-018：改造时必须声明退出路径；frozen surface 不计入 release gate；Trae CN 归档后不作为新宿主示例 |
+| D14 | 分发架构：thin-stub + 集中管理 | ADR-019：项目本地零拷贝，全局 payload 单点管理版本与更新；后续 ADR 接入不得引入本地冷拷贝 |

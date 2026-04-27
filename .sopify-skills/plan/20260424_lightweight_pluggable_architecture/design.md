@@ -100,11 +100,295 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 
 **概念预算：** Core 只保留 plan / state / checkpoint / handoff / blueprint / history / review / validator / plugin manifest。新概念必须替换旧概念。**已有概念的 schema 字段扩展也需过准入问题。** 当前 plugin manifest 实现文件为 `skill.yaml`，演进不改文件名。
 
+> **澄清：** 架构层（Host / Plugin / Protocol / Validator / Runtime）是分层描述词，不计入 Core 概念预算。概念预算仅约束 Core 协议资产和状态模型中的命名概念；架构层名词可自由引用，不受"替换旧概念"规则约束。
+
 **执行门禁：** 新 Phase、子任务包、schema 字段、checkpoint 子类型、state 文件、runtime helper、plugin 能力进入总纲前，必须先标注三层归类。未标注时默认按 Inspiration Only 处理；能作为 Curated Plugin 独立成立时默认不进 Core；进入 Core 时必须说明替换哪个旧概念或为什么不增加概念预算。
 
 **CrossReview 边界：** CrossReview 是质量验证管线，不是 Sopify 子模块。Sopify 只吸收调用时机、review-result 资产约定、verdict→checkpoint 映射和归档方式；模型、prompt、eval、发布、Action、MCP 留在 CrossReview 边界内。
 
 **Inspiration 记录：** 记录于 background.md "外部参考与吸收登记"章节（产品、可借鉴 insight、归类、吸收方式、为什么不进 core / 边界）。
+
+### 1.4 设计全景图
+
+> 本节从终态视角呈现 Sopify 的完整架构。读者看完后应能回答：**Sopify 最终长什么样、各部分如何协作、为什么这么分层。**
+> 细节在后续章节展开；本节只画全局地图。
+
+#### 1.4.1 终态架构分层
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Host Layer -- host execution env                               │
+│  Claude Code [ok] | Codex [ok] | QCoder [-] | Copilot [-]       │
+│  LLM exec + tool-call only                                      │
+│  Convention mode: r/w .sopify-skills/ only                      │
+├─────────────────────────────────────────────────────────────────┤
+│  Plugin Layer -- curated external capabilities                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │ CrossReview  │  │ Graphify     │  │ future       │           │
+│  │ quality-pipe │  │ proj-graph   │  │ plugins      │           │
+│  │ advisory /   │  │ advisory     │  │              │           │
+│  │ runtime(frzn)│  │              │  │              │           │
+│  └──────────────┘  └──────────────┘  └──────────────┘           │
+│  contract: skill.yaml + SKILL.md manifest + artifact archive    │
+│  admission: §1.3 3-layer filter + 4 core/plugin questions       │
+├─────────────────────────────────────────────────────────────────┤
+│  Runtime Layer -- optional enhance / ref impl   ~28K replaceable│
+│  gate -> router -> engine -> handoff -> checkpoint state machine│
+│  provides: state gate, audit chain, interrupt resume, perms     │
+│  Convention mode: this layer can be fully absent                │
+├═════════════════════════════════════════════════════════════════╡
+                                      ↑ below: irreplaceable stable core
+│  Validator Layer -- min executable kernel         ~2K standalone│
+│  check (schema) . doctor (repair) . archive (migrate)           │
+│  read-first . atomic write . diagnostics                        │
+│  scripts/*.py -- 22 deterministic helpers, invoke via SKILL.md  │
+├─────────────────────────────────────────────────────────────────┤
+│  Protocol Layer -- irreplaceable core             pure docs     │
+│  .sopify-skills/ directory convention                           │
+│  plan / state / history / checkpoint schema                     │
+│  SKILL.md form-based orchestration standard                     │
+│  lifecycle convention (plan -> history -> blueprint)            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**分层原则：** 越靠下越稳定、越不可替代。即使所有上层都被宿主原生替代，Protocol 层的可审计资产格式和跨宿主可携带性仍然保留全部价值——这是 §1.1 生存性测试的架构基础。
+
+**各层关键 ADR：**
+
+| 层 | 关键 ADR | 约束 |
+|----|---------|------|
+| Protocol | ADR-016 (顶层战略), ADR-015 (写入收口) | 不可替代内核，概念预算 ≤9 |
+| Validator | ADR-002 (LLM 判断 + Python 持久化), ADR-017 (Action Schema) | 只读优先，fail-close |
+| Runtime | ADR-001 (不 pipeline 化), ADR-010 (4 种 checkpoint) | 可选增强，不是唯一路径 |
+| Plugin | ADR-008 (策展集成), ADR-004 (CR 分阶段), ADR-009 (hooks 默认关闭) | 独立产品 + Sopify 接入点 |
+| Host | ADR-007 (多宿主原生), ADR-003 (v2 向后兼容), ADR-018 (退出路径), ADR-019 (分发接入) | Convention = 最短接入路径；thin-stub 零配置 |
+
+#### 1.4.2 核心资产链
+
+Sopify 的不可替代产品不是 runtime 代码，而是**资产链**——从用户请求到项目知识的完整流转：
+
+```
+用户请求
+  │
+  ▼
+route ─── 复杂度判定 → 路由分类 (简单/中等/复杂 → 快速修复/轻量迭代/完整流程)
+  │
+  ▼
+plan ──── background + design + tasks 方案包，版本化、可追溯
+  │
+  ▼                          ┌─────────────────────┐
+checkpoint ◄── 用户拍板 ◄───│ clarification (补事实)│
+  │             (4 种内置)    │ decision (选路径)    │
+  │                          │ plan_proposal (建包)  │
+  ▼                          │ execution_confirm    │
+handoff ── 结构化交接契约     └─────────────────────┘
+  │
+  ▼
+develop ── LLM 执行代码变更
+  │
+  ▼
+gate ───── 质量门禁 (risk boundary, execution_gate)
+  │
+  ▼ (可选触发 Plugin)
+review ─── [Plugin: CR] advisory → findings → verdict
+  │
+  ▼
+history ── 归档，含方案包 + review-result，可追溯
+  │
+  ▼
+blueprint ─ 项目级长期知识 (人工策展 + 机器派生)
+  │
+  ▼                          ┌─────────────────────┐
+knowledge/ (P2/P3) ─────────│ graph.json (项目图谱)│
+  │                          │ rules/ (缺陷规则)   │
+  └───── 回注下一次 route ───│ modules.md (结构)   │
+                             └─────────────────────┘
+```
+
+**资产链在两种模式下的驱动差异：**
+
+| 维度 | Convention 模式 | Runtime 模式 |
+|------|----------------|-------------|
+| 驱动者 | LLM 读 SKILL.md 自驱 | engine.py 控制每步迁移 |
+| 校验者 | Validator 事后校验 | state machine 实时门控 |
+| 资产格式 | **完全相同** | **完全相同** |
+| 断裂风险 | LLM 偏离 → Validator 捕获 | 低（确定性） |
+
+**共享不变量：** 无论哪种模式，Protocol 层的 schema 和归档格式完全相同。这是跨模式互操作的基础，也是"先 Convention 验证、再决定是否需要 Runtime"策略的前提。
+
+#### 1.4.3 双模运行模型
+
+```
+                    ┌────────────────────────────────┐
+                    │       Protocol Layer           │
+                    │  .sopify-skills/ schema        │
+                    │  SKILL.md 表单式编排标准       │
+                    │  plan/state/checkpoint 约定    │
+                    └───────────┬────────────────────┘
+                                │
+                   ┌────────────┴────────────┐
+                   │                         │
+         ┌─────────▼──────────┐   ┌──────────▼──────────┐
+         │  Convention 模式    │   │  Runtime 模式        │
+         │  (下界)             │   │  (上界)              │
+         ├────────────────────┤   ├─────────────────────┤
+         │ 编排者: LLM         │   │ 编排者: engine.py    │
+         │ 指令源: SKILL.md    │   │ 指令源: engine dispatch│
+         │ 确定性工具:          │   │ 校验: state machine   │
+         │   scripts/*.py     │   │ 状态: StateStore      │
+         │ 校验: Validator     │   │ 适用: 审计/权限/恢复  │
+         │ 状态: 文件即状态    │   │       高可靠任务      │
+         │ 适用: 无严格过程    │   │ 接入成本: 完整 runtime│
+         │       要求的任务    │   │ 模型下界: 能解析      │
+         │ 接入成本: 极低      │   │   handoff JSON       │
+         │ 模型下界: 能读      │   └─────────────────────┘
+         │   SKILL.md 表单     │
+         └────────────────────┘
+```
+
+**模式选择维度是过程要求，不是模型强弱。**
+
+- 需要确定性门控 + 审计链 + 中断恢复 → Runtime 模式
+- 能接受 LLM 偶尔偏离 + 事后校验兜底 → Convention 模式
+- 太弱的模型连 Runtime 协议也跟不上 → 先降级 Convention + Validator
+
+**Phase 4a 的战略双重角色：**
+1. **产品目标**：develop 后可选触发 CR advisory 审查
+2. **战略验证**：Convention 模式**首次实战检验** — LLM 仅靠 SKILL.md 表单式指令自主调用外部 CLI，不经 runtime 编排
+
+验证结果直接决定 Protocol Step 2/3 激活时机（详见 §3.2 Convention 验证指标）。
+
+#### 1.4.4 飞轮架构映射
+
+生态总纲定义了**生产 → 验证 → 知识**三环飞轮。以下是 Sopify 内部架构如何承载这三环：
+
+```
+                    ┌────────────────────────┐
+                    │    知识环 (P2/P3)       │
+                    │ blueprint/knowledge/   │
+                    │ graph.json · rules/    │
+                    │ + review-result 沉淀   │
+                    └───────┬────────────────┘
+                            │
+                  注入 plan/develop 上下文
+                            │
+        ┌───────────────────▼───────────────────────┐
+        │                                           │
+        │           Sopify Core (生产环)            │
+        │      route → plan → develop → finalize    │
+        │      checkpoint · handoff · gate          │
+        │                                           │
+        └──────────────────┬────────────────────────┘
+                           │
+                  develop 完成后触发
+                           │
+        ┌──────────────────▼────────────────────────┐
+        │                                           │
+        │        CR Plugin (验证环)                 │
+        │  advisory: SKILL.md → CLI → findings      │
+        │  runtime: bridge → verdict (🧊 Phase 4b 冻结)    │
+        │                                           │
+        └──────────────────┬────────────────────────┘
+                           │
+                 findings + review-result
+                           │
+                    ┌──────▼───────┐
+                    │   history/   │──→ blueprint/ ──→ knowledge/ ──→ 回注生产环
+                    │  归档 + 索引 │
+                    └──────────────┘
+```
+
+**Sopify 承载飞轮的关键机制：**
+
+| 飞轮环节 | Sopify 架构映射 | 关键 ADR / Phase | 当前状态 |
+|---------|----------------|-----------------|---------|
+| 生产 → 验证 | develop 完成 → SKILL.md 触发 CR CLI | Phase 4a, ADR-004 | 🔶 待 CR release gate |
+| 验证 → 沉淀 | review-result.json → history/ 归档 | ADR-011 (verdict 映射) | ADR 已定义 |
+| 沉淀 → 知识 | history/ + review-result → knowledge/rules/ | 知识工程 P2 | ⏸️ 延后 |
+| 知识 → 回注 | knowledge/ → design/develop Skill 上下文注入 | 知识工程 P3 | ⏸️ 延后 |
+
+**当前飞轮成熟度：** 生产环 ✅ 运行中 → 验证环 🔶 待闭合 → 知识环 ⏸️ P2/P3 延后（不阻塞前两环）。飞轮的启动策略是**先闭合生产→验证环**，用真实 review-result 数据驱动知识环的优先级决策。
+
+#### 1.4.5 ADR 战略拓扑
+
+19 个 ADR 不是平级的技术决策列表。以下是它们的逻辑层级：
+
+```
+                            ADR-016
+                    Protocol-first / Runtime-optional
+                          ┌─ 顶层战略 ─┐
+                          │            │
+                   ADR-012 (已演进 ↗)  ADR-013 (已演进 ↗)
+                   4层架构演进          自适应定位演进
+                   （演进方向: 012→016; 括号标注为演进来源，非依赖关系）
+
+    ┌─────────────────────┬─────────────────────┬────────────────────┐
+    │                     │                     │                    │
+    ▼                     ▼                     ▼                    ▼
+  状态与权限           执行边界             插件与集成          宿主与分发
+ ┌──────────┐        ┌──────────┐        ┌──────────┐        ┌──────────┐
+ │ ADR-002  │        │ ADR-017  │        │ ADR-008  │        │ ADR-007  │
+ │ LLM判断+ │        │ Action   │        │ 策展集成  │        │ 多宿主   │
+ │ Python   │        │ Schema   │        │          │        │ 原生支持  │
+ │ 持久化   │        │ Boundary │        │ ADR-009  │        │          │
+ │          │        │          │        │ hooks    │        │ ADR-003  │
+ │ ADR-010  │        │ ADR-001  │        │ 默认关闭  │        │ v2向后   │
+ │ 4种      │        │ 不pipe-  │        │          │        │ 兼容     │
+ │ checkpoint│       │ line化   │        │ ADR-004  │        │          │
+ │          │        │ engine   │        │ CR分阶段  │        │ ADR-019  │
+ │ ADR-014  │        └──────────┘        │          │        │ Thin-Stub│
+ │ 权限分层  │                            │ ADR-011  │        │ 分发接入  │
+ │          │                            │ verdict  │        └──────────┘
+ │ ADR-015  │                            │ 映射     │
+ │ State写  │                            └──────────┘
+ │ 入收口   │
+ └──────────┘
+
+                   治理与清理                方向一致性
+                  ┌──────────┐              ┌──────────┐
+                  │ ADR-018  │              │ ADR-006  │
+                  │ Legacy   │              │ 子包方向  │
+                  │ Retirement│             │ 一致性   │
+                  │          │              │          │
+                  │ §9 复杂度 │              │ ADR-005  │
+                  │ 预算守卫  │              │ 旧纲吸收  │
+                  │          │              │ (归档)   │
+                  └──────────┘              └──────────┘
+```
+
+#### 1.4.6 分发与接入模型
+
+Sopify 采用 **thin-stub + 集中管理** 分发架构（ADR-019）。项目本地零拷贝，全局 payload 单点管理版本与更新。
+
+```
+全局 payload (一次安装)                      项目 workspace (自动 bootstrap)
+~/.claude/sopify/                            project-root/
+  ├─ payload-manifest.json ─ 版本索引          └─ .sopify-runtime/
+  ├─ bundles/                                       └─ manifest.json (thin-stub)
+  │    └─ {version}/                                     8 字段：schema_version,
+  │         ├─ manifest.json (完整契约)                    stub_version, bundle_version,
+  │         ├─ runtime/      (~28K 行)                     required_capabilities,
+  │         └─ scripts/      (22 helpers)                  locator_mode, legacy_fallback,
+  └─ helpers/                                              ignore_mode, written_by_host
+       └─ bootstrap_workspace.py                     ↑
+            (自包含, 不依赖源仓库)             locator_mode: global_first
+                                              ─── 指向全局 bundle ───
+```
+
+**首次接入流 (用户视角)：**
+
+> 详细的 bootstrap 流程、后续使用流、版本兼容不变量（`NEWER_THAN_GLOBAL / STALE / INCOMPATIBLE` 三态）、ADR-019 接入约束 5 问，见 §10（ADR-019 完整展开）。
+
+**阅读指引：**
+
+| 目的 | 阅读路径 |
+|------|---------|
+| 理解 Sopify 战略 | ADR-016 → ADR-017 → §1.1 生存性测试 |
+| 理解状态模型 | ADR-002 → ADR-010 → ADR-014 → ADR-015 |
+| 理解插件模型 | ADR-008 → ADR-004 → ADR-011 → ADR-009 |
+| 理解治理约束 | ADR-018 → §9 复杂度预算 → ADR-006 |
+| 理解多宿主 | ADR-007 → ADR-003 → §5 多宿主设计 → Convention 模式 (§1.4.3) |
+| 理解分发接入 | ADR-019 → §5 多宿主 → ADR-007 → Convention 模式 (§1.4.3) |
 
 ---
 
@@ -121,6 +405,7 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 9. **策展集成** — Plugin 面向维护者集成，用户配置开关控制
 10. **pipeline_hooks 默认关闭** — 心流优先
 11. **Action schema boundary** — LLM 可理解自然语言并提出结构化 action；Core/Validator 只依据 action schema、机器事实、side_effect 与风险策略授权，不维护用户话术白名单
+12. **轻量化顺序** — 删除 / 冻结 / 文档化优先于新增基础设施。当前确认链路为 Trae sunset → Phase 0.2-B/C → Protocol Step 1 → CrossReview Phase 4a → 数据驱动决定 Validator/Runtime
 
 ---
 
@@ -136,11 +421,26 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 
 > A (Blueprint 可见化) 延后至 Phase 2 启动时。详细设计见子任务包 `20260417_ux_perception_tuning/design.md`。
 
-### 3.2 Phase 4a — CrossReview Advisory Plugin
+### 3.2 Phase 4a — CrossReview Advisory Plugin + Convention 模式验证
 
 **草拟前置：** CrossReview v0 CLI 可用 (`pip install crossreview`)
 **E2E/dogfood 前置：** CR v0 release gate 通过 + PyPI 可安装 + `verify --diff` + `--format human` 可用
 **不依赖：** Phase 3 (runtime hook/bridge 接口)，可与 Phase 0-3 并行
+
+**战略双重定位：**
+1. **产品目标**：Sopify develop 后可选触发 CR advisory 审查
+2. **战略验证**：Convention 模式（ADR-016）首次实战检验 — LLM 不经 runtime 编排，仅靠 SKILL.md 表单式指令自主调用外部 CLI
+
+**Convention 验证指标**（Phase 4a + 3 项目 dogfood 完成后评估）：
+- LLM 是否按 SKILL.md 指令可靠调用 CLI？
+- 失败时的 failure mode 分类：忘记调用 / 参数错误 / verdict 处理偏离 / 回退路径不触发
+- 3 项目 dogfood 中 Convention 模式成功率
+- 是否暴露 Validator (Protocol Step 2) 的真实需求？
+
+**验证结果反馈至 Protocol-first 路线：**
+- 成功率高 → Protocol-first 可行，Step 2 维持信号驱动
+- 出现系统性偏离 → Step 2 (Validator) 升级为 P1
+- 特定 failure mode 暴露 → 定向调整 SKILL.md 格式或 Step 3 优先级
 
 **目录结构与配置：**
 ```
@@ -210,15 +510,15 @@ host_support: ["*"]
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  宿主无关层 (engine / skill / contract / state)      │
+│  host-agnostic (engine / skill / contract / state)   │
 │  · runtime/*.py + .sopify-skills/                    │
 ├──────────────────────────────────────────────────────┤
-│  宿主适配层 (仅此层允许宿主特化)                    │
+│  host-adapter (only this layer may specialize)       │
 │  · installer/hosts/*.py                              │
-│  · 三层抽象: HostAdapter + HostCapability +          │
+│  · abstraction: HostAdapter + HostCapability +       │
 │    HostRegistration                                  │
 ├──────────────────────────────────────────────────────┤
-│  宿主提示层 (每个宿主的 prompt/skill 源码)           │
+│  host-prompt (per-host prompt/skill source)          │
 │  · Claude/ / Codex/ / ...                            │
 └──────────────────────────────────────────────────────┘
 ```
@@ -266,6 +566,8 @@ host_support: ["*"]
 | 015 | State Write Ownership | ✅ 活跃 |
 | 016 | Protocol-first / Runtime-optional | ✅ 顶层战略 |
 | 017 | Action Schema Boundary | ✅ 活跃 / P1 架构约束 |
+| 018 | Legacy Surface Retirement | ✅ 活跃 / P1 治理约束 |
+| 019 | Payload Bundle Distribution — Thin-Stub + Centralized Runtime | ✅ 活跃 / 已实现 |
 
 ### ADR 详细记录
 
@@ -434,3 +736,97 @@ Protocol Step 3 需要补齐最小协议面：`action_schema_version`、`support
 | prompt/runtime rules | 24+ | 系统提示 C3 节"说明"条数 |
 
 当前值仅作基线参考，不作为硬上限。ADR-017 Step 3 完成后由 T-P3-5b (Protocol Slim Audit) 重新评估。
+
+---
+
+## §10 ADR-019: Payload Bundle Distribution — Thin-Stub + Centralized Runtime `已实现`
+
+### 决策
+
+项目本地只保留 thin-stub（`manifest.json`，8 个字段），完整 runtime 集中管理在宿主全局 payload 中。用户首次接入时 bootstrap 全自动，后续使用透明刷新。
+
+### 理由
+
+| 问题 | 替代方案 | 决策 |
+|------|---------|------|
+| N 个项目各复制一份 ~28K 行 runtime | 每项目全拷贝 | 零拷贝 thin-stub，N 项目共享 1 份 runtime |
+| runtime 更新需逐项目手动同步 | 每项目独立版本 | 全局 payload 单点更新，下次触发自动传播 |
+| `.sopify-runtime/` 污染项目 git | 不管 gitignore | bootstrap 自动管理 `.git/info/exclude` 或 `.gitignore` |
+| 首次使用需手动配置 | 要求用户先安装 | `~go plan` 触发即自动 bootstrap，零配置 |
+
+### 架构
+
+**三层分发：**
+
+```
+installer/payload.py ────── 全局 payload 安装 (一次)
+  └─ bundles/{version}/ ─── 版本化 runtime 存储
+
+installer/bootstrap_workspace.py ─── 项目 bootstrap (首次自动)
+  └─ .sopify-runtime/manifest.json ── thin-stub (8 字段)
+
+runtime/manifest.py ────── bundle manifest 生成 (capabilities, limits, entries)
+```
+
+**Stub 契约 (`.sopify-runtime/manifest.json`)：**
+
+| 字段 | 值 | 用途 |
+|------|-----|------|
+| `schema_version` | `"1"` | 兼容性门控（不匹配 → fail closed） |
+| `stub_version` | `"1"` | stub 格式版本 |
+| `bundle_version` | `"2026-04-24.154241"` | 指向全局 bundle 版本 |
+| `required_capabilities` | `["runtime_gate", "preferences_preload"]` | stub 最低能力要求 |
+| `locator_mode` | `"global_first"` | runtime 发现策略 |
+| `legacy_fallback` | `false` | 是否允许 legacy 回退 |
+| `ignore_mode` | `"exclude"` | gitignore 管理方式 |
+| `written_by_host` | `true` | 标记由 host installer 写入 |
+
+### 版本兼容不变量
+
+1. **向前兼容**：workspace stub 版本 > 全局 → `NEWER_THAN_GLOBAL` 状态 → 不降级，保持 workspace 版本
+2. **向后兼容**：schema_version 门控 + 能力协商 → 匹配则继续，不匹配 fail closed
+3. **Stub 扩展性**：新字段只加在全局 bundle manifest 侧，stub 格式不变，旧 stub 不受影响
+4. **Legacy 回退**：`locator_mode=global_first + legacy_fallback=true` 允许降级到本地遗留 artifacts；`global_only` 禁止（代码强制互斥校验）
+5. **原子写入**：所有 manifest 更新经 `NamedTemporaryFile` + `Path.replace()`，中断不损坏
+6. **版本比较**：semver-like 算法，支持 `dev < alpha < beta < rc < release` prerelease rank
+
+### 首次写入安全策略
+
+| 层 | 机制 | 行为 |
+|----|------|------|
+| Brake layer | 用户输入含"先分析/不要改/explain-only" | 拒绝 bootstrap 写入 |
+| Blocked commands | `~compare/~go exec/~go finalize` 在未激活 workspace | 拒绝 |
+| Confirm commands | `~go init` | 授权 bootstrap + 根目录确认 |
+| Allowed commands | `~go/~go plan` | 直接授权 bootstrap |
+| Non-interactive | 非交互式 session | 拒绝，要求交互式 |
+| Root disambiguation | workspace ≠ git root 时 | 提示用户选择激活目录 |
+
+### 后续 ADR 接入约束
+
+**所有后续 ADR 实现前必须通过以下检查：**
+
+1. **零配置保证**：新特性不得要求用户在首次使用前做任何手动配置。需要配置的必须有合理默认值，或由 bootstrap 自动完成。
+2. **Stub 向后兼容**：如需在 stub manifest 新增字段，旧 stub 必须在缺少该字段时仍能正常工作（字段可选 + 默认值降级）。
+3. **能力协商约束**：如需新增 `required_capability`，这是 breaking change，必须同时升 `schema_version` 并考虑迁移路径。
+4. **Ignore policy 覆盖**：如在 `.sopify-runtime/` 内写入新类型文件，须确认已被 ignore policy 覆盖。
+5. **首次写入安全**：新命令必须分类到 allowed/blocked/confirm 之一，不得绕过 `_authorize_first_workspace_write()`。
+
+### 与其他 ADR 的协同
+
+- **ADR-007 (多宿主)**：payload 路径由 `HostAdapter.payload_root()` 决定，不同宿主不同根。bootstrap 逻辑宿主无关。
+- **ADR-016 (Protocol-first)**：Convention 模式下 stub 只需 `runtime_gate` + `preferences_preload` 两个 capability，不需要完整 runtime。
+- **ADR-018 (Legacy Retirement)**：旧版本 workspace bundle 的 `legacy_fallback` 机制即是 sunset → removed 流程在分发层的投影。
+- **§9 Complexity Budget**：stub 8 个字段计入 protocol 预算；新增字段必须经 §9 审查。
+
+### 代码实现索引
+
+| 文件 | 关键函数/常量 |
+|------|-------------|
+| `installer/payload.py` | `install_global_payload()`, `_REQUIRED_BUNDLE_CAPABILITIES` (13 项) |
+| `installer/bootstrap_workspace.py` | `bootstrap_workspace()`, `_authorize_first_workspace_write()`, `_classify_workspace_bundle()`, `_write_workspace_stub_overlay()`, `_compare_versions()` |
+| `installer/runtime_bundle.py` | `sync_runtime_bundle()`, `DEFAULT_BUNDLE_DIRNAME = ".sopify-runtime"` |
+| `installer/validate.py` | `validate_payload_install()`, `validate_workspace_stub_manifest()`, `_STUB_REQUIRED_CAPABILITIES` |
+| `runtime/manifest.py` | `BundleManifest`, `build_bundle_manifest()`, `MANIFEST_SCHEMA_VERSION = "1"` |
+| `installer/models.py` | `FeatureId.WORKSPACE_BOOTSTRAP`, `FeatureId.PAYLOAD_INSTALL` |
+
+优先级：已实现。作为不变量约束所有后续 ADR。
