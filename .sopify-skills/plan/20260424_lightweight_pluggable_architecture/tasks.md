@@ -83,11 +83,11 @@
 
 **Phase 4a: CrossReview Advisory Plugin + Convention 模式验证** `可先草拟；E2E 待 CR release gate 通过`
 - [ ] T4a.1 创建 `.agents/skills/cross-review/` 目录 (SKILL.md + skill.yaml)
-- [ ] T4a.2 编写 SKILL.md：触发时机 (develop 完成后) + CLI 调用步骤 (默认 `verify --diff --format human`) + 4 种 verdict 处理
+- [ ] T4a.2 编写 SKILL.md：触发时机 (develop 完成后) + CLI 调用步骤 (默认 `pack -> render-prompt -> 宿主隔离审查 -> ingest --format human`，`verify --diff --format human` 仅为 standalone fallback) + 4 种 verdict 处理
 - [ ] T4a.3 编写 skill.yaml：advisory mode, triggers=["review","cross-review"], host_support=["*"]
 - [ ] T4a.4 端到端验证 + 3 项目 dogfood
 - 草拟门槛：CR v0 CLI 可用即可起草 SKILL.md / skill.yaml
-- E2E/dogfood 门槛：CR v0 release gate 通过 + PyPI 可安装 + `verify --diff` + `--format human` 可用
+- E2E/dogfood 门槛：CR v0 release gate 通过 + PyPI 可安装 + host-integrated CLI (`pack` / `render-prompt` / `ingest --format human`) 可用；`verify --diff --format human` 仅作为 standalone fallback 校验
 - 验证：LLM 读 SKILL.md 后自主调用 CLI；至少 3 个真实项目、至少 2 个 valid issue；误报不阻塞主流程
 
 **Protocol Step 2: Protocol validator CLI** `待需求信号确认`
@@ -309,7 +309,7 @@ P0 任务必须增强至少一项核心能力：adaptive route/workflow、state 
 | D7 | Protocol-first 战略 | ADR-016 |
 | D8 | 三份总纲 Source of Truth 划分 | Sopify→Sopify 总纲, CR→CR 总纲, 生态→跨项目排序+依赖图 |
 | D9 | 知识工程优先级 | 降为 P2/P3，不作为 CR/Sopify 任何阶段前置；blueprint/knowledge/ 随 P2 启动再定 |
-| D10 | Phase 4a scope | 确认既有共识：advisory only，无 bridge.py/pipeline_hooks |
+| D10 | Phase 4a scope | 确认既有共识并于 2026-04-28 修订执行路径：advisory only，无 bridge.py/pipeline_hooks；默认 host-integrated (`pack -> render-prompt -> 宿主隔离审查 -> ingest --format human`)，`verify --diff` 仅为 standalone fallback |
 | D11 | GraphifyEnhancer vs Graphify Advisory Skill | 两个独立概念：前者知识资产生成（知识工程 P2），后者 Sopify Phase 5 用户插件 |
 | D12 | Action Schema Boundary | ADR-017：不维护用户话术白名单；LLM 只提议结构化 action，Core/Validator 基于机器事实、side_effect 和风险策略授权。Phase 0.2-B/C 的 router/output 修正不属于 ADR-017 实现；任何 action schema / checkpoint / plugin verdict 映射改动必须独立立项或修订 ADR |
 | D13 | 遗留 surface 退出路径 | ADR-018：改造时必须声明退出路径；frozen surface 不计入 release gate；Trae CN 归档后不作为新宿主示例 |

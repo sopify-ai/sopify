@@ -435,7 +435,7 @@ Sopify 采用 **thin-stub + 集中管理** 分发架构（ADR-019）。项目本
 ### 3.2 Phase 4a — CrossReview Advisory Plugin + Convention 模式验证
 
 **草拟前置：** CrossReview v0 CLI 可用 (`pip install crossreview`)
-**E2E/dogfood 前置：** CR v0 release gate 通过 + PyPI 可安装 + `verify --diff` + `--format human` 可用
+**E2E/dogfood 前置：** CR v0 release gate 通过 + PyPI 可安装 + host-integrated CLI 可用（`pack` / `render-prompt` / `ingest --format human`）；`verify --diff --format human` 仅作为 standalone fallback 校验
 **不依赖：** Phase 3 (runtime hook/bridge 接口)，可与 Phase 0-3 并行
 
 **战略双重定位：**
@@ -471,19 +471,22 @@ host_support: ["*"]
 
 **SKILL.md 编排指令（草案）：**
 
-默认路径 (verify --diff，一步到位)：
-1. 生成 diff: `git diff HEAD~{task_count}..HEAD > /tmp/cr-diff.patch`
-2. 审查: `crossreview verify --diff /tmp/cr-diff.patch --format human`
-3. 按 verdict 处理：
+默认路径（host-integrated，宿主负责隔离 LLM 调用）：
+1. 生成 ReviewPack: `crossreview pack --diff <REF> --intent "{task_summary}" > pack.json`
+2. 渲染 prompt: `crossreview render-prompt --pack pack.json > prompt.md`
+3. 宿主在 fresh / isolated review context 中执行 `prompt.md`，保存 raw analysis
+4. 归一化结果: `crossreview ingest --raw-analysis raw-analysis.md --pack pack.json --model host_unknown --format human`
+5. 按 verdict 处理：
    - `pass_candidate` → 继续 finalize
    - `concerns` → 展示 findings，询问用户：修改 / 接受 / 忽略
    - `needs_human_triage` → 请用户判断
    - `inconclusive` → 记录，不阻断
 
-回退路径 (pack → verify，verify --diff 不可用时)：
-1. `crossreview pack --diff /tmp/cr-diff.patch --intent "{task_summary}"`
-2. `crossreview verify --pack pack.json`
-3. 读取 review-result.json，同上 verdict 处理
+回退路径（standalone verify，仅 reviewer config / API key 已配置时）：
+1. `crossreview verify --diff <REF> --intent "{task_summary}" --format human`
+2. 读取输出，同上 verdict 处理
+
+注释：`verify --diff` 会由 CrossReview CLI 直接调用 LLM API，不是 Phase 4a 默认宿主集成路径。Phase 4a 默认通过 `render-prompt + ingest` 借用宿主自身 LLM 能力，避免额外 API key / SDK 前置。
 
 **无需 bridge.py** — LLM 读 SKILL.md 后自行调用 CLI，与 Graphify 一致。
 

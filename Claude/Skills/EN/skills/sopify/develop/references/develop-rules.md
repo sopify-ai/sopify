@@ -149,14 +149,15 @@ After all tasks pass the quality loop and two-stage review, if the workspace `.a
 Trigger conditions:
 
 1. All tasks have passed the quality loop (Step 2 complete).
-2. The workspace has unreviewed code changes (uncommitted diff is non-empty, or the committed review range is non-empty).
-3. The advisory skill's prerequisites are met (e.g. CLI installed).
+2. The workspace has unreviewed code changes (committed review range `git diff <REF>..HEAD` is non-empty, or uncommitted changes exist and must be confirmed/handled per advisory skill Step 0).
+3. The advisory skill's prerequisites are met (e.g. CLI installed, and the isolated execution context required by host-integrated review is available).
 
 Execution constraints:
 
 - Execution failure or `inconclusive` verdict does not block the main flow.
 - `concerns` / `needs_human_triage` are shown to the user and await their decision; do not auto-write checkpoints or auto-modify code.
 - If prerequisites are not met (e.g. CLI not installed), skip and log the reason without blocking.
+- Note: Phase 4a stays in Convention mode; this does not introduce `bridge.py`, `pipeline_hooks`, or a runtime lifecycle hook.
 
 ## Step 4: Sync the knowledge base
 

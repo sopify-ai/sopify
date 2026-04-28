@@ -6,6 +6,21 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-04-28.134325] - 2026-04-28
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/skills/sopify/develop/references/develop-rules.md`
+  - `Claude/Skills/EN/skills/sopify/develop/references/develop-rules.md`
+  - `Codex/Skills/CN/skills/sopify/develop/references/develop-rules.md`
+  - `Codex/Skills/EN/skills/sopify/develop/references/develop-rules.md`
+
+### Changed
+
+- Updated project files:
+  - `.agents/skills/cross-review/SKILL.md`
+
 ## [2026-04-28.113132] - 2026-04-28
 
 ### Skills
