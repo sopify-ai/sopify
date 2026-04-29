@@ -18,6 +18,100 @@
 - promotion gate 的后续跨仓库 Batch 2/3 只用于优化 trigger matrix、示例边界和 threshold 校准，不反向改写本轮 `v1` 分层边界。
 - `45` 样本 / `3` 类环境的 round-1 pilot 已完成独立 decision pass，并以 `propose-promotion` 作为正式结论；后续只保留 wording/examples 校准，不再回退本轮 promotion 决策。
 
+### Design Influence Intake Gate
+
+外部项目/方法论的设计影响进入 Sopify 设计文档时，分三级准入：
+
+| 级别 | 名称 | 含义 | 允许出现位置 |
+|------|------|------|------------|
+| **T0 Reference** | 设计参考 | 启发方向 / 验证已有选择，无实现承诺 | plan 包 design.md |
+| **T1 Adoption** | 采纳待验证 | 映射到 ≥1 条哲学 + 有落地路径 + 有验证方案 | plan 包 + 可引用至 blueprint |
+| **T2 Principle** | 沉淀原则 | 已实现 + 已验证 + 通过删除测试 | blueprint 级承诺 |
+
+**T0 → T1 准入条件：**
+1. 映射到 Loop-first / Wire-composable / Surface-shared 之一
+2. 有具体实现路径（哪个方案包、哪个 task）
+3. 实现计划含独立验证（测试 / dogfood / review）
+4. 不与已有 ADR 结论冲突
+
+**T1 → T2 准入条件：**
+1. 至少 1 个方案包实现并通过验证
+2. dogfood 期间未回退
+3. 通过删除测试（移除后行为真的变化）
+
+每条外部引用应标注：source / tier / philosophy mapping / verification plan。
+
+## 底层哲学
+
+> Sopify 的一切设计决策都可以从以下 3 条哲学推导。它们是 ADR-013（产品定位）、ADR-016（Protocol-first）、ADR-017（Action/Effect Boundary）的共同根基。
+
+### 哲学 1: Loop-first (循环优先)
+
+每个有意义的工作单元都是独立闭环：**produce → verify (isolated) → accumulate → produce**。
+
+- produce: 按复杂度自适应选择快速修复 / 轻量迭代 / 完整方案
+- verify: 在独立上下文中验证产出（非生产者自验；cross-review 是该模式的参考实现）
+- accumulate: 沉淀到 blueprint/history，构建项目记忆
+- loop: 新任务从积累出发，不从零开始
+
+没有 verify 的 produce 是猜测。没有 accumulate 的 verify 是浪费。没有读回 accumulate 的 loop 是断裂的。
+
+### 哲学 2: Wire-composable (线可组合)
+
+独立 loop 通过**线**（机器契约 / 协议约定）组合成大 loop。Sopify 是串联这些小 loop 的线本身——control plane 不做节点内部的事，它负责串联和传递状态。
+
+**线独立于 session / model / host：**
+- 中断恢复：读取 handoff + run state → 不同 session 精确继续
+- 模型接力：同一组 state 文件，不同 LLM 都能消费
+- 宿主携带：`.sopify-skills/` 是纯文件协议，不绑定 runtime
+
+**线的显隐程度可调：**
+
+| 显隐 | 实现 | 适用 |
+|------|------|------|
+| 显式 (Runtime) | gate JSON → handoff JSON → checkpoint JSON | 确定性门控 / 审计 / 恢复 |
+| 隐式 (Convention) | SKILL.md + 目录约定 + lifecycle 规则 | 轻量任务 / 新宿主接入 |
+
+这与 ADR-016 Protocol-first / Runtime-optional 完全对齐——Protocol 定义节点的输入输出 schema，Runtime 是可选的"加固线"。
+
+### 哲学 3: Surface-shared (面共享)
+
+所有线共享一个知识面（blueprint / history）。知识面是跨 session / model / host 的**共享工作记忆**，不只是归档系统。
+
+- 一条线的 accumulate 通过面成为任意线的 produce 输入
+- 包括不同 session 中同一条线的续接（跨 session 接力的知识基底）
+- blueprint 的读（先验构建）和写（知识沉淀）同等重要
+
+**Sopify 的不可替代性 = 线 + 面的组合。** 宿主未来可以原生做节点（plan/checkpoint），但跨 session/model/host 的线和面需要独立于宿主的文件协议承载——这就是 Protocol-first 的底层论据，也是生存性测试的根基。
+
+### 拓扑全景
+
+```
+Sopify = 一条大 loop，串联多个独立小 loop，共享一个知识面
+
+大 loop ──→ [小 loop: 分析] ──→ [小 loop: 设计] ──→ [小 loop: 开发] ──→ [小 loop: 验证] ──→ accumulate ──→ ↩
+               p→v→a→p              p→v→a→p              p→v→a→p              p→v→a→p
+               (独立)                (独立)                (独立)                (独立)
+                                     ↑                                           ↑
+                              线 = gate/handoff                           cross-review
+                              (显式 or 隐式)                              (独立验证节点)
+
+所有 accumulate 写入同一个知识面：blueprint / history
+所有 produce 从同一个知识面读取先验
+线可在不同 session / model / host 间中断恢复
+```
+
+### 与 ADR 映射
+
+| 哲学 | ADR | 关系 |
+|------|-----|------|
+| Loop-first | ADR-016 Protocol-first | Loop 的标准化需要 protocol；protocol 的存在理由是让 loop 可复现 |
+| Wire-composable | ADR-016 Runtime-optional | 线的显隐可调 = Runtime 是可选的加固层 |
+| Wire-composable | ADR-017 Action/Effect | ActionProposal 是线上的过滤器，不是节点 |
+| Surface-shared | ADR-013 产品定位 | 面 = 跨宿主的持久价值，是生存性测试的根基 |
+
+---
+
 ## 目录分层
 
 Sopify 的知识与运行态继续按五层组织：
