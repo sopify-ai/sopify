@@ -8,6 +8,7 @@
 | `20260417_ux_perception_tuning` | Phase 0.2 | 活跃 (B/C) | `plan/20260417_ux_perception_tuning/` |
 | `20260418_cross_review_engine` | Phase 4 前置 | 已确认 | `plan/20260418_cross_review_engine/` |
 | `20260416_blueprint_graphify_integration` | Phase 5 基础 | 基础集成活跃；Plugin 封装延后 | `plan/20260416_blueprint_graphify_integration/` |
+| `20260428_action_proposal_boundary` | ADR-017 P0 thin slice | 新建 | `plan/20260428_action_proposal_boundary/` |
 | archived legacy host adapter | 多宿主扩展 | Sunset (ADR-018) | `history/2026-04/` |
 
 ## 旧总纲吸收记录
@@ -70,6 +71,12 @@
 
 > 详细设计见子任务包 `20260417_ux_perception_tuning/design.md`
 
+**ADR-017 P0: ActionProposal Boundary** `当前最高痛点`
+- 子方案包：`20260428_action_proposal_boundary/`
+- 目标：建立 Action/Effect Boundary，P0 先用 `consult_readonly` 解决 no-write 局部语境；方案包误建是当前最高频症状。
+- 体量：~200 行新增 + ~30 行修改，不改 router 签名和 52 个现有测试
+- 与 Phase 0.2-B 关系：P0 结构性解决 consult 误路由，0.2-B 中 `_is_consultation()` 修复在 P0-H cleanup 时一并退出；`_estimate_complexity()` 短请求降级对非 consult 场景仍有效，优先级降低
+
 ---
 
 ### 待触发
@@ -99,15 +106,34 @@
 - 约束：不影响 Phase 0.2-B/C 和 CrossReview v0 的 P0 工作
 - 体量 ~2K 行新代码。分发形态待 Step 1 稳定后定。
 
-**Protocol Step 3: Action Schema Boundary / SKILL.md 表单式增强** `P1 架构约束，不抢当前 P0`
-- [ ] 定义有限 action schema：`inspect_checkpoint` / `confirm_plan_package` / `revise_plan_proposal` / `submit_decision` / `answer_clarification` / `confirm_execute` / `cancel_checkpoint` / `ask_question` / `no_write_consult`
+**Protocol Step 3: Action Schema Boundary / SKILL.md 表单式增强** `P0 thin slice 已提升；完整 schema 仍为 P1`
+
+**P0 thin slice（子方案包 `20260428_action_proposal_boundary/`）：**
+- [ ] 定义 ActionProposal schema（6 个 action_type enum + 5 个 side_effect types；P0 只对 consult_readonly 做 route override，side-effecting action 做最小 evidence proof 授权但不接管路由）
+- [ ] 实现 `action_intent.py`：ActionProposal + ValidationContext + ValidationDecision + Validator + deterministic fallback（不带 LLM API）；P0 4 路分支：consult_readonly → authorize/consult；side-effecting + evidence 通过 → authorize/null；evidence 不足 → downgrade consult_readonly；unknown → fallback_router
+- [ ] Gate 接收 `--action-proposal-json`；new host 无 proposal 时返回 gate retry contract
+- [ ] Engine pre-route interceptor：authorize + route_override=consult → consult route；authorize + route_override=null → Router 继续；downgrade → consult route；fallback_router → Router 继续
+- [ ] `decision_tables.yaml` 补 `confirm_plan_package` 的 `switch_to_consult_readonly` effect row
+- [ ] Host prompt 加一条规则（schema 由 gate 动态返回，不嵌 prompt）
+- [ ] Validator deterministic tests + 保留现有 router 52 个测试
+- [ ] P0-H：P0-G 测试通过 + 1 轮 dogfood 后，按 ADR-018 清理被 ActionProposal 覆盖的 legacy classifier paths
+- 约束：P0 只激活 `consult_readonly` pre-route 拦截；Router 签名不改；命令前缀请求不经过 ActionProposal
+- 标注：现有 `analysis_only_no_write_brake`、`plan_meta_review`、`analyze_challenge`、`explain_only_override` 为 legacy compatibility path，P0-G 测试通过 + 1 轮 dogfood 后由 P0-H 清理
+
+**P1 完整 schema（原 Protocol Step 3 范围）：**
+- [ ] 为 reserved actions 逐步激活完整 schema（`inspect_checkpoint` / `confirm_plan_package` / `revise_plan_proposal` 等）
 - [ ] 为每个 action 标注 `side_effect`、必填 id、允许 stage、允许 `required_host_action`
 - [ ] 更新 SKILL.md 表单式编排，使用 `[ACTION: ...]` 输出结构化 action proposal
 - [ ] 明确 fail-close 策略：缺字段、低置信度、歧义或机器事实不匹配时降级 inspect/ask 或拒绝写入
-- [ ] 定义 `action_schema_version` / `supported_actions` capability，供未来 bridge.py 或宿主查询 Core 支持面
+- [ ] 定义 `action_schema_version` / `supported_actions` capability（区分 active / reserved），供未来 bridge.py 或宿主查询 Core 支持面
 - [ ] 定义最小 `action_audit` 事件字段；暂不展开完整 `action_audit.jsonl` schema
 - [ ] 复核 Phase 0.1 风险检测、checkpoint 恢复、plugin verdict 映射是否只评估 action/payload/side_effect，不评估用户话术白名单
-- 优先级：P1 / Protocol Step 3。它约束未来实现，但不阻塞 CR release gate、Phase 0.2-B/C 或 Phase 4a 草拟。
+- 优先级：P1 / Protocol Step 3。完整 action system 不阻塞 P0 thin slice。
+
+**P1 follow-up（P0 thin slice 验证后）：**
+- `protocol_step3_schema_docs`：将 ActionProposal schema 写入 protocol 文档层（ADR-016 Layer 1）
+- `runtime_handoff_slimming`：精简 handoff artifacts
+- `action_audit_observability`：`action_audit.jsonl` 事件可观测性
 
 ---
 
@@ -154,17 +180,17 @@
 ## 依赖关系
 
 ```
-当前活跃                    P1 (不抢 P0)
-  Phase 0.2-B/C ──┐        Protocol Step 1 (纯文档, ADR-016 基础)
-                   │
+当前活跃                    P0 thin slice
+  Phase 0.2-B/C ──┐        ADR-017 Action/Effect Boundary
+                   │          └─ 20260428_action_proposal_boundary
 待触发              │
-  Phase 0.1 (事件) │
-                   │
+  Phase 0.1 (事件) │        P1 (不抢 P0)
+                   │        Protocol Step 1 (纯文档, ADR-016 基础)
   CR v0 release ───┼──→ Phase 4a (advisory + Convention 验证) ──→ 3 项目 dogfood
    gate 通过        │                                               │
                    │                                      数据驱动决策 ↓
   Protocol Step 2 ─┤ (Step 1 完成 + 信号触发，含 Phase 4a 验证数据)
-  Protocol Step 3 ─┤ (ADR-017；P1 架构约束，不抢 P0)
+  Protocol Step 3 ─┤ (ADR-017 完整 schema；P0 thin slice 验证后)
                    │
 延后                │              ┌── advisory 够用 → 继续
   Phase 0.3 ───→ Phase 1 ──→ Phase 2+3 ──→ Phase 4b (冻结中)
