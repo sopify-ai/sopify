@@ -1,5 +1,9 @@
 # Tasks: Host Prompt Governance
 
+> **定位更新**：后续收口包，不再作为当前排头兵。
+> **前置依赖**：`20260429_standard-archive-finalize-archive-checkpoint` 完成，并且 archive/finalize 新 contract 已稳定。
+> **建议顺序**：在 `existing plan` 显式主体绑定与 `checkpoint local actions` 方向评估完成后，再进入本包实现。
+
 ## 任务列表
 
 ### T1: 审计与原则沉淀
@@ -45,4 +49,7 @@
 T1 → T2 → T3 → T4 → T5
 T1-D (用户确认) gates T2
 legacy_feature_cleanup.~compare 删除 gates T2-B (去掉 multi_model.* 配置行)
+20260429_standard-archive-finalize-archive-checkpoint 完成 gates T1/T2 的正式启动
+existing plan 显式主体绑定方向评估完成 gates T1/T2 的优先级确认
+checkpoint local actions 方向评估完成 gates T1/T2 的优先级确认
 ```

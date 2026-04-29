@@ -4,6 +4,7 @@
 
 ## 索引
 
+- `2026-04-29` [`20260429_legacy_feature_cleanup`](2026-04/20260429_legacy_feature_cleanup/) - standard - Tasks: Legacy Feature Cleanup
 - `2026-03-24` ~~`20260323_unified_plan_history_index`~~ - abandoned - 统一 plan history 索引投影（on_hold，无法验收，2026-04 主动弃置）
 - `2026-03-21` ~~`20260320_default_host_bridge_install`~~ - abandoned - 默认宿主桥接一键安装（on_hold，无法验收，2026-04 主动弃置）
 - `2026-03-21` ~~`20260320_cursor_plugin_install`~~ - abandoned - Cursor 插件安装（on_hold，路线未定，2026-04 主动弃置）

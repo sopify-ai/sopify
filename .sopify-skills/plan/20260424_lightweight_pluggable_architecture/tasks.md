@@ -9,7 +9,8 @@
 | `20260418_cross_review_engine` | Phase 4 前置 | 已确认 | `plan/20260418_cross_review_engine/` |
 | `20260416_blueprint_graphify_integration` | Phase 5 基础 | 基础集成活跃；Plugin 封装延后 | `plan/20260416_blueprint_graphify_integration/` |
 | `20260428_action_proposal_boundary` | ADR-017 P0 thin slice | ✅ P0 完成（dogfood 通过） | `plan/20260428_action_proposal_boundary/` |
-| `20260429_legacy_feature_cleanup` | Legacy 清理 | 新建 | `plan/20260429_legacy_feature_cleanup/` |
+| `20260429_legacy_feature_cleanup` | Legacy 清理 | ✅ 已归档 | `history/2026-04/20260429_legacy_feature_cleanup/` |
+| `20260429_standard-archive-finalize-archive-checkpoint` | 显式主体与生命周期收敛 | **当前最高优先级 / 新建** | `plan/20260429_standard-archive-finalize-archive-checkpoint/` |
 | `20260429_host_prompt_governance` | Prompt 治理 | 新建 | `plan/20260429_host_prompt_governance/` |
 | archived legacy host adapter | 多宿主扩展 | Sunset (ADR-018) | `history/2026-04/` |
 
@@ -44,21 +45,28 @@
 > 目标：先删除不服务主线的维护面，再做小体验修正和协议澄清，最后用 CrossReview 真实 dogfood 决定是否需要新基础设施。
 > 性质：排序护栏，不新增功能范围；不得被解释为提前启动 Validator / Runtime / bridge.py。
 
-1. **ADR-018 Trae sunset**：先移除 Trae CN host surface，降低同步脚本、安装器、测试和提示层维护面；不改变 Core Protocol。
+1. **显式主体与生命周期收敛（第一子切片）**：优先收敛 `archive/finalize` 语义、archive 所需显式主体解析、以及旧 finalize 绕行链路删除。该子切片完成前，不进入 prompt 治理实现。
 2. **Phase 0.2-B/C**：完成 router 精度修正与输出瘦身，只改 `router.py` / `output.py`，不改 `engine.py` 或机器契约。
-3. **Protocol Step 1**：提取最小协议文档与 8-12 个行为契约 case；只写文档，不实现 validator / test runner。
-4. **CrossReview Phase 4a**：以 advisory skill 接入 develop 后审查；`SKILL.md` 调用 CLI，不使用 `bridge.py` / `pipeline_hooks`。
-5. **数据驱动后续**：Phase 4a dogfood 后再决定是否启动 Protocol Validator、Action Schema 实现、Phase 1-3 或 Phase 4b。
+3. **CrossReview Phase 4a**：以 advisory skill 接入 develop 后审查；`SKILL.md` 调用 CLI，不使用 `bridge.py` / `pipeline_hooks`。
+4. **Protocol Step 1**：提取最小协议文档与 8-12 个行为契约 case；只写文档，不实现 validator / test runner。应以 archive/finalize 新现实与已稳定 contract 为输入，不提前固化旧 finalize 语义。
+5. **ADR-018 Trae sunset 收口**：已实现的 retired host 清理改为文档与状态收口，不再占当前实现主序列。
+6. **数据驱动后续**：Phase 4a dogfood 后再决定是否启动更广的 Protocol Validator、Action Schema 实现、Phase 1-3 或 Phase 4b。
 
 ---
 
 ### 当前活跃
 
-**轻量化第一刀：ADR-018 Trae cleanup**
-- 优先级说明：这是 P1 治理清理，但可作为轻量化第一刀先做；它不抢 Phase 0.2-B/C 或 CR v0 的 P0，只降低维护面。
-- 执行范围：按 ADR-018 清理 installer host、Trae 相关测试、同步脚本、README/CONTRIBUTING 表述与 `TraeCn/` surface。
-- 约束：只 sunset legacy surface，不改 Core Protocol、runtime gate、handoff/checkpoint 契约。
-- 验证：保留 Codex/Claude host 安装链路与 release smoke；CHANGELOG 保留历史和最新 sunset note。
+**当前最高优先级：显式主体与生命周期收敛（第一子切片）**
+- 子方案包：`20260429_standard-archive-finalize-archive-checkpoint/`
+- 目标：把 `archive/finalize` 从活动 runtime 流中回收，收敛为面向显式主体的协议级归档操作。
+- 范围：archive/finalize 新语义、archive subject contract、deterministic `check/doctor/apply`、旧 finalize 绕行删除。
+- 前置关系：完成前，`20260429_host_prompt_governance` 不进入实现阶段；prompt 层不得继续围绕旧 finalize surface 做治理。
+- 后续建议：本子切片完成后，再评估是否进入 `existing plan` 显式主体绑定或 `checkpoint local actions` 收敛。
+
+**ADR-018 Trae cleanup（已实现，待文档收口）**
+- 状态说明：retired host surface 已完成 sunset 与归档，当前剩余事项以总纲/README/验证口径收口为主，不再作为当前实现主任务。
+- 收口范围：确认总纲、背景、设计、CHANGELOG 和验证标准中的 sunset 口径一致。
+- 约束：不重新打开 retired host 实现面，不影响当前 archive/lifecycle 第一子切片。
 
 **Phase 0.2-B: Router 精度修正**
 - [ ] 修正 `_is_consultation()` 问句+动作词判断
@@ -106,6 +114,7 @@
   2. Phase 4a Convention 模式验证暴露系统性 SKILL.md 偏离（LLM 不按表单操作需事后校验）
   3. 新宿主（QCoder / Copilot）接入时需要 Convention 模式支持
 - 约束：不影响 Phase 0.2-B/C 和 CrossReview v0 的 P0 工作
+- 当前收敛说明：`archive` 语义由 `20260429_standard-archive-finalize-archive-checkpoint` 作为第一子切片先落地；是否扩成更通用的 validator CLI，在该子切片完成后再决策。
 - 体量 ~2K 行新代码。分发形态待 Step 1 稳定后定。
 
 **Protocol Step 3: Action Schema Boundary / SKILL.md 表单式增强** `P0 thin slice 已提升；完整 schema 仍为 P1`
@@ -136,6 +145,7 @@
 - `protocol_step3_schema_docs`：将 ActionProposal schema 写入 protocol 文档层（ADR-016 Layer 1）
 - `runtime_handoff_slimming`：精简 handoff artifacts
 - `action_audit_observability`：`action_audit.jsonl` 事件可观测性
+- `host_prompt_governance`：后续收口包。前置依赖：archive/finalize 新 contract 稳定；在此之前不对旧 finalize/runtime surface 做 prompt 治理实现。
 
 ---
 
