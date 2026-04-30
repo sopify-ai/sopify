@@ -8,56 +8,49 @@ description: "在开发完成后自动交叉评审代码变更。审查者运行
 在 develop 阶段完成、代码已写入磁盘后触发。不要在规划阶段或未产生代码变更时触发。
 
 前置条件：
-- 工作区存在未评审的代码变更（已提交的 review range `git diff <REF>..HEAD` 非空，或存在需要用户确认提交的本轮未提交变更）。
-- `crossreview` CLI 已安装（`pip install crossreview` 或 `pip install -e .`）。
+- 工作区存在未评审的代码变更（已提交的 review range、已暂存的本轮变更，或可确认只包含本轮任务的未暂存变更）。
+- `crossreview` CLI 已安装，版本为 `0.1.0a2+`（`pip install -U crossreview` 或 `pip install -e .`）。
 - 默认 host-integrated 路径可用：宿主能在 fresh / isolated review context 中执行 `render-prompt` 产出的完整 prompt。
 
 注释：Sopify Phase 4a 的默认路径不要求 CrossReview 自己配置模型、provider 或 API key；LLM 调用由当前宿主完成。只有使用 standalone fallback 的 `crossreview verify` 时，才需要 `CROSSREVIEW_MODEL` / `CROSSREVIEW_PROVIDER` / API key 或等价 `crossreview.yaml`。
 
 ## 默认流程（Host-integrated）
 
-### Step 0 — 确定 diff 基准并确保变更进入 review range
+### Step 0 — 选择 diff source 并隔离 review range
 
-CrossReview 的 `--diff REF` 执行的是 `git diff REF HEAD`，只捕获已提交的变更，不包含未暂存或未提交的工作区修改。
+CrossReview `0.1.0a2+` 支持三种确定性差异来源：
 
-**0A — 确定 diff 基准（REF）：**
+- `--staged`：优先用于本轮未提交变更的 pre-commit review，执行 `git diff --cached`，不要求创建 review commit。
+- `--diff REF`：用于已提交或需要可复现 review range 的场景，执行 `git diff REF HEAD`。
+- `--unstaged`：只在工作区未暂存变更可以确认全是本轮任务时使用，执行 `git diff`。
 
-[IF 任务涉及多次提交]
-  REF = HEAD~{提交数}
-[ELSE]
-  REF = HEAD~1
+**0A — 选择推荐路径：**
 
-确认基准：展示 REF 对应的 commit，让用户确认起点正确：
+[IF 本轮变更尚未提交，且可以安全区分本轮目标文件]
+  只 stage 本轮 develop 产生的文件（基于任务清单中的目标文件），不使用 `git add -A`。
+  设置 `DIFF_SOURCE="--staged"`。
 
-```bash
-git log -1 --oneline <REF>
-```
-
-[ACTION: INFORM_USER] "Review 起点为：`{REF 对应的 commit 摘要}`。本轮 develop 的所有变更应在此之后。"
-若用户认为起点不对，让用户指定正确的 commit SHA 作为 REF。
-
-**0B — 处理未提交变更：**
-
-[IF `git status --short` 非空（工作区存在未提交的 develop 变更）]
-  [ACTION: INFORM_USER] 说明 CrossReview v0 只能审查已提交的 diff，当前变更尚未进入 review range。
-  [ACTION: ASK_USER] "本轮 develop 产出尚未提交。CrossReview 需要已提交的 diff 才能工作。
-  (A) 创建 review commit 并继续评审
-  (B) 跳过本次 advisory review"
-  - 用户选 A：
-    1. 记录当前基准：`BASE_SHA=$(git rev-parse <REF>)`，作为 review range 的稳定起点。
-    2. 只 stage 本轮 develop 产生的文件（基于任务清单中的目标文件），不使用 `git add -A`。
-    3. 若无法安全区分本轮文件与工作区其他变更，跳过 advisory review 并记录原因 `crossreview_requires_committed_diff`。
-    4. 使用任务摘要作为 commit message（如 `"develop: 实现用户认证模块"`），不使用固定泛化消息。
-    5. 提交后设置 `REF = BASE_SHA`。后续 `crossreview pack --diff <REF>` 会稳定审查 `BASE_SHA..HEAD`，包含本轮所有已提交变更和刚创建的 review commit。
-  - 用户选 B：
-    跳过 advisory review，记录原因 `user_skipped_uncommitted`，继续主流程。
-
-[ELSE IF `git status --short` 为空（工作区干净）]
-  检查已提交的 review range：`git diff <REF>..HEAD`。
-  [IF review range 非空]
-    变更已在 HEAD 中，继续 Step 1。
+[ELSE IF 本轮变更已提交，或用户要求审查提交范围]
+  [IF 任务涉及多次提交]
+    REF = HEAD~{提交数}
   [ELSE]
-    无代码变更，跳过评审。
+    REF = HEAD~1
+
+  展示 REF 对应的 commit，让用户确认起点正确：
+
+  ```bash
+  git log -1 --oneline <REF>
+  ```
+
+  [ACTION: INFORM_USER] "Review 起点为：`{REF 对应的 commit 摘要}`。本轮 develop 的所有变更应在此之后。"
+  若用户认为起点不对，让用户指定正确的 commit SHA 作为 REF。
+  设置 `DIFF_SOURCE="--diff <REF>"`。
+
+[ELSE IF 工作区存在未暂存变更，且可以确认全部属于本轮任务]
+  设置 `DIFF_SOURCE="--unstaged"`。
+
+[ELSE]
+  跳过 advisory review，记录原因 `diff_source_not_isolated`，继续主流程。
 
 重要：不要自动 `git add -A && git commit`。这会把工作区所有变更（包括无关草稿、未跟踪文件）一起提交，违反安全边界。
 
@@ -66,7 +59,7 @@ git log -1 --oneline <REF>
 ```bash
 CR_TMP="$(mktemp -d)"
 printf '%s\n' "$CR_TMP"
-crossreview pack --diff <REF> \
+crossreview pack $DIFF_SOURCE \
   --intent "任务意图摘要" \
   > "$CR_TMP/pack.json"
 ```
@@ -173,7 +166,7 @@ Advisory Verdict: <verdict>
 仅在 host-integrated 路径不可用，且 standalone reviewer 配置已经存在时使用：
 
 ```bash
-crossreview verify --diff <REF> --intent "任务意图摘要" --format human
+crossreview verify $DIFF_SOURCE --intent "任务意图摘要" --format human
 ```
 
 可选参数同 Step 1（`--task`、`--context`、`--focus`）。
