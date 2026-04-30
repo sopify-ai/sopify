@@ -9,7 +9,7 @@ description: "在开发完成后自动交叉评审代码变更。审查者运行
 
 前置条件：
 - 工作区存在未评审的代码变更（已提交的 review range、已暂存的本轮变更，或可确认只包含本轮任务的未暂存变更）。
-- `crossreview` CLI 已安装，版本为 `0.1.0a2+`（`pip install -U crossreview` 或 `pip install -e .`）。
+- `crossreview` CLI 已安装，且支持 `pack --diff/--staged/--unstaged`、`render-prompt --pack`、`ingest --raw-analysis/--pack/--format human`。
 - 默认 host-integrated 路径可用：宿主能在 fresh / isolated review context 中执行 `render-prompt` 产出的完整 prompt。
 
 注释：Sopify Phase 4a 的默认路径不要求 CrossReview 自己配置模型、provider 或 API key；LLM 调用由当前宿主完成。只有使用 standalone fallback 的 `crossreview verify` 时，才需要 `CROSSREVIEW_MODEL` / `CROSSREVIEW_PROVIDER` / API key 或等价 `crossreview.yaml`。
