@@ -27,6 +27,7 @@ from runtime.action_intent import (
     DECISION_FALLBACK_ROUTER,
     SIDE_EFFECTS,
     ActionProposal,
+    ArchiveSubjectProposal,
     ActionValidator,
     ValidationContext,
     ValidationDecision,
@@ -98,6 +99,95 @@ class ActionValidatorTests(unittest.TestCase):
         result = self.validator.validate(proposal, self.empty_ctx)
         self.assertEqual(result.decision, DECISION_AUTHORIZE)
         self.assertIsNone(result.route_override)
+
+    def test_archive_plan_write_high_evidence_authorizes_with_structured_subject(self) -> None:
+        proposal = ActionProposal(
+            "archive_plan", "write_files", "high",
+            evidence=("用户明确要求归档当前方案",),
+            archive_subject=ArchiveSubjectProposal(
+                ref_kind="current_plan",
+                source="current_plan",
+                allow_current_plan_fallback=True,
+            ),
+        )
+        ctx = ValidationContext(current_plan_path=".sopify-skills/plan/demo")
+        result = self.validator.validate(proposal, ctx)
+        self.assertEqual(result.decision, DECISION_AUTHORIZE)
+        self.assertEqual(result.resolved_action, "archive_plan")
+        self.assertEqual(result.resolved_side_effect, "write_files")
+        self.assertEqual(result.route_override, "archive_lifecycle")
+        self.assertEqual(result.reason_code, "validator.archive_plan_authorized")
+        self.assertEqual(result.artifacts["archive_subject"]["ref_kind"], "current_plan")
+
+    def test_archive_plan_missing_subject_downgrades_to_consult(self) -> None:
+        proposal = ActionProposal(
+            "archive_plan", "write_files", "high",
+            evidence=("用户明确要求归档当前方案",),
+        )
+        result = self.validator.validate(proposal, self.empty_ctx)
+        self.assertEqual(result.decision, DECISION_DOWNGRADE)
+        self.assertEqual(result.route_override, "consult")
+        self.assertEqual(result.reason_code, "validator.archive_plan_missing_subject")
+
+    def test_archive_plan_current_plan_without_current_plan_downgrades(self) -> None:
+        proposal = ActionProposal(
+            "archive_plan", "write_files", "high",
+            evidence=("用户明确要求归档当前方案",),
+            archive_subject=ArchiveSubjectProposal(
+                ref_kind="current_plan",
+                source="current_plan",
+                allow_current_plan_fallback=True,
+            ),
+        )
+        result = self.validator.validate(proposal, self.empty_ctx)
+        self.assertEqual(result.decision, DECISION_DOWNGRADE)
+        self.assertEqual(result.route_override, "consult")
+        self.assertEqual(result.reason_code, "validator.archive_plan_current_plan_unavailable")
+
+    def test_archive_plan_blocked_by_pending_checkpoint(self) -> None:
+        proposal = ActionProposal(
+            "archive_plan", "write_files", "high",
+            evidence=("用户明确要求归档当前方案",),
+            archive_subject=ArchiveSubjectProposal(
+                ref_kind="current_plan",
+                source="current_plan",
+                allow_current_plan_fallback=True,
+            ),
+        )
+        ctx = ValidationContext(
+            current_plan_path=".sopify-skills/plan/demo",
+            required_host_action="confirm_decision",
+        )
+        result = self.validator.validate(proposal, ctx)
+        self.assertEqual(result.decision, DECISION_DOWNGRADE)
+        self.assertEqual(result.route_override, "consult")
+        self.assertEqual(result.reason_code, "validator.archive_plan_blocked_by_checkpoint")
+
+    def test_archive_plan_blocked_by_state_conflict(self) -> None:
+        proposal = ActionProposal(
+            "archive_plan", "write_files", "high",
+            evidence=("用户明确要求归档当前方案",),
+            archive_subject=ArchiveSubjectProposal(
+                ref_kind="current_plan",
+                source="current_plan",
+                allow_current_plan_fallback=True,
+            ),
+        )
+        ctx = ValidationContext(
+            current_plan_path=".sopify-skills/plan/demo",
+            state_conflict=True,
+        )
+        result = self.validator.validate(proposal, ctx)
+        self.assertEqual(result.decision, DECISION_DOWNGRADE)
+        self.assertEqual(result.route_override, "consult")
+        self.assertEqual(result.reason_code, "validator.archive_plan_blocked_by_state_conflict")
+
+    def test_archive_plan_without_evidence_downgrades(self) -> None:
+        proposal = ActionProposal("archive_plan", "write_files", "medium")
+        result = self.validator.validate(proposal, self.empty_ctx)
+        self.assertEqual(result.decision, DECISION_DOWNGRADE)
+        self.assertEqual(result.resolved_action, "consult_readonly")
+        self.assertEqual(result.route_override, "consult")
 
     # -- side-effecting + low confidence → downgrade -------------------------
 

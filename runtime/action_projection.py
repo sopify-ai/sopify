@@ -15,6 +15,8 @@ _SUPPORTED_PROJECTION_ACTIONS = frozenset(
         "confirm_decision",
         "confirm_execute",
         "confirm_plan_package",
+        "archive_completed",
+        "archive_review",
         "review_or_execute_plan",
         "continue_host_consult",
         "continue_host_develop",
@@ -187,6 +189,33 @@ def _build_plan_review_fields(
     return payload
 
 
+def _build_archive_review_fields(
+    *,
+    plan_id: str | None,
+    plan_path: str | None,
+    current_run: RunState | None,
+    artifacts: Mapping[str, Any],
+) -> dict[str, Any]:
+    archive_lifecycle = _require_mapping(artifacts.get("archive_lifecycle"), label="archive_lifecycle")
+    subject_plan_id = str(archive_lifecycle.get("archive_subject_plan_id") or "").strip()
+    subject_plan_path = str(archive_lifecycle.get("archive_subject_path") or "").strip()
+    payload: dict[str, Any] = {
+        # archive_review must describe the archive subject first. Another active
+        # plan may still be current while this review is reporting a different
+        # plan's archive result.
+        "plan_id": subject_plan_id or str(plan_id or "").strip(),
+        "plan_path": subject_plan_path or str(plan_path or "").strip(),
+        "archive_status": str(archive_lifecycle.get("archive_status") or "").strip(),
+        "archive_subject_kind": str(archive_lifecycle.get("archive_subject_kind") or "").strip(),
+        "state_cleared": bool(archive_lifecycle.get("state_cleared", False)),
+        "archive_changed_files": _coerce_string_list(archive_lifecycle.get("archive_changed_files")),
+        "archive_notes": _coerce_string_list(archive_lifecycle.get("archive_notes")),
+    }
+    if not payload["archive_status"]:
+        raise ActionProjectionError("archive_review projection requires archive_status")
+    return payload
+
+
 def _build_continue_host_consult_fields(
     *,
     plan_id: str | None,
@@ -289,6 +318,8 @@ _PROJECTION_BUILDERS = {
     "confirm_decision": _build_confirm_decision_fields,
     "confirm_execute": _build_confirm_execute_fields,
     "confirm_plan_package": _build_confirm_plan_package_fields,
+    "archive_completed": _build_archive_review_fields,
+    "archive_review": _build_archive_review_fields,
     "review_or_execute_plan": _build_plan_review_fields,
     "continue_host_consult": _build_continue_host_consult_fields,
     "continue_host_develop": _build_continue_host_develop_fields,

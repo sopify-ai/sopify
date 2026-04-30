@@ -51,6 +51,10 @@ class StateStore:
         self.current_plan_path = self.root / "current_plan.json"
         self.current_plan_proposal_path = self.root / "current_plan_proposal.json"
         self.current_handoff_path = self.root / "current_handoff.json"
+        # Archive can complete against a non-active plan while another active
+        # flow remains current. Persist that route-scoped result separately so
+        # gate can expose the archive receipt without overwriting active truth.
+        self.current_archive_receipt_path = self.root / "current_archive_receipt.json"
         self.current_clarification_path = self.root / "current_clarification.json"
         self.current_decision_path = self.root / "current_decision.json"
 
@@ -207,28 +211,7 @@ class StateStore:
         return read_runtime_handoff(self.current_handoff_path)
 
     def set_current_handoff(self, handoff: RuntimeHandoff) -> None:
-        self.ensure()
-        payload = handoff.to_dict()
-        observability = dict(payload.get("observability") or {})
-        observability.update(
-            {
-                "state_kind": "current_handoff",
-                "state_scope": self.scope,
-                "writer": "runtime.state",
-                "written_at": iso_now(),
-                "workspace_root": str(self.config.workspace_root),
-                "runtime_root": str(self.config.runtime_root.relative_to(self.config.workspace_root)),
-                "state_path": self.relative_path(self.current_handoff_path),
-                "run_id": handoff.run_id,
-                "route_name": handoff.route_name,
-                "required_host_action": handoff.required_host_action,
-                "resolution_id": handoff.resolution_id,
-            }
-        )
-        if self.session_id:
-            observability["session_id"] = self.session_id
-        payload["observability"] = observability
-        self._write_json(self.current_handoff_path, payload)
+        self._set_handoff_file(handoff, path=self.current_handoff_path, state_kind="current_handoff")
 
     def set_host_facing_truth(
         self,
@@ -259,6 +242,39 @@ class StateStore:
     def clear_current_handoff(self) -> None:
         self.current_handoff_path.unlink(missing_ok=True)
 
+    def get_current_archive_receipt(self) -> Optional[RuntimeHandoff]:
+        return read_runtime_handoff(self.current_archive_receipt_path)
+
+    def set_current_archive_receipt(self, handoff: RuntimeHandoff) -> None:
+        self._set_handoff_file(handoff, path=self.current_archive_receipt_path, state_kind="current_archive_receipt")
+
+    def _set_handoff_file(self, handoff: RuntimeHandoff, *, path: Path, state_kind: str) -> None:
+        self.ensure()
+        payload = handoff.to_dict()
+        observability = dict(payload.get("observability") or {})
+        observability.update(
+            {
+                "state_kind": state_kind,
+                "state_scope": self.scope,
+                "writer": "runtime.state",
+                "written_at": iso_now(),
+                "workspace_root": str(self.config.workspace_root),
+                "runtime_root": str(self.config.runtime_root.relative_to(self.config.workspace_root)),
+                "state_path": self.relative_path(path),
+                "run_id": handoff.run_id,
+                "route_name": handoff.route_name,
+                "required_host_action": handoff.required_host_action,
+                "resolution_id": handoff.resolution_id,
+            }
+        )
+        if self.session_id:
+            observability["session_id"] = self.session_id
+        payload["observability"] = observability
+        self._write_json(path, payload)
+
+    def clear_current_archive_receipt(self) -> None:
+        self.current_archive_receipt_path.unlink(missing_ok=True)
+
     def has_active_flow(self) -> bool:
         current_run = self.get_current_run()
         return current_run is not None and current_run.is_active
@@ -268,6 +284,7 @@ class StateStore:
         self.clear_current_plan()
         self.clear_current_plan_proposal()
         self.clear_current_handoff()
+        self.clear_current_archive_receipt()
         self.clear_current_clarification()
         self.clear_current_decision()
 

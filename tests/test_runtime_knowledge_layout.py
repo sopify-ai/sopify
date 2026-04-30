@@ -91,7 +91,7 @@ class KnowledgeLayoutTests(unittest.TestCase):
                 ),
             )
 
-    def test_finalize_profile_resolves_l3_context_without_history_root(self) -> None:
+    def test_archive_profile_resolves_l3_context_without_history_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             (workspace / "sopify.config.yaml").write_text("advanced:\n  kb_init: full\n", encoding="utf-8")
@@ -102,7 +102,7 @@ class KnowledgeLayoutTests(unittest.TestCase):
             history_index.parent.mkdir(parents=True, exist_ok=True)
             history_index.write_text("# 变更历史索引\n", encoding="utf-8")
 
-            selection = resolve_context_profile(config=config, profile="finalize", current_plan=plan_artifact)
+            selection = resolve_context_profile(config=config, profile="archive", current_plan=plan_artifact)
 
             self.assertEqual(materialization_stage(config=config, current_plan=plan_artifact), "L3 history-ready")
             self.assertEqual(selection.materialization_stage, "L3 history-ready")

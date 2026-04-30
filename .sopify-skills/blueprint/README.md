@@ -13,10 +13,8 @@
 ## 当前焦点
 
 <!-- sopify:auto:focus:start -->
-- 已完成：`20260428_action_proposal_boundary`（ActionProposal P0 thin slice — dogfood 通过，652 tests passed）
-- 待启动：`20260429_legacy_feature_cleanup`（explain_only_override 删除 + ~compare 移除）
-- 待启动：`20260429_host_prompt_governance`（prompt 瘦身 510→350-400 行 + 准入脚本）
-- history 归档：已可用；最近归档为 `../history/2026-03/20260324_task`。
+- 当前活动 plan：暂无。
+- history 归档：已可用；最近归档为 `../history/2026-04/20260429_standard-archive-finalize-archive-checkpoint`。
 <!-- sopify:auto:focus:end -->
 
 ## 深入阅读入口
@@ -28,5 +26,5 @@
 - [蓝图任务](./tasks.md)
 - [Skill 标准对齐蓝图](./skill-standards-refactor.md)
 - [变更历史](../history/index.md)
-- 最近归档：`../history/2026-03/20260324_task`
+- 最近归档：`../history/2026-04/20260429_standard-archive-finalize-archive-checkpoint`
 <!-- sopify:auto:read-next:end -->

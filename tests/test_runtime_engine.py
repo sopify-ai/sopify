@@ -9,6 +9,48 @@ from runtime.engine import _advance_planning_route, _handle_execution_confirm, _
 _FRONT_MATTER_RE = re.compile(r"\A---\n(?P<front>.*?)\n---\n", re.DOTALL)
 
 
+def _archive_current_plan_proposal() -> ActionProposal:
+    return ActionProposal(
+        "archive_plan",
+        "write_files",
+        "high",
+        evidence=("test: archive current plan",),
+        archive_subject=ArchiveSubjectProposal(
+            ref_kind="current_plan",
+            source="current_plan",
+            allow_current_plan_fallback=True,
+        ),
+    )
+
+
+def _archive_plan_id_proposal(plan_id: str) -> ActionProposal:
+    return ActionProposal(
+        "archive_plan",
+        "write_files",
+        "high",
+        evidence=("test: archive explicit plan",),
+        archive_subject=ArchiveSubjectProposal(
+            ref_kind="plan_id",
+            ref_value=plan_id,
+            source="host_explicit",
+        ),
+    )
+
+
+def _archive_path_proposal(path: str) -> ActionProposal:
+    return ActionProposal(
+        "archive_plan",
+        "write_files",
+        "high",
+        evidence=("test: archive explicit path",),
+        archive_subject=ArchiveSubjectProposal(
+            ref_kind="path",
+            ref_value=path,
+            source="host_explicit",
+        ),
+    )
+
+
 def _load_markdown_front_matter(path: Path) -> dict[str, object]:
     text = path.read_text(encoding="utf-8")
     match = _FRONT_MATTER_RE.match(text)
@@ -191,18 +233,19 @@ class EngineIntegrationTests(unittest.TestCase):
                     self.assertEqual(updated.checkpoint_id, original.checkpoint_id)
                     self.assertEqual(updated.proposed_path, original.proposed_path)
 
-    def test_proposal_pending_keeps_finalize_at_confirmation_checkpoint(self) -> None:
+    def test_proposal_pending_archive_current_plan_without_current_plan_downgrades_to_consult(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
 
             proposal = run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
             checkpoint_id = proposal.recovered_context.current_plan_proposal.checkpoint_id
 
-            finalize = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
-            self.assertEqual(finalize.route.route_name, "plan_proposal_pending")
-            self.assertIsNone(finalize.plan_artifact)
-            self.assertEqual(finalize.handoff.required_host_action, "confirm_plan_package")
-            self.assertEqual(finalize.recovered_context.current_plan_proposal.checkpoint_id, checkpoint_id)
+            archive_command = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_current_plan_proposal())
+            self.assertEqual(archive_command.route.route_name, "consult")
+            self.assertIsNone(archive_command.plan_artifact)
+            self.assertEqual(archive_command.handoff.required_host_action, "continue_host_consult")
+            store = StateStore(load_runtime_config(workspace))
+            self.assertEqual(store.get_current_plan_proposal().checkpoint_id, checkpoint_id)
             self.assertEqual(_plan_dir_count(workspace), 0)
 
     def test_proposal_pending_go_plan_does_not_materialize_new_plan(self) -> None:
@@ -2049,16 +2092,16 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIn("当前活动方案目录：`../plan/`", blueprint_readme)
             self.assertNotIn("../history/index.md", blueprint_readme)
 
-    def test_engine_finalizes_metadata_managed_plan_into_history(self) -> None:
+    def test_engine_archives_metadata_managed_plan_into_history(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
 
             first = run_runtime("~go plan 补 runtime 骨架", workspace_root=workspace, user_home=workspace / "home")
             self.assertIsNotNone(first.plan_artifact)
 
-            result = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
+            result = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_current_plan_proposal())
 
-            self.assertEqual(result.route.route_name, "finalize_active")
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
             self.assertIsNotNone(result.plan_artifact)
             self.assertTrue(result.plan_artifact.path.startswith(".sopify-skills/history/"))
             self.assertFalse((workspace / first.plan_artifact.path).exists())
@@ -2068,11 +2111,12 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_run.json").exists())
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
             self.assertIsNotNone(result.handoff)
-            self.assertEqual(result.handoff.required_host_action, "finalize_completed")
-            self.assertEqual(result.handoff.handoff_kind, "finalize")
+            self.assertEqual(result.handoff.required_host_action, "archive_completed")
+            self.assertEqual(result.handoff.handoff_kind, "archive_lifecycle")
             self.assertEqual(result.handoff.artifacts["archived_plan_path"], result.plan_artifact.path)
             self.assertEqual(result.handoff.artifacts["history_index_path"], ".sopify-skills/history/index.md")
             self.assertTrue(result.handoff.artifacts["state_cleared"])
+            self.assertEqual(result.handoff.artifacts["action_projection"]["archive_status"], "completed")
 
             history_index = (workspace / ".sopify-skills" / "history" / "index.md").read_text(encoding="utf-8")
             self.assertIn(first.plan_artifact.plan_id, history_index)
@@ -2099,7 +2143,83 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIn("最近归档", blueprint_readme)
             self.assertIn("当前活动 plan：暂无", blueprint_readme)
 
-    def test_finalize_normalizes_legacy_archive_front_matter_projection(self) -> None:
+    def test_archive_current_session_plan_clears_session_runtime_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            session_id = "review-session"
+            config = load_runtime_config(workspace)
+            store = StateStore(config, session_id=session_id)
+            store.ensure()
+            plan = create_plan_scaffold("会话内方案", config=config, level="standard")
+            store.set_current_plan(plan)
+            store.set_current_run(
+                RunState(
+                    run_id="session-run",
+                    status="active",
+                    stage="develop_pending",
+                    route_name="resume_active",
+                    title=plan.title,
+                    created_at=iso_now(),
+                    updated_at=iso_now(),
+                    plan_id=plan.plan_id,
+                    plan_path=plan.path,
+                )
+            )
+
+            result = run_runtime(
+                "归档当前 plan",
+                workspace_root=workspace,
+                session_id=session_id,
+                user_home=workspace / "home",
+                action_proposal=_archive_current_plan_proposal(),
+            )
+
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
+            self.assertIsNotNone(result.plan_artifact)
+            self.assertFalse((workspace / plan.path).exists())
+            self.assertIsNone(store.get_current_plan())
+            self.assertIsNone(store.get_current_run())
+            self.assertTrue(result.handoff.artifacts["state_cleared"])
+
+    def test_archive_handoff_does_not_synthesize_status_without_engine_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            archived_plan = PlanArtifact(
+                plan_id="demo_plan",
+                title="Demo Plan",
+                summary="demo",
+                level="standard",
+                path=".sopify-skills/history/2026-04/demo_plan",
+                files=(".sopify-skills/history/2026-04/demo_plan/tasks.md",),
+                created_at=iso_now(),
+            )
+
+            handoff = build_runtime_handoff(
+                config=config,
+                decision=RouteDecision(
+                    route_name="archive_lifecycle",
+                    request_text="archive test",
+                    reason="missing engine payload",
+                    artifacts={},
+                ),
+                run_id="run-archive-missing-payload",
+                resolved_context=RecoveredContext(),
+                current_plan=archived_plan,
+                kb_artifact=None,
+                replay_session_dir=None,
+                skill_result=None,
+                notes=(),
+            )
+
+            self.assertIsNotNone(handoff)
+            assert handoff is not None
+            self.assertEqual(handoff.required_host_action, "archive_review")
+            self.assertNotIn("archive_lifecycle", handoff.artifacts)
+            self.assertNotIn("archived_plan_path", handoff.artifacts)
+            self.assertNotIn("state_cleared", handoff.artifacts)
+
+    def test_archive_normalizes_legacy_archive_front_matter_projection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
 
@@ -2114,7 +2234,7 @@ class EngineIntegrationTests(unittest.TestCase):
             )
             tasks_path.write_text(tasks_text, encoding="utf-8")
 
-            result = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
+            result = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_current_plan_proposal())
 
             archived_metadata = _load_markdown_front_matter(workspace / result.plan_artifact.path / "tasks.md")
             self.assertEqual(
@@ -2129,7 +2249,43 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(archived_metadata["plan_status"], "completed")
             self.assertNotIn("blueprint_obligation", archived_metadata)
 
-    def test_finalize_blocks_full_plan_without_deep_blueprint_update(self) -> None:
+    def test_archive_review_projection_prefers_archive_subject_over_active_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            active_plan = create_plan_scaffold("当前活动任务", config=config, level="standard")
+            store.set_current_plan(active_plan)
+
+            legacy_dir = workspace / ".sopify-skills" / "plan" / "legacy_plan"
+            legacy_dir.mkdir(parents=True)
+            (legacy_dir / "tasks.md").write_text("# legacy plan\n", encoding="utf-8")
+
+            result = run_runtime(
+                "归档旧方案",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=_archive_plan_id_proposal("legacy_plan"),
+            )
+
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
+            self.assertIsNotNone(result.handoff)
+            self.assertEqual(result.handoff.required_host_action, "archive_review")
+            self.assertEqual(result.handoff.artifacts["archive_lifecycle"]["archive_subject_plan_id"], "legacy_plan")
+            self.assertEqual(result.handoff.artifacts["archive_lifecycle"]["archive_subject_path"], ".sopify-skills/plan/legacy_plan")
+            self.assertEqual(
+                result.handoff.artifacts["action_projection"]["plan_id"],
+                "legacy_plan",
+            )
+            self.assertEqual(
+                result.handoff.artifacts["action_projection"]["plan_path"],
+                ".sopify-skills/plan/legacy_plan",
+            )
+            self.assertEqual(store.get_current_plan().plan_id, active_plan.plan_id)
+
+    def test_archive_blocks_full_plan_without_deep_blueprint_update(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
 
@@ -2139,22 +2295,22 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIsNotNone(first.plan_artifact)
             self.assertEqual(first.plan_artifact.level, "full")
 
-            result = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
+            result = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_current_plan_proposal())
 
-            self.assertEqual(result.route.route_name, "finalize_active")
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
             self.assertIsNone(result.plan_artifact)
             self.assertTrue(any("knowledge_sync.required" in note for note in result.notes))
             self.assertTrue((workspace / first.plan_artifact.path).exists())
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
             self.assertIsNotNone(result.handoff)
-            self.assertEqual(result.handoff.required_host_action, "review_or_execute_plan")
-            self.assertEqual(result.handoff.handoff_kind, "finalize")
-            self.assertEqual(result.handoff.artifacts["finalize_status"], "blocked")
+            self.assertEqual(result.handoff.required_host_action, "archive_review")
+            self.assertEqual(result.handoff.handoff_kind, "archive_lifecycle")
+            self.assertEqual(result.handoff.artifacts["archive_lifecycle"]["archive_status"], "blocked")
             self.assertEqual(result.handoff.artifacts["active_plan_path"], first.plan_artifact.path)
             self.assertFalse(result.handoff.artifacts["state_cleared"])
 
-    def test_finalize_allows_review_and_blocks_required_by_knowledge_sync(self) -> None:
+    def test_archive_allows_review_and_blocks_required_by_knowledge_sync(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             config = load_runtime_config(workspace)
@@ -2163,7 +2319,7 @@ class EngineIntegrationTests(unittest.TestCase):
 
             review_plan = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
             store.set_current_plan(review_plan)
-            review_result = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
+            review_result = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_current_plan_proposal())
             self.assertIsNotNone(review_result.plan_artifact)
             self.assertTrue(any("knowledge_sync" in note for note in review_result.notes))
             self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
@@ -2176,11 +2332,11 @@ class EngineIntegrationTests(unittest.TestCase):
 
             required_plan = create_plan_scaffold("设计 runtime architecture plugin bridge", config=config, level="full")
             store.set_current_plan(required_plan)
-            required_result = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
+            required_result = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_current_plan_proposal())
             self.assertIsNone(required_result.plan_artifact)
             self.assertTrue(any("knowledge_sync.required" in note for note in required_result.notes))
 
-    def test_finalize_rejects_legacy_plan_without_front_matter(self) -> None:
+    def test_archive_blocks_legacy_plan_without_auto_doctor(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             config = load_runtime_config(workspace)
@@ -2217,12 +2373,334 @@ class EngineIntegrationTests(unittest.TestCase):
                 )
             )
 
-            result = run_runtime("~go finalize", workspace_root=workspace, user_home=workspace / "home")
+            result = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_current_plan_proposal())
 
-            self.assertEqual(result.route.route_name, "finalize_active")
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
             self.assertIsNone(result.plan_artifact)
-            self.assertTrue(any("metadata-managed" in note for note in result.notes))
+            self.assertIn("Plan is missing required archive metadata", result.notes)
             self.assertTrue(legacy_tasks.exists())
+            self.assertFalse((legacy_dir / "background.md").exists())
+            self.assertTrue(legacy_dir.exists())
+            self.assertEqual(legacy_tasks.read_text(encoding="utf-8"), "# legacy plan\n")
+            self.assertIsNotNone(result.handoff)
+            self.assertEqual(result.handoff.required_host_action, "archive_review")
+            self.assertEqual(result.handoff.artifacts["archive_lifecycle"]["archive_status"], "migration_required")
+            self.assertEqual(result.handoff.artifacts["archive_lifecycle"]["archive_changed_files"], [])
+            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_plan.json").exists())
+
+    def test_archive_keeps_legacy_plan_blocked_after_session_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+
+            legacy_dir = workspace / ".sopify-skills" / "plan" / "legacy_plan"
+            legacy_dir.mkdir(parents=True)
+            (legacy_dir / "tasks.md").write_text("# legacy plan\n", encoding="utf-8")
+
+            first = run_runtime("归档 legacy_plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_plan_id_proposal("legacy_plan"))
+            self.assertIsNone(first.plan_artifact)
+            self.assertEqual(first.route.artifacts["archive_lifecycle"]["archive_status"], "migration_required")
+            self.assertTrue(legacy_dir.exists())
+            self.assertFalse((legacy_dir / "background.md").exists())
+
+            store = StateStore(config)
+            store.reset_active_flow()
+            second = run_runtime("归档 legacy_plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_plan_id_proposal("legacy_plan"))
+
+            self.assertEqual(second.route.route_name, "archive_lifecycle")
+            self.assertIsNone(second.plan_artifact)
+            self.assertTrue(legacy_dir.exists())
+            self.assertEqual(second.route.artifacts["archive_lifecycle"]["archive_status"], "migration_required")
+            self.assertEqual(second.handoff.required_host_action, "archive_review")
+            self.assertFalse(second.handoff.artifacts["state_cleared"])
+            self.assertFalse((workspace / ".sopify-skills" / "history" / "index.md").exists())
+
+    def test_archive_explicit_non_current_plan_preserves_active_runtime_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            current_plan = create_plan_scaffold("当前活动任务", config=config, level="standard")
+            other_plan = create_plan_scaffold("旁路可归档任务", config=config, level="standard")
+            store.set_current_plan(current_plan)
+            store.set_current_run(
+                RunState(
+                    run_id="active-run",
+                    status="active",
+                    stage="develop_pending",
+                    route_name="resume_active",
+                    title=current_plan.title,
+                    created_at=iso_now(),
+                    updated_at=iso_now(),
+                    plan_id=current_plan.plan_id,
+                    plan_path=current_plan.path,
+                )
+            )
+
+            result = run_runtime("归档指定 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_plan_id_proposal(other_plan.plan_id))
+
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
+            self.assertIsNotNone(result.plan_artifact)
+            self.assertEqual(result.plan_artifact.plan_id, other_plan.plan_id)
+            self.assertTrue((workspace / current_plan.path).exists())
+            self.assertFalse((workspace / other_plan.path).exists())
+            self.assertEqual(store.get_current_plan().plan_id, current_plan.plan_id)
+            self.assertEqual(store.get_current_run().plan_id, current_plan.plan_id)
+            self.assertEqual(result.handoff.required_host_action, "archive_completed")
+            self.assertFalse(result.handoff.artifacts["state_cleared"])
+            self.assertNotIn("run_stage", result.handoff.artifacts)
+            self.assertNotIn("execution_gate", result.handoff.artifacts)
+            self.assertIsNotNone(store.get_current_archive_receipt())
+            self.assertEqual(store.get_current_archive_receipt().required_host_action, "archive_completed")
+            self.assertNotIn("run_stage", store.get_current_archive_receipt().artifacts)
+
+            resumed = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(resumed.route.route_name, "resume_active")
+            self.assertEqual(resumed.recovered_context.current_plan.plan_id, current_plan.plan_id)
+            self.assertIsNotNone(resumed.handoff)
+            self.assertEqual(resumed.handoff.required_host_action, "continue_host_develop")
+
+    def test_archive_explicit_subject_does_not_bypass_pending_plan_proposal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            active_plan = create_plan_scaffold("当前活动任务", config=config, level="standard")
+            other_plan = create_plan_scaffold("旁路可归档任务", config=config, level="standard")
+            store.set_current_plan(active_plan)
+            store.set_current_plan_proposal(
+                PlanProposalState(
+                    schema_version="1",
+                    checkpoint_id="proposal-1",
+                    request_text="继续",
+                    analysis_summary="proposal",
+                    proposed_level="standard",
+                    proposed_path=".sopify-skills/plan/proposal",
+                    estimated_task_count=2,
+                    candidate_files=(),
+                    topic_key="runtime",
+                    reserved_plan_id="proposal-1",
+                    resume_route="workflow",
+                    capture_mode="off",
+                    candidate_skill_ids=(),
+                )
+            )
+
+            result = run_runtime("归档指定 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_plan_id_proposal(other_plan.plan_id))
+
+            self.assertEqual(result.route.route_name, "consult")
+            self.assertIn("validator.archive_plan_blocked_by_checkpoint", result.route.reason)
+            self.assertIsNone(result.plan_artifact)
+            self.assertTrue((workspace / other_plan.path).exists())
+            self.assertTrue((workspace / active_plan.path).exists())
+
+    def test_archive_bare_command_does_not_bypass_pending_plan_proposal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            proposal = run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(proposal.route.route_name, "plan_proposal_pending")
+
+            result = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home")
+
+            self.assertEqual(result.route.route_name, "plan_proposal_pending")
+            self.assertIsNone(result.plan_artifact)
+
+    def test_archive_missing_explicit_subject_preserves_archive_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            result = run_runtime(
+                "归档缺失 plan",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=_archive_path_proposal(".sopify-skills/plan/missing_plan"),
+            )
+
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
+            self.assertIsNone(result.plan_artifact)
+            self.assertEqual(result.handoff.required_host_action, "archive_review")
+            archive_lifecycle = result.handoff.artifacts["archive_lifecycle"]
+            self.assertEqual(archive_lifecycle["archive_status"], "plan_not_found")
+            self.assertEqual(result.handoff.artifacts["action_projection"]["archive_status"], "plan_not_found")
+
+    def test_archive_plan_action_proposal_does_not_bypass_pending_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            active_plan = create_plan_scaffold("当前活动任务", config=config, level="standard")
+            store.set_current_plan(active_plan)
+            store.set_current_decision(
+                DecisionState(
+                    schema_version="2",
+                    decision_id="decision-1",
+                    feature_key="runtime",
+                    phase="design",
+                    status="pending",
+                    decision_type="design_choice",
+                    question="继续哪个选项？",
+                    summary="pending decision",
+                    options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
+                    created_at=iso_now(),
+                    updated_at=iso_now(),
+                )
+            )
+
+            result = run_runtime(
+                "归档当前 plan",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=_archive_current_plan_proposal(),
+            )
+
+            self.assertEqual(result.route.route_name, "consult")
+            self.assertIn("validator.archive_plan_blocked_by_checkpoint", result.route.reason)
+            self.assertTrue((workspace / active_plan.path).exists())
+            self.assertIsNotNone(store.get_current_plan())
+
+    def test_archive_plan_action_proposal_does_not_bypass_state_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            active_plan = create_plan_scaffold("当前活动任务", config=config, level="standard")
+            store.set_current_plan(active_plan)
+            store.set_current_plan_proposal(
+                PlanProposalState(
+                    schema_version="1",
+                    checkpoint_id="proposal-1",
+                    request_text="继续",
+                    analysis_summary="proposal",
+                    proposed_level="standard",
+                    proposed_path=".sopify-skills/plan/proposal",
+                    estimated_task_count=2,
+                    candidate_files=(),
+                    topic_key="runtime",
+                    reserved_plan_id="proposal-1",
+                    resume_route="workflow",
+                    capture_mode="off",
+                    candidate_skill_ids=(),
+                )
+            )
+            store.set_current_decision(
+                DecisionState(
+                    schema_version="2",
+                    decision_id="decision-1",
+                    feature_key="runtime",
+                    phase="design",
+                    status="pending",
+                    decision_type="design_choice",
+                    question="继续哪个选项？",
+                    summary="pending decision",
+                    options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
+                    created_at=iso_now(),
+                    updated_at=iso_now(),
+                )
+            )
+
+            result = run_runtime(
+                "归档当前 plan",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=_archive_current_plan_proposal(),
+            )
+
+            self.assertEqual(result.route.route_name, "consult")
+            self.assertIn("validator.archive_plan_blocked_by_state_conflict", result.route.reason)
+            self.assertTrue((workspace / active_plan.path).exists())
+            self.assertIsNotNone(store.get_current_plan())
+
+    def test_archive_rejects_path_outside_plan_or_history_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            blueprint_dir = workspace / ".sopify-skills" / "blueprint"
+            blueprint_dir.mkdir(parents=True)
+            (blueprint_dir / "tasks.md").write_text(
+                "\n".join(
+                    [
+                        "---",
+                        "plan_id: blueprint",
+                        "feature_key: blueprint",
+                        "level: standard",
+                        "lifecycle_state: active",
+                        "knowledge_sync:",
+                        "  project: skip",
+                        "  background: skip",
+                        "  design: skip",
+                        "  tasks: skip",
+                        "archive_ready: true",
+                        "---",
+                        "# Blueprint",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_runtime(
+                "归档 blueprint",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=_archive_path_proposal(".sopify-skills/blueprint"),
+            )
+
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
+            self.assertIsNone(result.plan_artifact)
+            self.assertEqual(result.handoff.artifacts["archive_lifecycle"]["archive_status"], "plan_not_found")
+            self.assertTrue(blueprint_dir.exists())
+
+    def test_archive_rejects_plan_id_path_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            blueprint_dir = workspace / ".sopify-skills" / "blueprint"
+            blueprint_dir.mkdir(parents=True)
+            (blueprint_dir / "tasks.md").write_text("# not a plan\n", encoding="utf-8")
+
+            result = run_runtime(
+                "归档 traversal",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=_archive_plan_id_proposal("../blueprint"),
+            )
+
+            self.assertEqual(result.route.route_name, "archive_lifecycle")
+            self.assertIsNone(result.plan_artifact)
+            self.assertEqual(result.handoff.artifacts["archive_lifecycle"]["archive_status"], "plan_not_found")
+            self.assertTrue(blueprint_dir.exists())
+
+    def test_archive_plan_action_proposal_requires_structured_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+
+            first = run_runtime("~go plan 补 runtime 骨架", workspace_root=workspace, user_home=workspace / "home")
+            self.assertIsNotNone(first.plan_artifact)
+
+            result = run_runtime(
+                "把当前 plan 归档",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=ActionProposal(
+                    "archive_plan",
+                    "write_files",
+                    "high",
+                    evidence=("user explicitly asked to archive the current plan",),
+                ),
+            )
+
+            self.assertEqual(result.route.route_name, "consult")
+            self.assertIsNone(result.plan_artifact)
+            self.assertTrue((workspace / first.plan_artifact.path).exists())
 
     def test_engine_creates_decision_checkpoint_before_materializing_plan(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2980,7 +3458,7 @@ class EngineIntegrationTests(unittest.TestCase):
                 ["active_plan", "project", "blueprint_design"],
             )
             self.assertEqual(
-                manifest["context_profiles"]["finalize"],
+                manifest["context_profiles"]["archive"],
                 [
                     "active_plan",
                     "project",
@@ -3045,7 +3523,7 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(manifest["limits"]["session_state"]["source"], "host_supplied_or_runtime_gate_generated")
             self.assertEqual(manifest["limits"]["session_state"]["followup_session_id"], "required_for_review_followups")
             self.assertEqual(manifest["limits"]["session_state"]["cleanup_days"], 7)
-            self.assertIn("finalize_active", manifest["supported_routes"])
+            self.assertIn("archive_lifecycle", manifest["supported_routes"])
             self.assertNotIn("compare", manifest["supported_routes"])
             self.assertIn("exec_plan", manifest["limits"]["host_required_routes"])
             self.assertEqual(manifest["limits"]["clarification_file"], ".sopify-skills/state/current_clarification.json")
@@ -3629,3 +4107,30 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(allowed.returncode, 0, msg=allowed.stderr)
             self.assertIn(".sopify-skills/plan/", allowed.stdout)
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
+
+    def test_repo_local_runtime_entry_blocks_finalize_alias_without_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            runtime_script = REPO_ROOT / "scripts" / "sopify_runtime.py"
+
+            blocked = subprocess.run(
+                [
+                    sys.executable,
+                    str(runtime_script),
+                    "--workspace-root",
+                    str(workspace),
+                    "--no-color",
+                    "--json",
+                    "~go finalize",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(blocked.returncode, 2, msg=blocked.stderr)
+            payload = json.loads(blocked.stdout)
+            self.assertEqual(payload["error_code"], "runtime_gate_required")
+            self.assertEqual(payload["required_entry"], "scripts/runtime_gate.py")
+            self.assertEqual(payload["trigger_evidence"]["direct_edit_guard_kind"], "side_effecting_command_alias")
+            self.assertFalse((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())

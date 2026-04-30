@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import sys
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +21,7 @@ from runtime.router import match_runtime_first_guard
 from runtime.state import iso_now, stable_request_sha1, summarize_request_text
 
 DIRECT_ENTRY_BLOCKED_ERROR_CODE = "runtime_gate_required"
+_FINALIZE_ALIAS_RE = re.compile(r"^~go\s+finalize(?:\s+.+)?$", re.IGNORECASE)
 
 
 def _render_direct_entry_block(
@@ -123,7 +125,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     request = " ".join(args.request)
-    guard = match_runtime_first_guard(request)
+    guard = (
+        {
+            "guard_kind": "side_effecting_command_alias",
+            "reason": "~go finalize must be mapped by runtime gate",
+        }
+        if _FINALIZE_ALIAS_RE.match(request.strip())
+        else match_runtime_first_guard(request)
+    )
     workspace_root = Path(args.workspace_root).resolve()
     if guard is not None and not args.allow_direct_entry:
         return _render_direct_entry_block(

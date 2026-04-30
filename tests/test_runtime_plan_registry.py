@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from tests.runtime_test_support import *
+from runtime.archive_lifecycle import apply_archive_subject, resolve_archive_subject
 
 
 class PlanRegistryTests(unittest.TestCase):
@@ -83,7 +84,7 @@ class PlanRegistryTests(unittest.TestCase):
             self.assertEqual(entry_result.entry["governance"]["priority_source"], "user_confirmed")
             self.assertEqual(entry_result.entry["governance"]["note"], "用户确认先做")
 
-    def test_finalize_removes_entry_from_active_registry(self) -> None:
+    def test_archive_removes_entry_from_active_registry(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             config = load_runtime_config(workspace)
@@ -93,10 +94,20 @@ class PlanRegistryTests(unittest.TestCase):
             artifact = create_plan_scaffold("实现 runtime skeleton", config=config, level="standard")
             store.set_current_plan(artifact)
 
-            result = finalize_plan(
+            result = apply_archive_subject(
                 config=config,
                 state_store=store,
-                current_plan=artifact,
+                subject=resolve_archive_subject(
+                    {
+                        "ref_kind": "current_plan",
+                        "ref_value": "",
+                        "source": "current_plan",
+                        "allow_current_plan_fallback": True,
+                    },
+                    config=config,
+                    state_store=store,
+                    current_plan=artifact,
+                ),
             )
 
             self.assertIsNotNone(result.archived_plan)

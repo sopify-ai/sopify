@@ -198,7 +198,7 @@ def upsert_plan_entry(
     request_text: str = "",
     source: str = "runtime_auto",
 ) -> Mapping[str, Any]:
-    """Upsert one plan entry after create/finalize-adjacent events."""
+    """Upsert one plan entry after create/archive-adjacent events."""
     try:
         read_result = read_plan_registry(
             config,
@@ -222,7 +222,7 @@ def upsert_plan_entry(
 
 
 def remove_plan_entry(*, config: RuntimeConfig, plan_id: str) -> bool:
-    """Remove one active entry after finalize succeeds."""
+    """Remove one active entry after archive succeeds."""
     try:
         path = registry_path(config)
         if not path.exists():

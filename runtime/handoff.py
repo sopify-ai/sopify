@@ -56,7 +56,7 @@ _ROUTE_HANDOFF_KIND = {
     "workflow": "workflow",
     "light_iterate": "light_iterate",
     "quick_fix": "quick_fix",
-    "finalize_active": "finalize",
+    "archive_lifecycle": "archive_lifecycle",
     "clarification_pending": "clarification",
     "clarification_resume": "clarification",
     "plan_proposal_pending": "plan_proposal",
@@ -108,16 +108,12 @@ def build_runtime_handoff(
     normalized_notes = tuple(note.strip() for note in notes if note and note.strip())
     if not normalized_notes and decision.reason:
         normalized_notes = (decision.reason,)
-    finalize_completed = _is_finalize_completed(
-        config=config,
-        decision=decision,
-        current_plan=resolved_plan,
-    )
+    archive_completed = _is_archive_completed(decision)
     required_host_action = _required_host_action(
         decision,
         current_run=current_run,
         skill_result_present=bool(skill_result),
-        finalize_completed=finalize_completed,
+        archive_completed=archive_completed,
     )
     artifacts = _collect_handoff_artifacts(
         config=config,
@@ -214,7 +210,7 @@ def _required_host_action(
     *,
     current_run: RunState | None,
     skill_result_present: bool,
-    finalize_completed: bool = False,
+    archive_completed: bool = False,
 ) -> str:
     route_name = decision.route_name
     if route_name == "plan_only":
@@ -225,8 +221,8 @@ def _required_host_action(
         return "confirm_plan_package"
     if route_name in {"workflow", "light_iterate"}:
         return "continue_host_workflow"
-    if route_name == "finalize_active":
-        return "finalize_completed" if finalize_completed else "review_or_execute_plan"
+    if route_name == "archive_lifecycle":
+        return "archive_completed" if archive_completed else "archive_review"
     if route_name in {"clarification_pending", "clarification_resume"}:
         return "answer_questions"
     if route_name == "execution_confirm_pending":
@@ -333,18 +329,31 @@ def _collect_handoff_artifacts(
             and previous_handoff.plan_id == current_plan.plan_id
         ):
             carry_forward_develop_quality_artifacts(artifacts, source=previous_handoff.artifacts)
-    if decision.route_name == "finalize_active" and current_plan is not None:
-        if _is_plan_archived(config=config, plan_path=current_plan.path):
-            artifacts["finalize_status"] = "completed"
-            artifacts["archived_plan_path"] = current_plan.path
-            artifacts["state_cleared"] = True
-        else:
-            artifacts["finalize_status"] = "blocked"
-            artifacts["active_plan_path"] = current_plan.path
-            artifacts["state_cleared"] = False
+    if decision.route_name == "archive_lifecycle":
+        archive_lifecycle = decision.artifacts.get("archive_lifecycle")
+        if isinstance(archive_lifecycle, Mapping):
+            artifacts["archive_lifecycle"] = dict(archive_lifecycle)
+            archive_status = str(archive_lifecycle.get("archive_status") or "").strip()
+            subject_path = str(archive_lifecycle.get("archive_subject_path") or "").strip()
+            if archive_status in {"completed", "already_archived"}:
+                if current_plan is not None:
+                    artifacts["archived_plan_path"] = current_plan.path
+                elif subject_path:
+                    artifacts["archived_plan_path"] = subject_path
+            elif subject_path:
+                artifacts["active_plan_path"] = subject_path
+            elif current_plan is not None:
+                artifacts["active_plan_path"] = current_plan.path
+            artifacts["state_cleared"] = bool(archive_lifecycle.get("state_cleared", False))
     if kb_artifact is not None and kb_artifact.files:
         artifacts["kb_files"] = list(kb_artifact.files)
-        if decision.route_name == "finalize_active" and artifacts.get("finalize_status") == "completed":
+        archive_lifecycle = artifacts.get("archive_lifecycle")
+        archive_status = (
+            str(archive_lifecycle.get("archive_status") or "").strip()
+            if isinstance(archive_lifecycle, Mapping)
+            else ""
+        )
+        if decision.route_name == "archive_lifecycle" and archive_status == "completed":
             history_index = next((path for path in kb_artifact.files if path.endswith("history/index.md")), None)
             if history_index:
                 artifacts["history_index_path"] = history_index
@@ -598,8 +607,8 @@ def _build_v1_observability_stats(
 
 
 def _should_emit_handoff(*, decision: RouteDecision, current_run: RunState | None, current_plan: PlanArtifact | None) -> bool:
-    if decision.route_name == "finalize_active":
-        return current_plan is not None
+    if decision.route_name == "archive_lifecycle":
+        return current_plan is not None or "archive_lifecycle" in decision.artifacts
     if decision.route_name != "exec_plan":
         return True
     # ~go exec is an advanced recovery/debug entry; when it does not converge
@@ -607,12 +616,10 @@ def _should_emit_handoff(*, decision: RouteDecision, current_run: RunState | Non
     return False
 
 
-def _is_finalize_completed(*, config: RuntimeConfig, decision: RouteDecision, current_plan: PlanArtifact | None) -> bool:
-    if decision.route_name != "finalize_active" or current_plan is None:
+def _is_archive_completed(decision: RouteDecision) -> bool:
+    if decision.route_name != "archive_lifecycle":
         return False
-    return _is_plan_archived(config=config, plan_path=current_plan.path)
-
-
-def _is_plan_archived(*, config: RuntimeConfig, plan_path: str) -> bool:
-    history_prefix = f"{config.plan_directory}/history/"
-    return str(plan_path or "").startswith(history_prefix)
+    archive_lifecycle = decision.artifacts.get("archive_lifecycle")
+    if isinstance(archive_lifecycle, Mapping):
+        return str(archive_lifecycle.get("archive_status") or "").strip() in {"completed", "already_archived"}
+    return False

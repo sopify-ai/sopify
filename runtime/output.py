@@ -25,7 +25,7 @@ _PHASE_LABELS = {
         "resume_active": "开发实施",
         "exec_plan": "开发实施",
         "cancel_active": "命令完成",
-        "finalize_active": "开发实施",
+        "archive_lifecycle": "命令完成",
         "decision_pending": "方案设计",
         "decision_resume": "方案设计",
         "summary": "今日详细摘要",
@@ -46,7 +46,7 @@ _PHASE_LABELS = {
         "resume_active": "Development",
         "exec_plan": "Development",
         "cancel_active": "Command Complete",
-        "finalize_active": "Development",
+        "archive_lifecycle": "Command Complete",
         "decision_pending": "Solution Design",
         "decision_resume": "Solution Design",
         "summary": "Daily Summary",
@@ -95,8 +95,8 @@ _LABELS = {
         "replay_handoff": "已识别 replay 路由，当前仍需 workflow-learning 专用链路",
         "resume_handoff": "已恢复当前流程，当前 repo-local runtime 未执行 develop bridge",
         "exec_handoff": "已进入 ~go exec 高级恢复入口，当前仅用于检查或恢复已有 plan，不作为普通开发主链路",
-        "finalize_success": "已完成活动方案收口、归档与状态清理",
-        "finalize_blocked": "当前无法完成收口事务",
+        "archive_success": "已完成方案归档",
+        "archive_blocked": "当前无法完成归档 lifecycle",
         "default_handoff": "已识别路由，当前 repo-local runtime 未执行后续动作",
         "decision_pending_handoff": "已进入决策确认，正式 plan 会在用户拍板后生成",
         "gate_ready_status": "plan 已通过机器执行门禁，后续可进入执行确认",
@@ -112,14 +112,15 @@ _LABELS = {
         "next_resume": "在宿主会话中继续 develop 阶段",
         "next_exec": "仅在已有活动 plan 或恢复态时使用 ~go exec；普通开发流继续按宿主会话推进",
         "next_cancel": "如需继续，重新发起 ~go plan 或 ~go",
-        "next_finalize_success": "请验证 blueprint 索引与 history 归档结果",
-        "next_finalize_retry": "补齐 blueprint 更新或切换到 metadata-managed plan 后重试",
+        "next_archive_success": "请验证 blueprint 索引与 history 归档结果",
+        "next_archive_retry": "补齐 blueprint 更新或切换到 metadata-managed plan 后重试",
         "next_summary": "可再次运行 ~summary 刷新，或继续当前开发流",
         "next_replay": "继续使用 workflow-learning 回放链路",
         "next_quick_fix": "在宿主会话中继续执行快速修复",
         "next_consult": "在宿主会话中继续问答，或改成明确变更请求",
         "next_decision": "回复 1/2（或 ~decide choose <option_id>）确认方案，或输入 取消 终止本轮设计",
         "handoff_review_or_execute_plan": "已写入 plan handoff，宿主可继续评审方案或执行",
+        "handoff_archive_review": "已写入 archive handoff，宿主应先检查归档结果再决定下一步",
         "handoff_continue_host_workflow": "已写入 workflow handoff，后续阶段需宿主继续",
         "handoff_answer_questions": "已写入 clarification handoff，宿主应先补齐缺失事实信息",
         "handoff_confirm_plan_package": "已写入 plan-proposal handoff，宿主应先确认是否生成方案包",
@@ -172,8 +173,8 @@ _LABELS = {
         "replay_handoff": "replay route recognized; workflow-learning still needs its dedicated bridge",
         "resume_handoff": "Active flow restored; the repo-local runtime has not executed the develop bridge",
         "exec_handoff": "~go exec entered the advanced recovery entry; it is only used to inspect or recover an existing plan, not as the default implementation path",
-        "finalize_success": "The active plan has been closed out, archived, and its runtime state was cleared",
-        "finalize_blocked": "The close-out transaction could not be completed",
+        "archive_success": "The plan has been archived",
+        "archive_blocked": "The archive lifecycle could not be completed",
         "default_handoff": "Route recognized; the repo-local runtime has not executed the downstream action",
         "decision_pending_handoff": "Decision checkpoint is pending; the formal plan will be created after user confirmation",
         "gate_ready_status": "The plan passed the machine execution gate and may move toward execution confirmation",
@@ -189,14 +190,15 @@ _LABELS = {
         "next_resume": "Continue the develop stage in the host session",
         "next_exec": "Use ~go exec only when an active plan or recovery state already exists; otherwise continue through the host flow",
         "next_cancel": "Start a new ~go plan or ~go flow when ready",
-        "next_finalize_success": "Review the blueprint index refresh and the history archive",
-        "next_finalize_retry": "Update the blueprint or switch to a metadata-managed plan and retry",
+        "next_archive_success": "Review the blueprint index refresh and the history archive",
+        "next_archive_retry": "Update the blueprint or switch to a metadata-managed plan and retry",
         "next_summary": "Run ~summary again to refresh, or continue the active development flow",
         "next_replay": "Use the workflow-learning replay flow",
         "next_quick_fix": "Continue the quick-fix flow in the host session",
         "next_consult": "Continue the discussion in the host session, or restate it as a change request",
         "next_decision": "Reply with 1/2 (or `~decide choose <option_id>`) to confirm, or type cancel to abort this design round",
         "handoff_review_or_execute_plan": "plan handoff written; the host can review the plan or execute it",
+        "handoff_archive_review": "archive handoff written; the host should inspect the archive result before continuing",
         "handoff_continue_host_workflow": "workflow handoff written; downstream stages still need the host flow",
         "handoff_answer_questions": "clarification handoff written; the host should gather the missing factual details first",
         "handoff_confirm_plan_package": "plan-proposal handoff written; the host should confirm package materialization first",
@@ -380,16 +382,16 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
             return [f"{labels['summary']}: generated the detailed recap for today and the current workspace"]
         return [f"{labels['summary']}: 已生成今天、当前工作区的详细复盘摘要"]
 
-    if route_name == "finalize_active":
+    if route_name == "archive_lifecycle":
         if result.plan_artifact is not None:
             return [
                 f"{labels['archive']}: {result.plan_artifact.path}",
                 f"{labels['summary']}: {result.plan_artifact.summary}",
-                f"{labels['status']}: {labels['finalize_success']}",
+                f"{labels['status']}: {labels['archive_success']}",
             ]
         return [
             f"{labels['route']}: {route_name}",
-            f"{labels['status']}: {labels['finalize_blocked']}",
+            f"{labels['status']}: {labels['archive_blocked']}",
             f"{labels['reason']}: {_diagnostic_reason(result)}",
         ]
 
@@ -474,8 +476,8 @@ def _next_hint(result: RuntimeResult, language: str) -> str:
     labels = _LABELS[language]
     if result.handoff is not None:
         return _handoff_next_hint(result, language)
-    if result.route.route_name == "finalize_active":
-        return labels["next_finalize_success"] if result.plan_artifact is not None else labels["next_finalize_retry"]
+    if result.route.route_name == "archive_lifecycle":
+        return labels["next_archive_success"] if result.plan_artifact is not None else labels["next_archive_retry"]
     if result.route.route_name == "clarification_pending":
         return labels["next_answer_questions"]
     if result.route.route_name == "plan_proposal_pending":
@@ -497,7 +499,7 @@ def _status_symbol(result: RuntimeResult) -> str:
     route_name = result.route.route_name
     if route_name == "plan_only":
         return "✓" if result.plan_artifact is not None else "!"
-    if route_name == "finalize_active":
+    if route_name == "archive_lifecycle":
         return "✓" if result.plan_artifact is not None else "!"
     if route_name in {"clarification_pending", "plan_proposal_pending", "execution_confirm_pending"}:
         return "?"
@@ -561,8 +563,8 @@ def _status_message(result: RuntimeResult, language: str) -> str:
         return labels["resume_handoff"]
     if route_name == "exec_plan":
         return labels["exec_handoff"]
-    if route_name == "finalize_active":
-        return labels["finalize_success"] if result.plan_artifact is not None else labels["finalize_blocked"]
+    if route_name == "archive_lifecycle":
+        return labels["archive_success"] if result.plan_artifact is not None else labels["archive_blocked"]
     return labels["default_handoff"]
 
 
@@ -580,6 +582,10 @@ def _handoff_next_hint(result: RuntimeResult, language: str) -> str:
     required_host_action = str(handoff.required_host_action or "").strip()
     if required_host_action == "review_or_execute_plan":
         return labels["next_plan"]
+    if required_host_action == "archive_review":
+        return labels["next_archive_retry"]
+    if required_host_action == "archive_completed":
+        return labels["next_archive_success"]
     if required_host_action == "continue_host_workflow":
         return labels["next_workflow"]
     if required_host_action == "answer_questions":
@@ -650,6 +656,17 @@ def _execution_summary(result: RuntimeResult) -> dict[str, object]:
         summary = result.handoff.artifacts.get("execution_summary")
         if isinstance(summary, dict):
             return summary
+    return {}
+
+
+def _archive_lifecycle(result: RuntimeResult) -> dict[str, object]:
+    payload = result.route.artifacts.get("archive_lifecycle")
+    if isinstance(payload, dict):
+        return payload
+    if result.handoff is not None:
+        payload = result.handoff.artifacts.get("archive_lifecycle")
+        if isinstance(payload, dict):
+            return payload
     return {}
 
 

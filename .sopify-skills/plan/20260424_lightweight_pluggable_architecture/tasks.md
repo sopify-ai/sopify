@@ -9,6 +9,8 @@
 | `20260418_cross_review_engine` | Phase 4 前置 | 已确认 | `plan/20260418_cross_review_engine/` |
 | `20260416_blueprint_graphify_integration` | Phase 5 基础 | 基础集成活跃；Plugin 封装延后 | `plan/20260416_blueprint_graphify_integration/` |
 | `20260428_action_proposal_boundary` | ADR-017 P0 thin slice | ✅ P0 完成（dogfood 通过） | `plan/20260428_action_proposal_boundary/` |
+| `20260429_standard-archive-finalize-archive-checkpoint` | 显式主体与生命周期收敛 | **当前最高优先级 / 新建** | `plan/20260429_standard-archive-finalize-archive-checkpoint/` |
+| `runtime_surface_cleanup` | Runtime 表层治理与删减 | 待触发；在 archive/existing-plan/checkpoint-local-actions 之后 | 暂不拆子包（先在总纲定义） |
 | `20260429_legacy_feature_cleanup` | Legacy 清理 | 新建 | `plan/20260429_legacy_feature_cleanup/` |
 | `20260429_host_prompt_governance` | Prompt 治理 | 新建 | `plan/20260429_host_prompt_governance/` |
 | archived legacy host adapter | 多宿主扩展 | Sunset (ADR-018) | `history/2026-04/` |
@@ -44,36 +46,98 @@
 > 目标：先删除不服务主线的维护面，再做小体验修正和协议澄清，最后用 CrossReview 真实 dogfood 决定是否需要新基础设施。
 > 性质：排序护栏，不新增功能范围；不得被解释为提前启动 Validator / Runtime / bridge.py。
 
-1. **ADR-018 Trae sunset**：先移除 Trae CN host surface，降低同步脚本、安装器、测试和提示层维护面；不改变 Core Protocol。
-2. **Phase 0.2-B/C**：完成 router 精度修正与输出瘦身，只改 `router.py` / `output.py`，不改 `engine.py` 或机器契约。
-3. **Protocol Step 1**：提取最小协议文档与 8-12 个行为契约 case；只写文档，不实现 validator / test runner。
-4. **CrossReview Phase 4a**：以 advisory skill 接入 develop 后审查；`SKILL.md` 调用 CLI，不使用 `bridge.py` / `pipeline_hooks`。
-5. **数据驱动后续**：Phase 4a dogfood 后再决定是否启动 Protocol Validator、Action Schema 实现、Phase 1-3 或 Phase 4b。
+1. **显式主体与生命周期收敛（第一子切片）**：优先收敛 `archive/finalize` 语义、archive 所需显式主体解析、以及旧 finalize 绕行链路删除。该主题下的后续子方案包顺序固定为 `existing_plan_subject_binding` → `checkpoint_local_actions` → `runtime_surface_cleanup` → `host_prompt_governance`；在前两者稳定前，不进入 prompt 治理实现。
+2. **Phase 0.2-B/C**：完成 router 精度修正与输出瘦身，只改 `router.py` / `output.py`，不改 `engine.py` 或机器契约；不得吸收 existing plan subject truth、checkpoint local action truth 或局部语境副作用授权问题。
+3. **CrossReview Phase 4a**：以 advisory skill 接入 develop 后审查；`SKILL.md` 调用 CLI，不使用 `bridge.py` / `pipeline_hooks`。
+4. **Protocol Step 1**：提取最小协议文档与 8-12 个行为契约 case；只写文档，不实现 validator / test runner。应以 archive/finalize 新现实与已稳定 contract 为输入，不提前固化旧 finalize 语义。
+5. **ADR-018 Trae sunset 收口**：已实现的 retired host 清理改为文档与状态收口，不再占当前实现主序列。
+6. **数据驱动后续**：Phase 4a dogfood 后再决定是否启动更广的 Protocol Validator、Action Schema 实现、Phase 1-3 或 Phase 4b。
 
 ---
 
 ### 当前活跃
 
-**轻量化第一刀：ADR-018 Trae cleanup**
-- 优先级说明：这是 P1 治理清理，但可作为轻量化第一刀先做；它不抢 Phase 0.2-B/C 或 CR v0 的 P0，只降低维护面。
-- 执行范围：按 ADR-018 清理 installer host、Trae 相关测试、同步脚本、README/CONTRIBUTING 表述与 `TraeCn/` surface。
-- 约束：只 sunset legacy surface，不改 Core Protocol、runtime gate、handoff/checkpoint 契约。
-- 验证：保留 Codex/Claude host 安装链路与 release smoke；CHANGELOG 保留历史和最新 sunset note。
+**当前最高优先级：显式主体与生命周期收敛（第一子切片）**
+- 子方案包：`20260429_standard-archive-finalize-archive-checkpoint/`
+- 目标：把 `archive/finalize` 从活动 runtime 流中回收，收敛为面向显式主体的协议级归档操作。
+- 范围：archive/finalize 新语义、archive subject contract、deterministic core check/apply、旧 finalize 绕行删除；validator 仅负责校验/授权与产出 artifacts，不负责解析业务对象；migration/repair 不在本包执行路径内。
+- 前置关系：完成前，`20260429_host_prompt_governance` 不进入实现阶段；prompt 层不得继续围绕旧 finalize surface 做治理。
+- 后续顺序：本子切片完成后，先开 `existing_plan_subject_binding`，再开 `checkpoint_local_actions`，然后进入 `runtime_surface_cleanup`，最后才允许进入 `host_prompt_governance`。
+- 开包边界：`existing_plan_subject_binding` 负责先稳定“操作的是谁”；`checkpoint_local_actions` 负责在主体 truth 稳定后收敛 `continue / revise / cancel / inspect`；`runtime_surface_cleanup` 负责删除上述稳定 contract 已覆盖的旧 route / handoff / output / recovery / tests 表层结构；`host_prompt_governance` 只消费稳定 contract，不得反向充当 runtime truth 或 keyword patch。
+
+**待触发：existing_plan_subject_binding（不先拆子包）**
+- 优先级：高；紧随 `archive/finalize` 之后，先于 `checkpoint_local_actions`
+- 启动条件：
+  1. `archive/finalize` 已完成单一路由 cutover
+  2. archive 所需显式主体 contract 已稳定，不再借旧 finalize active-flow
+- 目标：统一 existing plan 的显式主体解析，先解决“操作的是谁”，再允许后续子切片处理动作层
+- 范围：
+  - 收敛 review / revise / execute / `~go plan` 对 existing plan 的主体绑定口径
+  - 定义主体取证优先级：explicit plan reference → explicit self-reference → explicit new-plan intent → stable handoff/current plan evidence → explicit current-plan anchor
+  - 对非锚定请求 + active/current plan 存在的场景，收敛到 `active_plan_binding_choice` 或等价 decision checkpoint
+  - 对齐 `current_plan.path`、`current_run.plan_path`、`handoff.plan_path` 的主体含义，不再允许多份 truth 并存
+- 非目标：
+  - 不定义 `continue / revise / cancel / inspect` 的局部动作 contract
+  - 不治理 prompt / output 展示层
+  - 不扩 ActionProposal 通用 schema
+  - 不处理 archive lifecycle 或 gate/preflight 架构
+- 验收口径：
+  - existing plan 请求的主体绑定有唯一 deterministic 结论，或显式停在 decision
+  - 不再依赖 strict single-active-plan 的静默自动复用作为主路径
+  - plan review / reuse 相关 tests 收敛为主体绑定 contract，而不是分散在 router phrasing 和 engine fallback 中
+
+**待触发：checkpoint_local_actions（不先拆子包）**
+- 优先级：高；在 `existing_plan_subject_binding` 之后，先于 `runtime_surface_cleanup`
+- 启动条件：`existing_plan_subject_binding` 已稳定 existing plan subject truth
+- 目标：只收敛 `continue / revise / cancel / inspect` 的局部动作 contract，不再同时猜主体
+- 约束：动作层只消费已绑定主体；不得回头吸收主体歧义问题
+
+**待触发：runtime_surface_cleanup（不先拆子包）**
+- 优先级：高；仅次于 `archive/finalize`、`existing_plan_subject_binding`、`checkpoint_local_actions`
+- 启动条件：
+  1. `archive/finalize` 已完成单一路由 cutover，不再以旧 `finalize_active` 作为主链路事实
+  2. `existing_plan_subject_binding` 已稳定 existing plan 的显式主体解析
+  3. `checkpoint_local_actions` 已稳定 `continue / revise / cancel / inspect` 的局部动作 contract
+- 目标：基于已稳定语义，对 runtime 表层做一轮集中治理和删减，删除旧双轨、旧兼容投影和只服务旧语义的测试矩阵，降低 machine truth 漂移面
+- 范围：
+  - 清理旧 route / alias / reason phrasing / phase label 特判
+  - 清理 handoff / output / replay 中的旧兼容投影
+  - 清理 failure recovery / deterministic guard / decision tables 中只服务旧语义的分支
+  - 清理 tests 中只验证旧别名、旧 reason code、旧 surface 的断言
+  - 回写总纲 / blueprint / plan 文档，确保命名与 machine contract 一致
+- 非目标：
+  - 不新增 checkpoint type
+  - 不扩 ActionProposal schema
+  - 不重做 gate / preflight / workspace bootstrap 架构
+  - 不做 runtime optionalization / engine 拆分 / validator 独立交付
+  - 不用 prompt workaround 替代 machine truth 收敛
+- 验收口径：
+  - 旧概念引用数下降
+  - 旧 route 分支和兼容投影数量下降
+  - tests 从 legacy surface matrix 收敛为 contract tests + 关键回归
+  - 不引入新的 runtime truth source 或新的长期兼容 alias
+
+**ADR-018 Trae cleanup（已实现，待文档收口）**
+- 状态说明：retired host surface 已完成 sunset 与归档，当前剩余事项以总纲/README/验证口径收口为主，不再作为当前实现主任务。
+- 收口范围：确认总纲、背景、设计、CHANGELOG 和验证标准中的 sunset 口径一致。
+- 约束：不重新打开 retired host 实现面，不影响当前 archive/lifecycle 第一子切片。
 
 **Phase 0.2-B: Router 精度修正**
 - [ ] 修正 `_is_consultation()` 问句+动作词判断
 - [ ] 修正 `_estimate_complexity()` 短请求降级
 - 改动 `router.py` (~15行)，不改 engine.py
+- 边界：不得把 existing plan subject 解析、checkpoint local actions、`archive_plan`/`checkpoint_response` 授权、或局部语境副作用保护塞回 router patch
 - 验证：全量测试通过，路由行为变更逐条确认
 
 **Phase 0.2-C: 输出瘦身**
 - [ ] 精简 consult/quick_fix 调试信息为面向用户的提示
 - 改动 `output.py`，不改机器契约
+- 边界：只改展示，不改 handoff truth、checkpoint 语义、ActionProposal/Validator 授权边界
 - 验证：全量测试通过
 
 > 详细设计见子任务包 `20260417_ux_perception_tuning/design.md`
 
-**ADR-017 P0: ActionProposal Boundary** `当前最高痛点`
+**ADR-017 P0: ActionProposal Boundary** `当前最高痛点之一；已完成 thin slice，后续以清理为主`
 - 子方案包：`20260428_action_proposal_boundary/`
 - 目标：建立 Action/Effect Boundary，P0 先用 `consult_readonly` 解决 no-write 局部语境；方案包误建是当前最高频症状。
 - 体量：~200 行新增 + ~30 行修改，不改 router 签名和 52 个现有测试
@@ -100,7 +164,7 @@
 - 验证：LLM 读 SKILL.md 后自主调用 CLI；至少 3 个真实项目、至少 2 个 valid issue；误报不阻塞主流程
 
 **Protocol Step 2: Protocol validator CLI** `待需求信号确认`
-- check / doctor / archive，只读优先
+- check / repair / archive，只读优先
 - 触发条件（满足其一）：
   1. Protocol Step 1 完成 + 至少 2 次实际 plan/state 校验需求出现（手动修正 / 状态损坏 / 迁移校验）
   2. Phase 4a Convention 模式验证暴露系统性 SKILL.md 偏离（LLM 不按表单操作需事后校验）
@@ -119,7 +183,7 @@
 - [ ] Host prompt 加一条规则（schema 由 gate 动态返回，不嵌 prompt）
 - [ ] Validator deterministic tests + 保留现有 router 52 个测试
 - [ ] P0-H：P0-G 测试通过 + 1 轮 dogfood 后，按 ADR-018 清理被 ActionProposal 覆盖的 legacy classifier paths
-- 约束：P0 只激活 `consult_readonly` pre-route 拦截；Router 签名不改；命令前缀请求不经过 ActionProposal
+- 约束：P0 只激活 `consult_readonly` pre-route 拦截；Router 签名不改；普通命令前缀请求不默认经过 ActionProposal，但 `~go finalize` 等 side-effecting alias 可由后续子切片映射成 action-specific proposal
 - 标注：现有 `analysis_only_no_write_brake`、`plan_meta_review`、`analyze_challenge`、`explain_only_override` 为 legacy compatibility path，P0-G 测试通过 + 1 轮 dogfood 后由 P0-H 清理
 
 **P1 完整 schema（原 Protocol Step 3 范围）：**
@@ -136,6 +200,8 @@
 - `protocol_step3_schema_docs`：将 ActionProposal schema 写入 protocol 文档层（ADR-016 Layer 1）
 - `runtime_handoff_slimming`：精简 handoff artifacts
 - `action_audit_observability`：`action_audit.jsonl` 事件可观测性
+- `runtime_surface_cleanup`：在 `archive/finalize`、`existing_plan_subject_binding`、`checkpoint_local_actions` 稳定后启动；负责删 runtime 表层旧语义，不扩协议面。
+- `host_prompt_governance`：后续收口包。前置依赖：archive/finalize 新 contract 稳定，且 `existing_plan_subject_binding`、`checkpoint_local_actions`、`runtime_surface_cleanup` 已完成；在此之前不对旧 finalize/runtime surface 做 prompt 治理实现，也不允许用 prompt workaround 代替 machine truth 收敛。
 
 ---
 

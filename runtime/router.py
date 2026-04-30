@@ -19,7 +19,6 @@ from .state import StateStore
 
 _COMMAND_PATTERNS = (
     (re.compile(r"^~summary(?:\s+(?P<body>.+))?$", re.IGNORECASE), "~summary"),
-    (re.compile(r"^~go\s+finalize(?:\s+(?P<body>.+))?$", re.IGNORECASE), "~go finalize"),
     (re.compile(r"^~go\s+plan(?:\s+(?P<body>.+))?$", re.IGNORECASE), "~go plan"),
     (re.compile(r"^~go\s+exec(?:\s+(?P<body>.+))?$", re.IGNORECASE), "~go exec"),
     (re.compile(r"^~go(?:\s+(?P<body>.+))?$", re.IGNORECASE), "~go"),
@@ -36,7 +35,7 @@ SUPPORTED_ROUTE_NAMES = (
     "resume_active",
     "exec_plan",
     "cancel_active",
-    "finalize_active",
+    "archive_lifecycle",
     "decision_pending",
     "decision_resume",
     "state_conflict",
@@ -198,8 +197,6 @@ _EXECUTION_CONFIRM_REVISION_PATTERNS = (
     re.compile(r"(风险|任务|范围|scope|task|plan|方案).*(更具体|更清楚|再具体一点|再细一点)", re.IGNORECASE),
 )
 _LIGHT_EDIT_HINTS = ("readme", "注释", "comment", "typo", "文案", "assert", "断言", "路径说明")
-
-
 @dataclass(frozen=True)
 class _ComplexitySignal:
     level: str
@@ -482,17 +479,6 @@ def _classify_command(text: str, *, skills: Iterable[SkillMeta], config: Runtime
                 command=command,
                 complexity="simple",
                 should_recover_context=True,
-            )
-        if command == "~go finalize":
-            return RouteDecision(
-                route_name="finalize_active",
-                request_text=request_text,
-                reason="Matched explicit finalize command",
-                command=command,
-                complexity="medium",
-                should_recover_context=True,
-                candidate_skill_ids=_candidate_skills("finalize_active", skills, "develop", "kb"),
-                active_run_action="finalize",
             )
         if command == "~go plan":
             return RouteDecision(

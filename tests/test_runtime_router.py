@@ -102,11 +102,11 @@ class RouterTests(unittest.TestCase):
             skills = SkillRegistry(config, user_home=workspace / "home").discover()
 
             plan_route = router.classify("~go plan 补 runtime 骨架", skills=skills)
-            finalize_route = router.classify("~go finalize", skills=skills)
+            archive_route = router.classify("~go finalize", skills=skills)
             self.assertEqual(plan_route.route_name, "plan_only")
             self.assertTrue(plan_route.should_create_plan)
-            self.assertEqual(finalize_route.route_name, "finalize_active")
-            self.assertTrue(finalize_route.should_recover_context)
+            self.assertEqual(archive_route.route_name, "workflow")
+            self.assertEqual(archive_route.command, "~go")
 
             run_state = RunState(
                 run_id="run-1",
@@ -333,7 +333,7 @@ class RouterTests(unittest.TestCase):
             self.assertEqual(route.route_name, "light_iterate")
             self.assertNotIn("meta-debug", route.reason)
 
-    def test_pending_plan_proposal_blocks_finalize_as_inspect(self) -> None:
+    def test_pending_plan_proposal_blocks_go_command_as_inspect(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             config = load_runtime_config(workspace)
@@ -344,12 +344,12 @@ class RouterTests(unittest.TestCase):
 
             run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
 
-            finalize_route = router.classify("~go finalize", skills=skills)
+            go_route = router.classify("~go", skills=skills)
 
-            self.assertEqual(finalize_route.route_name, "plan_proposal_pending")
-            self.assertEqual(finalize_route.command, "~go finalize")
-            self.assertEqual(finalize_route.active_run_action, "inspect_plan_proposal")
-            self.assertIn("before finalize_active can continue", finalize_route.reason)
+            self.assertEqual(go_route.route_name, "plan_proposal_pending")
+            self.assertEqual(go_route.command, "~go")
+            self.assertEqual(go_route.active_run_action, "inspect_plan_proposal")
+            self.assertIn("before workflow can continue", go_route.reason)
 
     def test_pending_plan_proposal_defaults_questions_to_inspect_and_explicit_edits_to_revise(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

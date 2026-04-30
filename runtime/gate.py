@@ -17,6 +17,7 @@ from .action_intent import (
     CONFIDENCE_LEVELS,
     SIDE_EFFECTS,
     ActionProposal,
+    ArchiveSubjectProposal,
     resolve_action_proposal,
 )
 from .preferences import PreferencesPreloadResult, preload_preferences
@@ -140,7 +141,7 @@ def enter_runtime_gate(
                     "message": str(contract["preflight"].get("message") or "Workspace preflight blocked runtime execution"),
                 }
             )
-            return _finalize_gate_contract(
+            return _finish_gate_contract(
                 contract=contract,
                 workspace=workspace,
                 request=request,
@@ -156,6 +157,9 @@ def enter_runtime_gate(
         if cleaned_session_dirs:
             pass
 
+        if proposal is None:
+            proposal = _action_proposal_from_command_alias(request)
+
         # ActionProposal gate: new host (capability declared) without valid
         # proposal on a non-command-prefix request → return retry contract
         # with schema so host can fill in and retry.
@@ -165,7 +169,7 @@ def enter_runtime_gate(
             if proposal_parse_error:
                 retry_contract["action_proposal_parse_error"] = proposal_parse_error
             contract.update(retry_contract)
-            return _finalize_gate_contract(
+            return _finish_gate_contract(
                 contract=contract,
                 workspace=workspace,
                 request=request,
@@ -193,6 +197,11 @@ def enter_runtime_gate(
             session_id=resolved_session_id,
         )
         persisted_handoff = store.get_current_handoff()
+        if runtime_result.route.route_name == "archive_lifecycle":
+            # Archive may persist a sidecar receipt while the active workflow
+            # handoff stays current. For the archive request itself, prefer that
+            # receipt as the persisted evidence source.
+            persisted_handoff = store.get_current_archive_receipt() or persisted_handoff
         current_run = store.get_current_run()
         # Normalize from the in-memory runtime result when needed, but keep
         # persisted handoff as the only positive machine evidence.
@@ -268,7 +277,7 @@ def enter_runtime_gate(
             }
         )
 
-    return _finalize_gate_contract(
+    return _finish_gate_contract(
         contract=contract,
         workspace=workspace,
         request=request,
@@ -351,10 +360,18 @@ def _normalize_handoff(handoff: Any) -> dict[str, Any]:
     if not pending_fail_closed and required_host_action in CHECKPOINT_ONLY_ACTIONS:
         pending_fail_closed = True
     payload = {
+        "route_name": str(getattr(handoff, "route_name", "") or "").strip(),
+        "handoff_kind": str(getattr(handoff, "handoff_kind", "") or "").strip(),
         "required_host_action": required_host_action,
         "pending_fail_closed": pending_fail_closed,
         "_strict_runtime_entry": bool(entry_guard.get("strict_runtime_entry", False)),
     }
+    archive_lifecycle = artifacts.get("archive_lifecycle")
+    if isinstance(archive_lifecycle, Mapping):
+        payload["archive_lifecycle"] = dict(archive_lifecycle)
+    for key in ("archived_plan_path", "active_plan_path", "history_index_path", "state_cleared"):
+        if key in artifacts:
+            payload[key] = artifacts.get(key)
     trigger_evidence: dict[str, Any] = {}
     if reason_code:
         payload["entry_guard_reason_code"] = reason_code
@@ -476,7 +493,10 @@ def _persisted_handoff_matches_current_request(*, persisted_handoff: Any, runtim
 
 
 def _preferred_handoff_source(*, persisted_handoff: Any, runtime_handoff: Any, handoff_source_kind: str) -> Any:
-    if handoff_source_kind in {"current_request_not_persisted", _RUNTIME_ONLY_STATE_CONFLICT_SOURCE_KIND}:
+    if handoff_source_kind in {
+        "current_request_not_persisted",
+        _RUNTIME_ONLY_STATE_CONFLICT_SOURCE_KIND,
+    }:
         return runtime_handoff
     return persisted_handoff or runtime_handoff
 
@@ -484,7 +504,9 @@ def _preferred_handoff_source(*, persisted_handoff: Any, runtime_handoff: Any, h
 def _handoff_found(*, persisted_handoff: Any, runtime_handoff: Any, handoff_source_kind: str) -> bool:
     if persisted_handoff is not None:
         return True
-    return handoff_source_kind == _RUNTIME_ONLY_STATE_CONFLICT_SOURCE_KIND and runtime_handoff is not None
+    return handoff_source_kind in {
+        _RUNTIME_ONLY_STATE_CONFLICT_SOURCE_KIND,
+    } and runtime_handoff is not None
 
 
 def _handoff_matches_runtime_result(*, persisted_handoff: Any, runtime_handoff: Any) -> bool:
@@ -631,6 +653,7 @@ def _build_state_contract(*, store: StateStore) -> dict[str, Any]:
         "current_plan_proposal_path": store.relative_path(store.current_plan_proposal_path),
         "current_run_path": store.relative_path(store.current_run_path),
         "current_handoff_path": store.relative_path(store.current_handoff_path),
+        "current_archive_receipt_path": store.relative_path(store.current_archive_receipt_path),
         "current_clarification_path": store.relative_path(store.current_clarification_path),
         "current_decision_path": store.relative_path(store.current_decision_path),
         "last_route_path": store.relative_path(store.last_route_path),
@@ -655,7 +678,7 @@ def _store_for_route(
     global_store = StateStore(config)
     session_store = StateStore(config, session_id=session_id)
 
-    if route_name in {"execution_confirm_pending", "resume_active", "exec_plan", "finalize_active"}:
+    if route_name in {"execution_confirm_pending", "resume_active", "exec_plan", "archive_lifecycle"}:
         return global_store
 
     runtime_handoff = getattr(runtime_result, "handoff", None)
@@ -742,7 +765,7 @@ def _fallback_receipt_path(*, workspace: Path) -> Path:
     return workspace / ".sopify-skills" / "state" / CURRENT_GATE_RECEIPT_FILENAME
 
 
-def _finalize_gate_contract(
+def _finish_gate_contract(
     *,
     contract: dict[str, Any],
     workspace: Path,
@@ -771,11 +794,37 @@ def _finalize_gate_contract(
 
 
 _COMMAND_PREFIX_RE = re.compile(r"^~go(?:\s|$)", re.IGNORECASE)
+_FINALIZE_ALIAS_RE = re.compile(r"^~go\s+finalize(?:\s+(?P<body>.+))?$", re.IGNORECASE)
 
 
 def _is_command_prefix_request(request: str) -> bool:
-    """Command-prefix requests are deterministic routes; they bypass ActionProposal."""
+    """Command-prefix requests are deterministic unless a thin alias maps to ActionProposal."""
     return bool(_COMMAND_PREFIX_RE.match(request.strip()))
+
+
+def _action_proposal_from_command_alias(request: str) -> ActionProposal | None:
+    """Map supported side-effecting command aliases into structured proposals."""
+    match = _FINALIZE_ALIAS_RE.match(request.strip())
+    if match is None:
+        return None
+    body = (match.group("body") or "").strip()
+    if not body:
+        archive_subject = ArchiveSubjectProposal(
+            ref_kind="current_plan",
+            source="current_plan",
+            allow_current_plan_fallback=True,
+        )
+    elif body.startswith(".sopify-skills/plan/") or body.startswith(".sopify-skills/history/"):
+        archive_subject = ArchiveSubjectProposal(ref_kind="path", ref_value=body, source="host_explicit")
+    else:
+        archive_subject = ArchiveSubjectProposal(ref_kind="plan_id", ref_value=body, source="host_explicit")
+    return ActionProposal(
+        action_type="archive_plan",
+        side_effect="write_files",
+        confidence="high",
+        evidence=("command_alias:~go finalize",),
+        archive_subject=archive_subject,
+    )
 
 
 def _build_action_proposal_schema() -> dict[str, Any]:
@@ -785,6 +834,16 @@ def _build_action_proposal_schema() -> dict[str, Any]:
         "side_effect": {"enum": list(SIDE_EFFECTS), "default": "none"},
         "confidence": {"enum": list(CONFIDENCE_LEVELS), "default": "high"},
         "evidence": {"type": "list[str]", "default": []},
+        "archive_subject": {
+            "type": "object",
+            "required_for": ["archive_plan"],
+            "fields": {
+                "ref_kind": {"enum": ["plan_id", "path", "current_plan"], "required": True},
+                "ref_value": {"type": "string", "default": ""},
+                "source": {"enum": ["host_explicit", "current_plan"], "required": True},
+                "allow_current_plan_fallback": {"type": "bool", "default": False},
+            },
+        },
     }
 
 

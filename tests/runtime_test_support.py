@@ -48,7 +48,7 @@ from runtime.daily_summary import render_daily_summary_markdown
 from runtime.engine import run_runtime
 from runtime.entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
 from runtime.execution_gate import evaluate_execution_gate
-from runtime.finalize import finalize_plan
+from runtime.action_intent import ActionProposal, ArchiveSubjectProposal
 from runtime.handoff import build_runtime_handoff
 from runtime.kb import bootstrap_kb, ensure_blueprint_index
 from runtime.knowledge_layout import materialization_stage, resolve_context_profile

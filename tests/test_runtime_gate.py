@@ -1779,22 +1779,26 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertEqual(result["handoff"]["entry_guard_reason_code"], "entry_guard_execution_confirm_pending")
             self.assertEqual(result["allowed_response_mode"], CHECKPOINT_ONLY)
 
-    def test_gate_returns_ready_for_finalize_completion_handoff(self) -> None:
+    def test_gate_returns_ready_for_archive_completion_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
-            active_plan = _prepare_ready_plan_state(workspace)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+            active_plan = create_plan_scaffold("补 runtime gate 骨架", config=config, level="standard")
+            store.set_current_plan(active_plan)
 
             result = enter_runtime_gate(
-                "~go finalize",
+                f"~go finalize {active_plan.plan_id}",
                 workspace_root=workspace,
                 user_home=workspace / "home",
             )
 
             self.assertEqual(result["status"], "ready")
             self.assertTrue(result["gate_passed"])
-            self.assertEqual(result["runtime"]["route_name"], "finalize_active")
+            self.assertEqual(result["runtime"]["route_name"], "archive_lifecycle")
             self.assertEqual(result["allowed_response_mode"], NORMAL_RUNTIME_FOLLOWUP)
-            self.assertEqual(result["handoff"]["required_host_action"], "finalize_completed")
+            self.assertEqual(result["handoff"]["required_host_action"], "archive_completed")
             self.assertTrue(result["evidence"]["handoff_found"])
             self.assertEqual(result["evidence"]["handoff_source_kind"], "current_request_persisted")
             self.assertTrue(result["evidence"]["persisted_handoff_matches_current_request"])
@@ -1805,7 +1809,8 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertIsNone(store.get_current_run())
             persisted_handoff = store.get_current_handoff()
             self.assertIsNotNone(persisted_handoff)
-            self.assertEqual(persisted_handoff.required_host_action, "finalize_completed")
+            self.assertEqual(persisted_handoff.required_host_action, "archive_completed")
+            self.assertEqual(persisted_handoff.artifacts["action_projection"]["archive_status"], "completed")
             self.assertTrue(persisted_handoff.artifacts["archived_plan_path"].endswith(f"/{active_plan.plan_id}"))
             self.assertEqual(persisted_handoff.artifacts["history_index_path"], ".sopify-skills/history/index.md")
             self.assertTrue(persisted_handoff.artifacts["state_cleared"])
@@ -1814,7 +1819,7 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertTrue(archived_plan_dir.exists())
             self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
 
-    def test_gate_returns_structured_blocked_handoff_for_finalize_failure(self) -> None:
+    def test_gate_returns_structured_blocked_handoff_for_archive_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
 
@@ -1845,21 +1850,87 @@ class RuntimeGateTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "ready")
             self.assertTrue(result["gate_passed"])
-            self.assertEqual(result["runtime"]["route_name"], "finalize_active")
-            self.assertEqual(result["handoff"]["required_host_action"], "review_or_execute_plan")
-            self.assertTrue(result["evidence"]["handoff_found"])
-
+            self.assertEqual(result["runtime"]["route_name"], "archive_lifecycle")
+            self.assertEqual(result["handoff"]["required_host_action"], "archive_review")
+            self.assertEqual(result["handoff"]["route_name"], "archive_lifecycle")
+            self.assertEqual(result["handoff"]["handoff_kind"], "archive_lifecycle")
+            self.assertEqual(result["handoff"]["archive_lifecycle"]["archive_status"], "blocked")
             config = load_runtime_config(workspace)
             review_store = StateStore(config, session_id=session_id)
             store = StateStore(config)
+            self.assertEqual(result["handoff"]["active_plan_path"], review_store.get_current_plan().path)
+            self.assertFalse(result["handoff"]["state_cleared"])
+            self.assertTrue(result["evidence"]["handoff_found"])
             self.assertIsNotNone(review_store.get_current_plan())
             self.assertIsNone(store.get_current_plan())
             persisted_handoff = store.get_current_handoff()
             self.assertIsNotNone(persisted_handoff)
-            self.assertEqual(persisted_handoff.required_host_action, "review_or_execute_plan")
-            self.assertEqual(persisted_handoff.artifacts["finalize_status"], "blocked")
+            self.assertEqual(persisted_handoff.required_host_action, "archive_review")
+            self.assertEqual(persisted_handoff.artifacts["archive_lifecycle"]["archive_status"], "blocked")
             self.assertEqual(persisted_handoff.artifacts["active_plan_path"], review_store.get_current_plan().path)
             self.assertFalse(persisted_handoff.artifacts["state_cleared"])
+
+    def test_gate_persists_archive_handoff_without_clearing_active_runtime_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            active_plan = create_plan_scaffold("当前活动任务", config=config, level="standard")
+            other_plan = create_plan_scaffold("旁路可归档任务", config=config, level="standard")
+            active_handoff = _make_runtime_handoff(
+                run_id="active-run",
+                route_name="resume_active",
+                required_host_action="continue_host_develop",
+            )
+            store.set_current_plan(active_plan)
+            store.set_host_facing_truth(
+                run_state=RunState(
+                    run_id="active-run",
+                    status="active",
+                    stage="develop_pending",
+                    route_name="resume_active",
+                    title=active_plan.title,
+                    created_at=iso_now(),
+                    updated_at=iso_now(),
+                    plan_id=active_plan.plan_id,
+                    plan_path=active_plan.path,
+                ),
+                handoff=active_handoff,
+                resolution_id="active-resolution",
+                truth_kind="engine_runtime_handoff",
+            )
+
+            result = enter_runtime_gate(
+                f"~go finalize {other_plan.plan_id}",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            self.assertEqual(result["status"], "ready")
+            self.assertTrue(result["gate_passed"])
+            self.assertEqual(result["runtime"]["route_name"], "archive_lifecycle")
+            self.assertEqual(result["handoff"]["required_host_action"], "archive_completed")
+            self.assertEqual(result["evidence"]["handoff_source_kind"], "current_request_persisted")
+            self.assertTrue(result["evidence"]["persisted_handoff_matches_current_request"])
+            self.assertTrue(result["evidence"]["current_request_produced_handoff"])
+            self.assertEqual(result["handoff"]["route_name"], "archive_lifecycle")
+            self.assertEqual(result["handoff"]["handoff_kind"], "archive_lifecycle")
+            self.assertEqual(result["handoff"]["archive_lifecycle"]["archive_status"], "completed")
+            self.assertTrue(result["handoff"]["archived_plan_path"].endswith(f"/{other_plan.plan_id}"))
+            self.assertFalse(result["handoff"]["state_cleared"])
+            self.assertNotIn("run_stage", result["handoff"])
+            self.assertNotIn("execution_gate", result["handoff"])
+            self.assertEqual(store.get_current_plan().plan_id, active_plan.plan_id)
+            self.assertEqual(store.get_current_run().plan_id, active_plan.plan_id)
+            self.assertEqual(store.get_current_handoff().required_host_action, "continue_host_develop")
+            self.assertEqual(store.get_current_archive_receipt().required_host_action, "archive_completed")
+
+            resumed = enter_runtime_gate("继续", workspace_root=workspace, user_home=workspace / "home")
+            self.assertEqual(resumed["status"], "ready")
+            self.assertEqual(resumed["runtime"]["route_name"], "resume_active")
+            self.assertEqual(resumed["handoff"]["required_host_action"], "continue_host_develop")
 
     def test_gate_surfaces_trigger_evidence_for_protected_plan_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

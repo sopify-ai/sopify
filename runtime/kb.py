@@ -274,7 +274,7 @@ def render_blueprint_index(config: RuntimeConfig) -> str:
         if has_history:
             read_next.append("- [Change History](../history/index.md)")
         else:
-            read_next.append("- History becomes available after the first explicit `~go finalize`.")
+            read_next.append("- History becomes available after the first archive_plan lifecycle.")
         if has_active_plan:
             read_next.append("- Active plan directory: `../plan/`")
         elif latest_archive is not None:
@@ -327,7 +327,7 @@ def render_blueprint_index(config: RuntimeConfig) -> str:
     if has_history:
         read_next.append("- [变更历史](../history/index.md)")
     else:
-        read_next.append("- 首次显式 `~go finalize` 后才会出现 history。")
+        read_next.append("- 首次执行 archive_plan 生命周期后才会出现 history。")
     if has_active_plan:
         read_next.append("- 当前活动方案目录：`../plan/`")
     elif latest_archive is not None:

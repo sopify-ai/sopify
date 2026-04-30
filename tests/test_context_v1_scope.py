@@ -473,6 +473,87 @@ class ActionProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ActionProjectionError, r"stable deterministic guard"):
             build_action_projection(guard, artifacts={})
 
+    def test_archive_review_projection_allows_missing_subject_path(self) -> None:
+        guard = evaluate_deterministic_guard(
+            allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
+            required_host_action="archive_review",
+        )
+
+        projection = build_action_projection(
+            guard,
+            artifacts={
+                "archive_lifecycle": {
+                    "archive_status": "plan_not_found",
+                    "archive_subject_kind": "missing",
+                    "archive_subject_plan_id": "",
+                    "archive_subject_path": "",
+                    "archive_changed_files": [],
+                    "archive_notes": ["Referenced archive subject was not found"],
+                    "state_cleared": False,
+                }
+            },
+        )
+        payload = projection.to_dict()
+
+        self.assertEqual(payload["required_host_action"], "archive_review")
+        self.assertEqual(payload["archive_status"], "plan_not_found")
+        self.assertEqual(payload["plan_path"], "")
+        self.assertEqual(payload["archive_subject_kind"], "missing")
+
+    def test_archive_review_projection_prefers_archive_subject_over_active_plan(self) -> None:
+        guard = evaluate_deterministic_guard(
+            allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
+            required_host_action="archive_review",
+        )
+
+        projection = build_action_projection(
+            guard,
+            plan_id="20260409_active_plan",
+            plan_path=".sopify-skills/plan/20260409_active_plan",
+            artifacts={
+                "archive_lifecycle": {
+                    "archive_status": "migration_required",
+                    "archive_subject_kind": "legacy",
+                    "archive_subject_plan_id": "20260408_archive_target",
+                    "archive_subject_path": ".sopify-skills/plan/20260408_archive_target",
+                    "archive_changed_files": [],
+                    "archive_notes": ["Legacy archive target requires migration"],
+                    "state_cleared": False,
+                }
+            },
+        )
+        payload = projection.to_dict()
+
+        self.assertEqual(payload["plan_id"], "20260408_archive_target")
+        self.assertEqual(payload["plan_path"], ".sopify-skills/plan/20260408_archive_target")
+
+    def test_archive_completed_projection_uses_archive_lifecycle_payload(self) -> None:
+        guard = evaluate_deterministic_guard(
+            allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
+            required_host_action="archive_completed",
+        )
+
+        projection = build_action_projection(
+            guard,
+            artifacts={
+                "archive_lifecycle": {
+                    "archive_status": "completed",
+                    "archive_subject_kind": "managed",
+                    "archive_subject_plan_id": "20260429_example",
+                    "archive_subject_path": ".sopify-skills/history/2026-04/20260429_example",
+                    "archive_changed_files": [".sopify-skills/history/index.md"],
+                    "archive_notes": ["archived"],
+                    "state_cleared": True,
+                }
+            },
+        )
+        payload = projection.to_dict()
+
+        self.assertEqual(payload["required_host_action"], "archive_completed")
+        self.assertEqual(payload["archive_status"], "completed")
+        self.assertTrue(payload["state_cleared"])
+        self.assertEqual(payload["plan_id"], "20260429_example")
+
 
 class ResolutionPlannerTests(unittest.TestCase):
     def test_resolution_planner_exposes_supported_and_blocked_actions_for_confirm_execute(self) -> None:

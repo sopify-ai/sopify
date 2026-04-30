@@ -22,7 +22,7 @@ user input
   → Checkpoint / Execution / Handoff (existing)
 ```
 
-命令前缀请求（`~go`、`~go plan`、`~go exec`、`~go finalize`、`~compare`）已是确定性路由，**不经过 ActionProposal**。
+普通命令前缀请求（`~go`、`~go plan`、`~go exec`、`~compare`）仍可作为确定性路由，不默认经过 ActionProposal。例外：需要结构化主体且会写文件的 command alias 不得直达写入；`~go finalize` 必须先映射为 `ActionProposal(action_type="archive_plan")`，再由 Validator 授权并产出 `archive_lifecycle` artifacts。
 
 ### ActionProposal 数据流
 
@@ -59,7 +59,8 @@ Engine (pre-route interceptor)
 
 **关键约束**：
 - Host LLM 是 proposal source，不是 authorizer。Validator 是唯一授权者。
-- `fallback_router` 是 Validator 的"不处理/不授权"态，不是 Router 对副作用的授权。随着 reserved actions 激活，`fallback_router` 的覆盖范围预期递减。
+- `fallback_router` 是 Validator 的"不处理/不授权"态，不是 Router 对副作用的授权。它是 reserved actions 尚未协议化接管完成前的临时兼容出口，只表示“当前 proposal 不在 Validator 已接管范围内”，不表示 Router 获得了新的授权。
+- `fallback_router` 的职责应单调收缩，不承接新增正式 side-effecting 能力；新增此类能力时，默认先 proposal 化并进入 Validator，而不是先塞进 fallback。
 
 ### ActionProposal Schema
 

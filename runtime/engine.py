@@ -33,7 +33,14 @@ from .decision import (
 from .develop_checkpoint import develop_resume_after, is_develop_checkpoint_state
 from .execution_confirm import parse_execution_confirm_response
 from .execution_gate import evaluate_execution_gate
-from .finalize import finalize_plan
+from .archive_lifecycle import (
+    ARCHIVE_STATUS_ALREADY_ARCHIVED,
+    ARCHIVE_STATUS_BLOCKED,
+    archive_status_payload,
+    apply_archive_subject,
+    check_archive_subject,
+    resolve_archive_subject,
+)
 from .handoff import build_runtime_handoff
 from .kb import bootstrap_kb, ensure_blueprint_index, ensure_blueprint_scaffold
 from .models import ClarificationState, DecisionState, ExecutionGate, KbArtifact, PlanArtifact, PlanProposalState, RecoveredContext, ReplayEvent, RouteDecision, RunState, RuntimeConfig, RuntimeHandoff, RuntimeResult, SkillActivation, SkillMeta
@@ -111,9 +118,9 @@ _ABORTABLE_RUN_STAGES = frozenset(
 )
 # These routes operate on the single root-scoped execution truth once review
 # state is explicitly promoted out of a session.
-_GLOBAL_EXECUTION_ROUTES = frozenset({"execution_confirm_pending", "resume_active", "exec_plan", "finalize_active"})
+_GLOBAL_EXECUTION_ROUTES = frozenset({"execution_confirm_pending", "resume_active", "exec_plan", "archive_lifecycle"})
 # Only stable review checkpoints may be promoted into the global execution
-# truth consumed by execution-confirm, resume, and finalize.
+# truth consumed by execution-confirm, resume, and archive lifecycle.
 _PROMOTABLE_REVIEW_STAGES = frozenset({"plan_generated", "ready_for_execution", "execution_confirm_pending", "develop_pending"})
 
 
@@ -419,7 +426,7 @@ def _promote_review_state_to_global_execution(
         notes.append(owner_warning)
 
     # Promotion is the explicit handoff point from session review state into the
-    # single global execution truth used by execution-confirm / resume / finalize.
+    # single global execution truth used by execution-confirm / resume / archive lifecycle.
     global_store.set_current_plan(review_plan)
     global_run = _with_global_run_ownership(review_run, session_id=session_id)
     if review_handoff is not None:
@@ -651,16 +658,27 @@ def run_runtime(
         validator = ActionValidator()
         _run = snapshot.current_run
         _handoff = snapshot.current_handoff
+        active_plan_for_validator = snapshot.execution_current_plan or snapshot.current_plan
+        required_host_action = getattr(_handoff, "required_host_action", "") or "" if _handoff else ""
+        if not required_host_action:
+            required_host_action = _pending_required_host_action(snapshot)
         ctx = ValidationContext(
             stage=getattr(_run, "stage", "") or "" if _run else "",
-            required_host_action=getattr(_handoff, "required_host_action", "") or "" if _handoff else "",
+            required_host_action=required_host_action,
+            current_plan_path=getattr(active_plan_for_validator, "path", "") or "" if active_plan_for_validator else "",
+            state_conflict=snapshot.is_conflict,
         )
-        decision = validator.validate(action_proposal, ctx)
-        if decision.route_override:
+        validation_decision = validator.validate(action_proposal, ctx)
+        if validation_decision.route_override:
             proposal_override_route = RouteDecision(
-                route_name=decision.route_override,
+                route_name=validation_decision.route_override,
                 request_text=user_input,
-                reason=f"action_proposal_validator: {decision.reason_code}",
+                reason=f"action_proposal_validator: {validation_decision.reason_code}",
+                complexity="simple",
+                should_recover_context=validation_decision.route_override == "archive_lifecycle",
+                candidate_skill_ids=("develop", "kb") if validation_decision.route_override == "archive_lifecycle" else (),
+                active_run_action="archive" if validation_decision.route_override == "archive_lifecycle" else None,
+                artifacts=validation_decision.artifacts,
             )
 
     if proposal_override_route is not None:
@@ -741,17 +759,59 @@ def run_runtime(
             global_run=_snapshot_global_execution_run(snapshot),
         )
         notes.extend(cancel_notes)
-    elif effective_route.route_name == "finalize_active":
-        finalized = finalize_plan(
+    elif effective_route.route_name == "archive_lifecycle":
+        archive_state_store = _archive_state_store_for_current_plan(
+            current_plan=recovered.current_plan,
+            review_store=review_store,
+            global_store=global_store,
+        )
+        archive_subject = resolve_archive_subject(
+            effective_route.artifacts.get("archive_subject"),
             config=config,
-            state_store=global_store,
+            state_store=archive_state_store,
             current_plan=recovered.current_plan,
         )
-        plan_artifact = finalized.archived_plan
-        registry_changed_hint = finalized.registry_updated
-        if finalized.kb_artifact is not None:
-            kb_artifact = finalized.kb_artifact
-        notes.extend(finalized.notes)
+        archive_check = check_archive_subject(archive_subject, config=config)
+        archive_payload: Mapping[str, Any]
+        if archive_check.status == "ready":
+            archive_result = apply_archive_subject(archive_subject, config=config, state_store=archive_state_store)
+            plan_artifact = archive_result.archived_plan
+            registry_changed_hint = archive_result.registry_updated
+            if archive_result.kb_artifact is not None:
+                kb_artifact = archive_result.kb_artifact
+            notes.extend(archive_result.notes)
+            archive_payload = archive_status_payload(
+                status=archive_result.status,
+                subject=archive_subject,
+                notes=archive_result.notes,
+                state_cleared=archive_result.state_cleared,
+            )
+        elif archive_check.status == "migration_required":
+            notes.extend(archive_check.notes)
+            archive_payload = archive_status_payload(
+                status=archive_check.status,
+                subject=archive_subject,
+                notes=archive_check.notes,
+            )
+        elif archive_check.status == "already_archived":
+            notes.extend(archive_check.notes)
+            plan_artifact = archive_subject.artifact
+            archive_payload = archive_status_payload(
+                status=ARCHIVE_STATUS_ALREADY_ARCHIVED,
+                subject=archive_subject,
+                notes=archive_check.notes,
+            )
+        else:
+            notes.extend(archive_check.notes)
+            archive_payload = archive_status_payload(
+                status=archive_check.status or ARCHIVE_STATUS_BLOCKED,
+                subject=archive_subject,
+                notes=archive_check.notes,
+            )
+        effective_route = _with_route_artifacts(
+            effective_route,
+            {"archive_lifecycle": archive_payload},
+        )
     elif effective_route.route_name == "clarification_resume":
         effective_route, plan_artifact, clarification_notes, kb_artifact = _handle_clarification_resume(
             effective_route,
@@ -1067,21 +1127,35 @@ def run_runtime(
     else:
         current_run = resolved_result_context.current_run
         current_plan = plan_artifact or resolved_result_context.current_plan
-        if effective_route.route_name == "finalize_active" and current_plan is None:
-            # A blocked finalize may still need to expose the review-scoped plan
+        if effective_route.route_name == "archive_lifecycle" and current_plan is None:
+            # A blocked archive lifecycle may still need to expose the review-scoped plan
             # that prevented archival, even though the host-facing handoff is
             # persisted under the global execution store.
             current_plan = recovered.current_plan
-        if effective_route.route_name == "finalize_active" and plan_artifact is not None:
-            # Finalize clears active-flow state; only persist a completion handoff
-            # when the archive transaction actually succeeded.
+        archive_lifecycle_payload = effective_route.artifacts.get("archive_lifecycle")
+        archive_cleared_active_state = (
+            isinstance(archive_lifecycle_payload, Mapping)
+            and bool(archive_lifecycle_payload.get("state_cleared", False))
+        )
+        if effective_route.route_name == "archive_lifecycle" and plan_artifact is not None and archive_cleared_active_state:
+            # Archiving the active plan clears active-flow state. Archiving another
+            # plan must keep the active run/handoff intact and write a receipt.
             current_run = None
             current_plan = plan_artifact
+        handoff_context = (
+            replace(resolved_result_context, current_run=None)
+            if effective_route.route_name == "archive_lifecycle"
+            else resolved_result_context
+        )
         handoff = build_runtime_handoff(
             config=config,
             decision=effective_route,
-            run_id=(current_run.run_id if current_run is not None else _make_run_id(effective_route.request_text)),
-            resolved_context=resolved_result_context,
+            run_id=(
+                _make_run_id(effective_route.request_text)
+                if effective_route.route_name == "archive_lifecycle"
+                else (current_run.run_id if current_run is not None else _make_run_id(effective_route.request_text))
+            ),
+            resolved_context=handoff_context,
             current_plan=current_plan,
             kb_artifact=kb_artifact,
             replay_session_dir=replay_session_dir,
@@ -1123,6 +1197,20 @@ def run_runtime(
                     # Conflict inspection must remain strictly read-only so the
                     # host can inspect the exact skew that triggered routing.
                     pass
+            elif effective_route.route_name == "archive_lifecycle":
+                handoff = stamp_handoff_resolution_id(
+                    handoff,
+                    resolution_id=derived_resolution_id,
+                )
+                if current_run is None:
+                    # Archiving the active plan clears global active-flow truth, so
+                    # the archive handoff becomes the new host-facing handoff.
+                    result_store.clear_current_archive_receipt()
+                    result_store.set_current_handoff(handoff)
+                else:
+                    # Archiving some other plan must not evict the current active
+                    # workflow handoff; persist a route-scoped receipt instead.
+                    result_store.set_current_archive_receipt(handoff)
             elif current_run is not None:
                 current_run, handoff = result_store.set_host_facing_truth(
                     run_state=current_run,
@@ -1199,6 +1287,41 @@ def _derived_resolution_id(
     return _new_resolution_id()
 
 
+def _with_route_artifacts(decision: RouteDecision, artifacts: Mapping[str, Any]) -> RouteDecision:
+    merged = {**dict(decision.artifacts), **dict(artifacts)}
+    return replace(decision, artifacts=merged)
+
+
+def _same_plan_artifact(left: PlanArtifact | None, right: PlanArtifact | None) -> bool:
+    return left is not None and right is not None and left.plan_id == right.plan_id and left.path == right.path
+
+
+def _archive_state_store_for_current_plan(
+    *,
+    current_plan: PlanArtifact | None,
+    review_store: StateStore,
+    global_store: StateStore,
+) -> StateStore:
+    if _same_plan_artifact(current_plan, global_store.get_current_plan()):
+        return global_store
+    if _same_plan_artifact(current_plan, review_store.get_current_plan()):
+        return review_store
+    return global_store
+
+
+def _pending_required_host_action(snapshot) -> str:
+    if snapshot.current_clarification is not None and snapshot.current_clarification.status in {"pending", "collecting"}:
+        return "answer_questions"
+    if snapshot.current_decision is not None and snapshot.current_decision.status in {"pending", "collecting", "confirmed", "cancelled", "timed_out"}:
+        return "confirm_decision"
+    if snapshot.current_plan_proposal is not None:
+        return "confirm_plan_package"
+    current_run = snapshot.execution_active_run or snapshot.current_run
+    if current_run is not None and current_run.stage in {"ready_for_execution", "execution_confirm_pending"}:
+        return "confirm_execute"
+    return ""
+
+
 def _augment_generated_files(
     generated_files: tuple[str, ...],
     *,
@@ -1230,7 +1353,7 @@ def _registry_file_should_be_reported(
     notes: tuple[str, ...],
     registry_changed_hint: bool,
 ) -> bool:
-    if route_name == "finalize_active":
+    if route_name == "archive_lifecycle":
         return registry_changed_hint
     if plan_artifact is None:
         return False
@@ -1404,7 +1527,7 @@ def _activation_target(
         return ("workflow-learning", "复盘学习")
     if decision.route_name == "summary":
         return ("summary", "今日详细摘要")
-    if decision.route_name in {"resume_active", "exec_plan", "execution_confirm_pending", "quick_fix", "finalize_active"}:
+    if decision.route_name in {"resume_active", "exec_plan", "execution_confirm_pending", "quick_fix", "archive_lifecycle"}:
         return ("develop", "开发实施")
     if decision.route_name in {"clarification_pending", "clarification_resume"}:
         if current_clarification is not None and current_clarification.phase == "develop":

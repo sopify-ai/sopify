@@ -922,18 +922,18 @@ if cluster_backend == "louvain" and strict_mode:
 | Plan Modified | mtime 变化 → 重提取 | 下次手动 run |
 | Plan Finalized | plan/ → history/ → L2 节点消失、L3 节点出现 | finalize 后提示 |
 
-### Finalize 触发机制（A + C-lite）
+### Archive 触发机制（A + C-lite）
 
 **方案选择**：runtime 不自动执行 enhancer（见设计原则 6），采用双通道信号：
 
-- **notes（人看）**：engine.py finalize_active 分支末尾，条件化追加提示
+- **notes（人看）**：engine.py archive_lifecycle 分支末尾，条件化追加提示
 - **artifacts（机器读）**：handoff.py `_collect_handoff_artifacts()` 补结构化标记
 
 #### engine.py 条件化 note
 
 ```python
-# engine.py — finalize_active 分支末尾（L722 之后）
-if finalized.archived_plan is not None:
+# engine.py — archive_lifecycle 分支末尾
+if archived_plan is not None:
     has_enabled = any(
         isinstance(cfg, Mapping) and cfg.get("enabled", False)
         for cfg in config.blueprint_enhancers.values()
@@ -951,9 +951,10 @@ if finalized.archived_plan is not None:
 #### handoff.py 结构化 artifact
 
 ```python
-# handoff.py — _collect_handoff_artifacts() 
-# 在 finalize_status == "completed" 分支之后（L348 之后）
-if artifacts.get("finalize_status") == "completed":
+# handoff.py — _collect_handoff_artifacts()
+# 在 archive_lifecycle.archive_status == "completed" 分支之后
+archive_lifecycle = artifacts.get("archive_lifecycle")
+if isinstance(archive_lifecycle, Mapping) and archive_lifecycle.get("archive_status") == "completed":
     has_enabled = any(
         isinstance(cfg, Mapping) and cfg.get("enabled", False)
         for cfg in config.blueprint_enhancers.values()
@@ -971,9 +972,11 @@ if artifacts.get("finalize_status") == "completed":
 
 ```json
 {
-  "required_host_action": "finalize_completed",
+  "required_host_action": "archive_completed",
   "artifacts": {
-    "finalize_status": "completed",
+    "archive_lifecycle": {
+      "archive_status": "completed"
+    },
     "archived_plan_path": "history/2026-04/plan_id",
     "blueprint_enhancer_refresh": {
       "recommended": true,
@@ -986,7 +989,7 @@ if artifacts.get("finalize_status") == "completed":
 ```
 
 > **职责分层**：
-> - `finalize_plan()` 纯 finalize，不知道 enhancer
+> - `archive_lifecycle` 纯 archive，不知道 enhancer
 > - engine.py 传递结果 + 条件化人类提示
 > - handoff.py 暴露机器可读的 stale signal
 > - 宿主/CI 自行决定是否触发（本期不自动执行）

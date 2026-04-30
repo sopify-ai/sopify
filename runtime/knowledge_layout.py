@@ -27,7 +27,7 @@ CONTEXT_PROFILES = {
     "clarification": ("project", "blueprint_index", "blueprint_tasks"),
     "decision": ("project", "blueprint_design", "active_plan"),
     "develop": ("active_plan", "project", "blueprint_design"),
-    "finalize": (
+    "archive": (
         "active_plan",
         "project",
         "blueprint_index",

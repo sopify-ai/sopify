@@ -5,7 +5,7 @@
 
 ## 未完成长期项
 
-- [ ] 补宿主级 first-hop ingress proof / doctor，让 host-first runtime gate 有独立可见性与诊断闭环。
+- [ ] 补宿主级 first-hop ingress proof / diagnostics，让 host-first runtime gate 有独立可见性与诊断闭环。
 - [ ] 把 `~compare` 的 shortlist facade 收敛进默认主链路恢复，复用统一的 decision checkpoint machine contract。
 - [ ] 补 `workflow-learning` 的独立 runtime helper 与更稳定的按任务/按日期 replay retrieval。
 - [ ] 评估是否引入 blueprint 索引摘要的更细粒度自动刷新。
