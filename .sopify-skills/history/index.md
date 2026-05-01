@@ -5,6 +5,8 @@
 ## 索引
 
 - `2026-04-30` [`20260429_standard-archive-finalize-archive-checkpoint`](2026-04/20260429_standard-archive-finalize-archive-checkpoint/) - standard - 任务清单: 为“显式主体与生命周期收敛”主题写第一子切片方案文档：新建 standard 方案包，只覆...
+- `2026-05-01` [`20260429_legacy_feature_cleanup`](2026-05/20260429_legacy_feature_cleanup/) - standard - Legacy Feature Cleanup: consult override 删除 + model compare 功能面移除
+- `2026-05-01` [`20260428_action_proposal_boundary`](2026-05/20260428_action_proposal_boundary/) - standard - Action/Effect Boundary P0: ActionProposal validator + consult_readonly thin slice + legacy classifier cleanup
 - `2026-03-24` ~~`20260323_unified_plan_history_index`~~ - abandoned - 统一 plan history 索引投影（on_hold，无法验收，2026-04 主动弃置）
 - `2026-03-21` ~~`20260320_default_host_bridge_install`~~ - abandoned - 默认宿主桥接一键安装（on_hold，无法验收，2026-04 主动弃置）
 - `2026-03-21` ~~`20260320_cursor_plugin_install`~~ - abandoned - Cursor 插件安装（on_hold，路线未定，2026-04 主动弃置）

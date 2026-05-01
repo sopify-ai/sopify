@@ -8,7 +8,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![Version](https://img.shields.io/badge/version-2026--04--29.182018-orange.svg)](#version-history)
+[![Version](https://img.shields.io/badge/version-2026--05--01.141049-orange.svg)](#version-history)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 English · [简体中文](./README.zh-CN.md) · [Quick Start](#quick-start) · [Configuration](#configuration) · [Contributors](./CONTRIBUTORS.md)
@@ -244,10 +244,11 @@ Claude uses the mirrored `Claude/Skills/{CN,EN}/...` layout; the links above use
 sopify/
 ├── scripts/               # install, diagnostics, and maintainer scripts
 ├── examples/              # configuration examples
-├── docs/                  # workflow documentation
+├── docs/                  # workflow guides and developer references
 ├── runtime/               # built-in runtime / skill packages
 ├── .sopify-skills/        # project knowledge base
-│   ├── blueprint/         # long-lived blueprint
+│   ├── blueprint/         # design baseline, reduction targets
+│   │   └── architecture-decision-records/  # ADR entity files
 │   ├── plan/              # active plans
 │   └── history/           # archived plans
 ├── Codex/                 # Codex host prompt layer

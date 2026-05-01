@@ -1,37 +1,63 @@
 # 蓝图背景与目标
 
-本文定位: 解释这套蓝图为什么存在、要解决什么问题，以及本轮明确的目标与非目标。
+本文定位: Sopify 为什么存在、核心价值主张、当前现实状态、以及本蓝图的边界。
 
-## 背景
+## Sopify 是什么
 
-Sopify 的知识资产已经从“散落的文档集合”收敛为固定分层：
+Sopify 是 AI 编程工作流的 **control plane**。它不做模型推理、不做代码执行、不做技能市场——它做的是：让 AI 编程任务在跨轮、跨会话、跨宿主的场景下可恢复、可审计、可持续推进。
 
-1. `L0 index`: `blueprint/README.md`
-2. `L1 stable`: `project.md + blueprint/{background,design,tasks}`
-3. `L2 active`: `plan/YYYYMMDD_feature/`
-4. `L3 archive`: `history/index.md + history/YYYY-MM/...`
-5. `runtime`: `state/*.json + replay/`
+核心价值不在于"能调 skill"，而在于：
 
-本轮的目标不是再引入新层，而是把对外文档、skills、templates 与 runtime 的世界观一次性切到同一套 V2 口径。
+- **自适应推进**：按任务复杂度选择快速修复 / 轻量迭代 / 完整方案
+- **状态交接**：handoff 机器契约让任务中断后能精确恢复
+- **质量验证**：独立验证闭环（cross-review 是参考实现）
+- **资产沉淀**：blueprint / history 构建跨任务的项目记忆
+- **宿主无关**：`.sopify-skills/` 是纯文件协议，不绑定特定 IDE 或 runtime
 
-## 主要问题
+## 核心架构模式
 
-旧口径存在以下问题：
+Sopify 的一切交互遵循一条管线：
 
-1. 仍把 `wiki/*` 作为默认长期知识结构，对外说明与 runtime 实现不一致。
-2. `blueprint/README.md` 容易膨胀成长说明书，不再像入口索引。
-3. plan 输出没有把评分块固定为默认结构，方案评审口径不稳定。
-4. `blueprint_obligation` 仍在部分文档中被当成主要概念，和 `knowledge_sync` 的正式语义冲突。
+```
+用户自然语言
+  → Host LLM 映射为 ActionProposal（结构化工单）
+  → Validator 校验 schema + 事实 + side effect
+  → Deterministic action 按结构化字段执行
+  → Handoff / Receipt 暴露机器事实
+```
 
-## 本轮目标
+Host LLM 只是 proposal source，不是 authorizer。Validator 是唯一授权者。执行层不理解人话，只按结构化字段和文件事实做事。
 
-1. 切掉旧 `wiki/*` 主结构描述，不再对外承诺双轨。
-2. 把 `blueprint/README.md` 收缩成纯索引页。
-3. 用 `knowledge_sync` 固定 finalize 前的长期知识同步责任。
-4. 把“方案质量 / 落地就绪 / 评分理由”固定纳入正式 plan 包输出。
+## 当前现实
+
+截至 2026-05-01：
+
+- **Runtime 规模**：~29K 行 Python / 66 个模块，`engine.py` 单文件 3086 行
+- **已完成**：ActionProposal P0 thin slice（ADR-017）、archive lifecycle cutover、legacy feature cleanup
+- **核心矛盾**：方向是"轻量可插拔"，但 checkpoint 5 种、host action 13 种、route 18 种、state 文件 8 个——协议层膨胀与轻量化目标直接冲突
+
+知识资产分五层：
+
+| 层 | 路径 | 职责 |
+|----|------|------|
+| L0 index | `blueprint/README.md` | 入口索引 |
+| L1 stable | `project.md` + `blueprint/{background,design,tasks}` | 长期知识 |
+| L2 active | `plan/YYYYMMDD_feature/` | 活动方案 |
+| L3 archive | `history/YYYY-MM/` | 收口归档 |
+| runtime | `state/*.json` + `replay/` | 运行态 |
+
+## 本蓝图的定位
+
+本蓝图（`blueprint/`）是 Sopify 的**长期设计基线**，不是方案包也不是执行计划。
+
+- `background.md`（本文）：为什么存在、核心价值、当前现实
+- `design.md`：架构分层、核心契约、削减目标、硬约束
+- `tasks.md`：未完成长期项与明确延后项
+
+方案包（`plan/`）消费 blueprint 作为输入，执行完毕后将稳定结论回写 blueprint。Blueprint 不膨胀、不重复方案包细节、不承载执行任务清单。
 
 ## 非目标
 
-- 不新增新的知识层。
-- 不在本轮重做 runtime 的主链路实现。
-- 不把 history 正文纳入默认长期上下文。
+- 不新增知识层
+- 不在 blueprint 里规定实现细节（hash 格式、字段命名等归 ADR 或 implementation plan）
+- 不把 history 正文纳入默认长期上下文

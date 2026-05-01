@@ -1,6 +1,6 @@
 # Design: Action/Effect Boundary before Materialization
 
-> **定位**：`20260424_lightweight_pluggable_architecture` 总纲的 P0 子方案包。
+> **定位**：`blueprint/design.md` 基线的 P0 子方案包（原属 `20260424_lightweight_pluggable_architecture`，已删除）。
 > **背景与战略**：引用总纲 ADR-016（Protocol-first）、ADR-017（Action/Effect Boundary）。不复制背景。
 > **痛点**：局部语境请求被 router keyword/complexity classifier 误读为全局推进。用户可能只是想分析、批判、确认、取消、修订或查看当前 checkpoint/plan，但 runtime 可能直接进入 `light_iterate` / `workflow` / `confirm_plan_package` 等副作用路径。当前最高频症状是分析/批判类请求被误建方案包；方案包误建是首个症状，不是唯一目标。
 >

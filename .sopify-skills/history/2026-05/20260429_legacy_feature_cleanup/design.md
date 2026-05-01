@@ -1,6 +1,6 @@
 # Design: Legacy Feature Cleanup
 
-> **定位**：`20260424_lightweight_pluggable_architecture` 总纲下的独立清理包。
+> **定位**：`blueprint/design.md` 基线下的独立清理包（原属 `20260424_lightweight_pluggable_architecture`，已删除）。
 > **前置**：`20260428_action_proposal_boundary` P0 thin slice 已完成，ActionProposal validator 已成为正式保护层。
 > **结果**：清除被 ActionProposal 替代的 legacy consult override 路径，并移除已废弃的 model compare 功能面。
 

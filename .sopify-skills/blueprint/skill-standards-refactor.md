@@ -1,8 +1,10 @@
 # Skill 标准对齐蓝图
 
-状态: 已收口（2026-03-19 决议已落地）
+状态: 专项归档候选（原"已收口"）
 创建日期: 2026-03-19
 定位: 面向 `Anthropic Agent Skills + Gemini CLI Agent Skills` 的专项重构蓝图
+
+> **⚠️ 本文件为专项归档候选。** 核心决议已落地，但 skill package / discovery / eval / 权限声明等独有内容尚未被 `blueprint/design.md` 承接。后续在 host_prompt_governance 或 skill package 相关分支中提炼有效契约后，本文件将正式归档或删除。
 
 ## 一页结论
 

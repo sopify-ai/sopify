@@ -1,6 +1,6 @@
 # Design: Host Prompt Governance
 
-> **定位**：`20260424_lightweight_pluggable_architecture` 总纲的独立治理包。
+> **定位**：`blueprint/design.md` 基线的独立治理包（原属 `20260424_lightweight_pluggable_architecture`，已删除）。
 > **前置**：`20260428_action_proposal_boundary` P0 完成后暴露 4×510 行 prompt 的三层重复维护成本。
 > **目标**：建立 prompt 作为 runtime contract 适配层的治理体系，实现渐进式披露，瘦身至核心层 ≤120 行 / 全量 ≤280 行，沉淀工程原则。
 

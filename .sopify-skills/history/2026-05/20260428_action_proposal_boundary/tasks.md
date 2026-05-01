@@ -1,6 +1,6 @@
 # Tasks: Action/Effect Boundary P0 Thin Slice
 
-> **父方案包**：`20260424_lightweight_pluggable_architecture`
+> **基线**：`blueprint/design.md`（原父方案包 `20260424_lightweight_pluggable_architecture` 已删除，证据留 git history）
 > **ADR 依据**：ADR-017 (Action/Effect Boundary before Materialization)
 > **目标**：建立 Action/Effect Boundary，先用 `consult_readonly` thin slice 解决 no-write 局部语境。局部语境请求被 router 误读为全局推进是通用问题，方案包误建是当前最高频症状。P0 只激活 `consult_readonly` pre-route 拦截；后续 reserved actions 逐步覆盖 checkpoint response / cancel / revise / execute 等局部动作。
 
