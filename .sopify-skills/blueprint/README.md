@@ -14,7 +14,7 @@
 
 <!-- sopify:auto:focus:start -->
 - 当前活动 plan：暂无。
-- history 归档：已可用；最近归档为 `../history/2026-04/20260429_standard-archive-finalize-archive-checkpoint`。
+- history 归档：已可用；最近归档为 `../history/2026-05/20260501_convention_smoke`。
 <!-- sopify:auto:focus:end -->
 
 ## 深入阅读入口
@@ -27,5 +27,5 @@
 - [Sopify 最小协议规范 (Protocol v0)](./protocol.md)
 - [Skill 标准对齐蓝图](./skill-standards-refactor.md)
 - [变更历史](../history/index.md)
-- 最近归档：`../history/2026-04/20260429_standard-archive-finalize-archive-checkpoint`
+- 最近归档：`../history/2026-05/20260501_convention_smoke`
 <!-- sopify:auto:read-next:end -->
