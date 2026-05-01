@@ -40,7 +40,7 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 
 独立 loop 通过**线**（机器契约）组合。Sopify 是串联小 loop 的线——control plane 负责串联和传递状态，不做节点内部的事。
 
-线独立于 session / model / host：handoff + run state 让不同会话精确继续。
+线独立于 session / model / host：同一逻辑 session（`session_id`）内，handoff + run state 让中断后精确继续；跨 session 接力需显式 claim/receipt，不允许静默推进旧 session 的 pending checkpoint。
 
 | 显隐 | 实现 | 适用 |
 |------|------|------|
@@ -50,6 +50,8 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 ### 哲学 3: Surface-shared (面共享)
 
 所有线共享一个知识面（blueprint / history）。知识面是跨 session/model/host 的共享工作记忆。
+
+在多模型、多云、多宿主逐步解耦的环境下，Surface-shared 的目标是让项目连续性绑定到共享文件协议，而不是绑定到某个模型、云或聊天上下文。任意 host/model 只要正确消费 blueprint/history 与 handoff 暴露的机器事实，就能基于同一项目记忆继续工作；但推进 pending checkpoint 或产生副作用仍必须回到 Wire-composable 的机器接力与 Validator 授权。
 
 **Sopify 的不可替代性 = 线 + 面的组合。** Protocol 定义 schema，Runtime 是可选的"加固线"。
 
@@ -61,8 +63,10 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 | **Validator** | ActionProposal 校验、状态迁移校验、archive check/apply | ~2K 行 | 独立交付 |
 | **Runtime** | gate / router / engine / handoff 状态机 | 目标 <20K 行 | 可选增强 |
 
-**Convention 模式 (下界)**: LLM 读 SKILL.md → 自行推进 → Validator 事后校验。
-**Runtime 模式 (上界)**: 完整 runtime 控制状态迁移。
+**Convention 模式 (下界)**: LLM 读 SKILL.md → 自行推进 → Validator 事后校验（protocol acceptance / receipt authority）。
+**Runtime 模式 (上界)**: 完整 runtime 控制状态迁移，Validator 是 pre-write authorizer。
+
+"Validator 是唯一授权者"在两种模式下含义不同：Runtime 模式是写前授权；Convention 模式是事后合规校验与 receipt 签发。两者共享同一校验逻辑，但触发时机和阻断语义不同。
 
 模式选择维度是**过程要求**，不是模型强弱。
 
@@ -172,6 +176,8 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 | `clarification` | clarification_pending, clarification_resume |
 | `decision` | decision_pending, decision_resume |
 
+`resolve_state_conflict` 是 state-resolution error surface，不计入 workflow route family。它在任何 route 内均可触发，作为横切 error handling 存在。
+
 #### Core State Files (target: 6, authoritative)
 
 | File | 职责 |
@@ -255,7 +261,7 @@ knowledge_sync:
 ### Runtime state scope
 
 - Review state 默认落在 `state/sessions/<session_id>/`，覆盖 `current_plan/current_run/current_handoff/current_clarification/current_decision/last_route`
-- 根级 `state/` 只承载 global execution truth（`execution_confirm_pending / resume_active / exec_plan`）
+- 根级 `state/` 只承载 global execution truth（当前仍包含 `execution_confirm_pending / resume_active / exec_plan` 等 transitional 语义，将随 ExecutionAuthorizationReceipt 和 route 收敛逐步清理）
 - Archive lifecycle 只在归档主体等于当前 global `current_plan` 时清理对应执行状态
 - `session_id` 由宿主透传或 gate 自动生成；同一条 review 续轮必须复用同一个 `session_id`
 - 并发 review 使用不同 `session_id`；global truth 只补 soft ownership 观测字段

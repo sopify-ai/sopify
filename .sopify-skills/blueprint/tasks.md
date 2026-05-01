@@ -56,6 +56,7 @@
 - [ ] history feature_key 聚合视图
 - [ ] Protocol Step 1：提取最小协议文档与行为契约 case
 - [ ] CrossReview Phase 4a：advisory skill 接入 develop 后审查
+- [ ] 将 `plan/20260424_lightweight_pluggable_architecture` 通过 archive lifecycle 正式迁移至 `history/`（当前已降级为历史证据源，但仍物理留在 `plan/` 目录）
 
 ## 明确延后项
 
