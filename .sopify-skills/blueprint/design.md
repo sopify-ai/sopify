@@ -14,14 +14,22 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 
 **竞品边界：**
 
-| 产品 | 定位 | Sopify 不做的 |
-|------|------|-------------|
-| Spec-Kit | Specification-first development | spec 方法论 |
-| Superpowers | Skill distribution | 技能市场 |
-| Claude Code / Codex / Cursor | Agent execution host | 模型执行器 |
-| **Sopify** | **Workflow state/control plane** | 协议、状态、交接、审计 |
+| 类别 | 代表产品 | Sopify 的边界 |
+|------|---------|-------------|
+| 宿主 / IDE（内建工作流状态） | Kiro (AWS)、Claude Code、Codex、Cursor | Sopify 不做模型推理、不做代码执行；宿主原生 spec/checkpoint 是最大吸收风险 |
+| Spec / artifact 系统 | OpenSpec (Fission-AI)、Spec Kit (GitHub) | Sopify 不做 spec 方法论、不做 artifact 模板管理；与 spec 系统可互补 |
+| Agent runtime / platform | OpenClaw、Hermes Agent | Sopify 不做 agent orchestration、不做 skill routing/gateway；runtime 层有重叠需关注 |
+| Skills / methodology 生态 | Superpowers | Sopify 不做技能市场、不做方法论教学；Superpowers 是 agentic skills + methodology |
 
-**生存性测试：** 2027 年宿主原生支持 plan/checkpoint 后，Sopify 仍必须保留：项目级资产沉淀、跨宿主连续工作、可审计决策链、独立质量闭环。
+**Sopify 的不可替代面**：不在于某一项功能，而在于 **可验证的便携式控制面语义**——fail-closed 授权回执、跨宿主可恢复状态、可审计项目记忆、独立 validator/compliance 套件。这些能力的组合是单一宿主难以完整替代的。
+
+**竞品吸收应对策略：**
+
+- 宿主吸收执行编排 → Sopify 退守 protocol + validator + compliance
+- Spec 工具吸收 checkpoint → Sopify 强调跨宿主连续性 + receipt authority
+- Agent 框架吸收 state → Sopify 做 interop 标准层 / 可携带协议
+
+**生存性测试：** 2027 年宿主原生支持 plan/checkpoint/multi-agent 后，Sopify 仍必须保留：项目级资产沉淀、跨宿主连续工作、可审计决策链、独立质量闭环。如果以上任一能力被宿主完全替代且无跨宿主可携带性需求，该能力应 sunset。
 
 ## 底层哲学
 
@@ -57,11 +65,13 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 
 ## 三层定位 (ADR-016: Protocol-first / Runtime-optional)
 
+> **迁移现状（2026-05）**：Protocol-first 是已确认的架构方向，但最小独立协议文档尚在提取中（tasks.md 长期项）。当前 runtime（~29K 行 / 66 模块）仍是最完整的参考实现。在 `blueprint/protocol.md` v0 落地并通过 convention-mode 验证之前，runtime 是事实上的协议载体。
+
 | 层 | 内容 | 体量目标 | 可替代性 |
 |----|------|---------|---------|
 | **Protocol** | `.sopify-skills/` 目录约定、schema、SKILL.md 编排 | 纯文档 | 不可替代 |
 | **Validator** | ActionProposal 校验、状态迁移校验、archive check/apply | ~2K 行 | 独立交付 |
-| **Runtime** | gate / router / engine / handoff 状态机 | 目标 <20K 行 | 可选增强 |
+| **Runtime** | gate / router / engine / handoff 状态机 | 目标 <20K 行（当前 ~29K） | 可选增强 / 参考实现 |
 
 **Convention 模式 (下界)**: LLM 读 SKILL.md → 自行推进 → Validator 事后校验（protocol acceptance / receipt authority）。
 **Runtime 模式 (上界)**: 完整 runtime 控制状态迁移，Validator 是 pre-write authorizer。
@@ -96,7 +106,9 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 
 具体字段定义见 ADR-017。
 
-## Runtime 五层架构
+## Runtime 五层架构（参考实现）
+
+> 以下五层是当前 Python runtime 的参考实现架构。Protocol 本体（目录约定、schema、Validator 契约）不依赖此五层也成立。宿主可通过 Convention 模式直接消费 Protocol + Validator，不必实现完整 runtime。
 
 ### 1. Ingress Layer | 入口守卫层
 

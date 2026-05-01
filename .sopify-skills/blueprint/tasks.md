@@ -14,13 +14,14 @@
 | P3 | runtime_surface_cleanup | P2 | 基于稳定 contract 删旧 route/alias/projection/tests |
 | P4 | host_prompt_governance | P3 | prompt 治理只消费稳定 contract，不定义 machine truth |
 
-### P0: Blueprint Rebaseline（当前）
+### P0: Blueprint Rebaseline（已基本完成）
 
-- 重写 blueprint/{background,design,tasks}.md
-- 实体化 ADR-013/016/017 到 blueprint/architecture-decision-records/
-- 定义削减预算表和目标词汇表
-- 降级并删除 20260424_lightweight_pluggable_architecture（证据留 git history）
-- 迁移 ADR 到 blueprint/architecture-decision-records/
+- ✅ 重写 blueprint/{background,design,tasks}.md
+- ✅ 实体化 ADR-013/016/017 到 blueprint/architecture-decision-records/
+- ✅ 定义削减预算表和目标词汇表
+- ✅ 降级并删除 20260424_lightweight_pluggable_architecture（证据留 git history）
+- ✅ 迁移 ADR 到 blueprint/architecture-decision-records/
+- 遗留：竞品边界表已更新；最小协议文档待提取（见 P1 前置）
 
 ### P1: existing_plan_subject_binding
 
