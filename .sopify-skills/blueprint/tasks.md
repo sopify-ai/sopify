@@ -14,13 +14,14 @@
 | P3 | runtime_surface_cleanup | P2 | 基于稳定 contract 删旧 route/alias/projection/tests |
 | P4 | host_prompt_governance | P3 | prompt 治理只消费稳定 contract，不定义 machine truth |
 
-### P0: Blueprint Rebaseline（当前）
+### P0: Blueprint Rebaseline（已基本完成）
 
-- 重写 blueprint/{background,design,tasks}.md
-- 实体化 ADR-013/016/017 到 blueprint/architecture-decision-records/
-- 定义削减预算表和目标词汇表
-- 降级并删除 20260424_lightweight_pluggable_architecture（证据留 git history）
-- 迁移 ADR 到 blueprint/architecture-decision-records/
+- ✅ 重写 blueprint/{background,design,tasks}.md
+- ✅ 实体化 ADR-013/016/017 到 blueprint/architecture-decision-records/
+- ✅ 定义削减预算表和目标词汇表
+- ✅ 降级并删除 20260424_lightweight_pluggable_architecture（证据留 git history）
+- ✅ 迁移 ADR 到 blueprint/architecture-decision-records/
+- 遗留：竞品边界表已更新；最小协议文档已落地（`blueprint/protocol.md` v0）
 
 ### P1: existing_plan_subject_binding
 
@@ -55,9 +56,13 @@
 - [ ] `workflow-learning` 独立 helper 与更稳定 replay retrieval
 - [ ] blueprint 索引摘要更细粒度自动刷新
 - [ ] history feature_key 聚合视图
-- [ ] Protocol Step 1：提取最小协议文档与行为契约 case
+- [x] Protocol Step 1：提取最小协议文档与行为契约 case → `blueprint/protocol.md` v0
 - [ ] CrossReview Phase 4a：advisory skill 接入 develop 后审查
 - [ ] Plan intake checklist：每个新 plan 必须声明 blueprint alignment、budget impact（是否新增/删除 action/route/state/checkpoint）、ADR impact
+- [ ] Multi-host review contract 正式化（protocol.md §7 从 informative/draft 升级为 normative）
+- [ ] 方案级收敛语义操作化（risk ladder + 验证深度规则 + 多审查者冲突解决）
+- [ ] 轻量化产品指标与 acceptance gate（首次上手步骤数、必需文件数、默认 workflow 必需 contract 数）
+- [ ] 产品层 ↔ 实现层 contract matrix 正式化（ownership / admission / lifecycle responsibilities）
 
 ## 明确延后项
 

@@ -2,7 +2,7 @@
 
 ## Runtime 快照
 - 项目名：sopify-skills
-- 工作目录：`/Users/weixin.li/Desktop/vs-code-extension/sopify-skills`
+- 工作目录：`/Users/weixin.li/Desktop/Sopify/sopify-skills`
 - 运行时目录：`.sopify-skills`
 - 根配置：`sopify.config.yaml`
 - 已识别清单：暂未识别
