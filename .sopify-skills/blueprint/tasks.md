@@ -17,10 +17,10 @@
 ### P0: Blueprint Rebaseline（当前）
 
 - 重写 blueprint/{background,design,tasks}.md
-- 实体化 ADR-013/016/017 到 blueprint/adr/
+- 实体化 ADR-013/016/017 到 blueprint/architecture-decision-records/
 - 定义削减预算表和目标词汇表
 - 降级并删除 20260424_lightweight_pluggable_architecture（证据留 git history）
-- 迁移 ADR 到 blueprint/adr/
+- 迁移 ADR 到 blueprint/architecture-decision-records/
 
 ### P1: existing_plan_subject_binding
 
@@ -57,6 +57,7 @@
 - [ ] history feature_key 聚合视图
 - [ ] Protocol Step 1：提取最小协议文档与行为契约 case
 - [ ] CrossReview Phase 4a：advisory skill 接入 develop 后审查
+- [ ] Plan intake checklist：每个新 plan 必须声明 blueprint alignment、budget impact（是否新增/删除 action/route/state/checkpoint）、ADR impact
 
 ## 明确延后项
 
