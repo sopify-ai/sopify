@@ -4,13 +4,27 @@
 
 ## 产品定位 (ADR-013)
 
-Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestration。
+Sopify 的 durable core 是跨宿主 AI 工作流的 **证据与授权层**。它不负责生成代码或编排 agent，而是把外部生产、验证、知识工具的结果收敛成可恢复、可审计、可授权的机器事实。Sopify 官方在 core 之上提供一个轻量、可插拔、收敛式的 blueprint-driven workflow 作为默认产品体验。
 
 | 层级 | 表述 |
 |------|------|
-| 用户层 | 按复杂度自适应推进，关键决策可追踪，产出质量可验证 |
-| 产品层 | 自适应工作流、状态交接、质量治理、项目资产沉淀 |
-| 架构层 | Workflow control plane. Core owns state truth via Protocol + Validator |
+| 用户层 | 任务可恢复、决策可追踪、产出质量可验证，跨宿主无缝接力 |
+| 产品层 | Core: 证据规范 + 授权判定 + 收据 + 接力 + archive truth；Default Workflow: blueprint 驱动的收敛式工作流 |
+| 架构层 | Evidence & authorization layer + official blueprint-driven workflow on top |
+
+## 产品分层
+
+| 产品层 | 职责 | 映射到实现 |
+|-------|------|-----------|
+| **Core** | 证据规范、授权判定、收据生成、handoff 接力、archive truth | Protocol + Validator |
+| **Default Workflow** | blueprint 驱动分析、标准方案包生成、checkpoint 讨论（含跨宿主审查）、归档回写 | Protocol conventions + Validator policies + 可选 Runtime 编排 |
+| **Plugins / Skills** | 生产增强、验证增强、知识增强（cross-review, graphify 等） | Integration Contract (protocol.md §6) + Validator admission |
+
+**层间规则：**
+
+- **Core promotion rule**：只有影响跨宿主互操作、receipt validity、archive admissibility 的契约才能进 Core
+- **Default Workflow 边界**：消费 Core 契约，不自行定义授权语义；是 Core 之上的 opinionated happy path
+- **Plugin trust rule**：插件输出进入 receipt/handoff/blueprint 前，必须经过 Validator 或 knowledge_sync admission gate
 
 **竞品边界：**
 
@@ -21,7 +35,7 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 | Agent runtime / platform | OpenClaw、Hermes Agent | Sopify 不做 agent orchestration、不做 skill routing/gateway；runtime 层有重叠需关注 |
 | Skills / methodology 生态 | Superpowers | Sopify 不做技能市场、不做方法论教学；Superpowers 是 agentic skills + methodology |
 
-**Sopify 的不可替代面**：不在于某一项功能，而在于 **可验证的便携式控制面语义**——fail-closed 授权回执、跨宿主可恢复状态、可审计项目记忆、独立 validator/compliance 套件。这些能力的组合是单一宿主难以完整替代的。
+**Sopify 的不可替代面**：不在于某一项功能，而在于 **可验证的便携式证据与授权语义**——fail-closed 授权回执、跨宿主可恢复状态、可审计项目记忆、独立 validator/compliance 套件。这些能力的组合是单一宿主难以完整替代的。
 
 **竞品吸收应对策略：**
 
@@ -35,18 +49,35 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 
 > 以下 3 条哲学是 ADR-013/016/017 的共同根基。所有设计决策可从中推导。
 
-### 哲学 1: Loop-first (循环优先)
+### 哲学 1: Convergence-first (收敛优先)
 
-每个工作单元是独立闭环：**produce → verify (isolated) → accumulate → produce**。
+**微观（单任务）是收敛链**：produce → verify → authorize → settle。目标是按风险逐步降低不确定性，收敛到"可授权阈值"即停止——不以"更完整/更优雅"为默认继续条件。
 
-- produce: 按复杂度选择快速修复 / 轻量迭代 / 完整方案
-- verify: 独立上下文验证（cross-review 是参考实现）
-- accumulate: 沉淀到 blueprint/history
-- loop: 新任务从积累出发
+- produce: 外部生产器（LLM/宿主）输出候选事实
+- verify: 外部验证器（cross-review 等）提供独立证据
+- authorize: Sopify Validator 判定是否可执行/可归档
+- settle: 沉淀为 receipt / handoff / history
+
+**宏观（跨任务）是知识飞轮**：每次 settle 沉淀的 machine truth 提高下一条收敛链的起点，降低验证成本并缩短授权路径。
+
+**停点原则**：达到可授权阈值后即停止。不是每个任务都需要完整的设计 + 交叉审查 + 知识提炼全套流程；按风险选择验证深度。
+
+**沉淀准入门槛**：只有同时满足以下条件的结论才进入长期知识层（blueprint / history）：
+- 跨任务可复用
+- 影响未来授权或验证基线
+- 已经稳定
+- 可 machine-readably 引用
+
+**方案级收敛（Default Workflow 策略）**：收敛链不仅适用于单任务执行，也适用于方案讨论阶段。跨宿主审查遵循收敛链语义：
+
+- 方案状态流转：`draft → under_review → [accept → approved | revise → draft | blocked → escalate]`
+- 停点条件：至少一轮审查无阻塞性 finding 且返回 accept；或用户显式 override；或审查轮数达到上限（默认 3 轮）
+- 多审查者冲突：有任一 `blocked` 则整体 blocked；`accept` + `revise` 混合时取 revise
+- 机器契约（subject identity / verdict shape）见 `protocol.md §7`；策略性规则（轮数上限、severity 判定）归 Default Workflow，不进 Core
 
 ### 哲学 2: Wire-composable (线可组合)
 
-独立 loop 通过**线**（机器契约）组合。Sopify 是串联小 loop 的线——control plane 负责串联和传递状态，不做节点内部的事。
+独立收敛链通过**线**（机器契约）组合。Sopify 是串联收敛链的证据与授权线——负责证据规范、授权判定和收据生成，不做生产/验证/知识处理节点本身。
 
 线独立于 session / model / host：同一逻辑 session（`session_id`）内，handoff + run state 让中断后精确继续；跨 session 接力需显式 claim/receipt，不允许静默推进旧 session 的 pending checkpoint。
 
@@ -55,17 +86,21 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 | 显式 (Runtime) | gate → handoff → checkpoint JSON | 确定性门控 / 审计 |
 | 隐式 (Convention) | SKILL.md + 目录约定 | 轻量任务 / 新宿主 |
 
+外部能力通过 integration contract 接入（见 `protocol.md` Integration Contract 小节）。
+
 ### 哲学 3: Surface-shared (面共享)
 
 所有线共享一个知识面（blueprint / history）。知识面是跨 session/model/host 的共享工作记忆。
 
 在多模型、多云、多宿主逐步解耦的环境下，Surface-shared 的目标是让项目连续性绑定到共享文件协议，而不是绑定到某个模型、云或聊天上下文。任意 host/model 只要正确消费 blueprint/history 与 handoff 暴露的机器事实，就能基于同一项目记忆继续工作；但推进 pending checkpoint 或产生副作用仍必须回到 Wire-composable 的机器接力与 Validator 授权。
 
-**Sopify 的不可替代性 = 线 + 面的组合。** Protocol 定义 schema，Runtime 是可选的"加固线"。
+**Sopify 的不可替代性 = 线 + 面的组合。** Protocol 定义证据规范，Validator 定义授权判定，Runtime 是可选的"加固线"。
 
 ## 三层定位 (ADR-016: Protocol-first / Runtime-optional)
 
-> **迁移现状（2026-05）**：Protocol-first 是已确认的架构方向，但最小独立协议文档尚在提取中（tasks.md 长期项）。当前 runtime（~29K 行 / 66 模块）仍是最完整的参考实现。在 `blueprint/protocol.md` v0 落地并通过 convention-mode 验证之前，runtime 是事实上的协议载体。
+> **迁移现状（2026-05）**：Protocol-first 是已确认的架构方向。`blueprint/protocol.md` v0 已落地，定义了不依赖 runtime 也成立的最小可携带协议。当前 runtime（~29K 行 / 66 模块）仍是最完整的参考实现，protocol.md 是协议层的规范起点。
+>
+> **协议规范**：`blueprint/protocol.md` 定义最小可携带协议（目录结构、必备文件/字段、宿主最小义务、生命周期样例）。本节定义三层架构分工，protocol.md 定义最小合规下界。
 
 | 层 | 内容 | 体量目标 | 可替代性 |
 |----|------|---------|---------|
@@ -218,6 +253,17 @@ Sopify 是 AI 编程工作流的 **control plane**，不是通用 LLM orchestrat
 
 **Hard max 例外路径：** 只能通过 ADR 更新。必须说明替代了什么旧概念、为什么不能放到 artifacts/status/hint 里。
 
+## 轻量化产品指标
+
+Sopify 的设计目标不仅是工程轻量（削减 runtime），更是产品轻量（少概念、少前置、默认能用、可逐步增强）。
+
+| 指标 | 目标 |
+|------|------|
+| Convention 首次上手步骤数 | ≤3（读 blueprint → 写 light plan → finalize） |
+| 首次上手必需持久化文件 | ≤4（project.md + blueprint/ 三件套） |
+| 默认 workflow 必需 contract 数 | ≤5（plan package + archive + receipt + knowledge_sync + blueprint read） |
+| 增强路径额外概念 | 逐步引入：review loop → checkpoint → runtime state → plugin |
+
 ## 硬约束
 
 1. **能删则删**：新概念必须替换旧概念或证明不增加概念预算
@@ -303,7 +349,7 @@ knowledge_sync:
 
 | ADR | 标题 | 状态 |
 |-----|------|------|
-| ADR-013 | Product Positioning: Workflow Control Plane | 已确认 |
+| ADR-013 | Product Positioning: Evidence & Authorization Layer | 已确认 |
 | ADR-016 | Protocol-first / Runtime-optional | 已确认 |
 | ADR-017 | Action/Effect Boundary | P0 完成，持续扩展 |
 

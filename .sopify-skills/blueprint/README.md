@@ -24,7 +24,8 @@
 - [蓝图背景](./background.md)
 - [蓝图设计](./design.md)
 - [蓝图任务](./tasks.md)
-- [ADR 索引](./architecture-decision-records/README.md)
-- [Skill 标准对齐](./skill-standards-refactor.md) *(专项归档候选，已收口)*
+- [Sopify 最小协议规范 (Protocol v0)](./protocol.md)
+- [Skill 标准对齐蓝图](./skill-standards-refactor.md)
 - [变更历史](../history/index.md)
+- 最近归档：`../history/2026-04/20260429_standard-archive-finalize-archive-checkpoint`
 <!-- sopify:auto:read-next:end -->

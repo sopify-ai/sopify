@@ -28,7 +28,7 @@ Architecture Decision Records for Sopify.
 | ADR-010 | 不允许外部 plugin 引入新 checkpoint 类型 | superseded | 被 `blueprint/design.md` Checkpoint target: 2 取代，旧 4 类型口径不再合法化 | - |
 | ADR-011 | CR verdict → checkpoint 映射 + review-fix 循环限制 | scoped / plugin | CrossReview runtime 模式冻结；后续若恢复 runtime 集成再实体化 | - |
 | ADR-012 | Minimal Core Boundary — 4 层架构 | superseded | 被 ADR-016 的 Protocol / Validator / Runtime 三层定位取代 | - |
-| ADR-013 | Product Positioning: Workflow Control Plane | canonical | Sopify 产品定位与生存性测试 | [ADR-013.md](ADR-013.md) |
+| ADR-013 | Product Positioning: Evidence & Authorization Layer | canonical | Sopify 产品定位与生存性测试 | [ADR-013.md](ADR-013.md) |
 | ADR-014 | Skill / Plugin Permission Tiers | absorbed | 权限语义收敛到 ADR-017 side-effect authorization 与 `blueprint/design.md` hard constraints；skill 权限细节保留在专项 skill 文档 | - |
 | ADR-015 | State Write Ownership | absorbed | 被 ADR-016 Validator 边界与 `blueprint/design.md` Core State Files / Runtime state scope 吸收 | - |
 | ADR-016 | Protocol-first / Runtime-optional | canonical | 顶层架构战略 | [ADR-016.md](ADR-016.md) |
@@ -41,7 +41,7 @@ Architecture Decision Records for Sopify.
 
 | ADR | 标题 | 状态 | 文件 |
 |-----|------|------|------|
-| ADR-013 | Product Positioning: Workflow Control Plane | 已确认 | [ADR-013.md](ADR-013.md) |
+| ADR-013 | Product Positioning: Evidence & Authorization Layer | 已确认 | [ADR-013.md](ADR-013.md) |
 | ADR-016 | Protocol-first / Runtime-optional | 已确认 | [ADR-016.md](ADR-016.md) |
 | ADR-017 | Action/Effect Boundary | P0 完成，持续扩展 | [ADR-017.md](ADR-017.md) |
 
