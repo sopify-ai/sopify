@@ -24,7 +24,7 @@
 - [蓝图背景](./background.md)
 - [蓝图设计](./design.md)
 - [蓝图任务](./tasks.md)
-- [ADR 索引](./adr/README.md)
+- [ADR 索引](./architecture-decision-records/README.md)
 - [Skill 标准对齐](./skill-standards-refactor.md) *(专项归档候选，已收口)*
 - [变更历史](../history/index.md)
 <!-- sopify:auto:read-next:end -->

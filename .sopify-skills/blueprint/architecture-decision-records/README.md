@@ -31,5 +31,5 @@ Architecture Decision Records for Sopify.
 
 ---
 
-> 本索引维护在 `.sopify-skills/blueprint/adr/README.md`，是 ADR 编号的唯一 canonical 索引。
+> 本索引维护在 `.sopify-skills/blueprint/architecture-decision-records/README.md`，是 ADR 编号的唯一 canonical 索引。
 > Blueprint `design.md` 底部的 ADR 索引表只列 canonical entities。
