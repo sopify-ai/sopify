@@ -1,4 +1,6 @@
-# Tasks: Sopify 总纲
+# Tasks: Sopify 总纲（已降级为历史证据源）
+
+> **⚠️ 本文件已于 2026-05-01 降级。** Canonical 任务优先级见 `../../blueprint/tasks.md`。
 
 ## 子任务包索引
 

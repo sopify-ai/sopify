@@ -1,4 +1,6 @@
-# Background: Sopify 轻量化可插拔架构
+# Background: Sopify 轻量化可插拔架构（已降级为历史证据源）
+
+> **⚠️ 本文件已于 2026-05-01 降级。** Canonical 背景见 `../../blueprint/background.md`。
 
 > **战略方向 (2026-04-26)**：Sopify 已确认 Protocol-first / Runtime-optional 方向。核心价值层定位为 `.sopify-skills/` 文件协议和 schema，runtime 降级为可选增强层与参考实现。详见 design.md §1.2 及 ADR-016。
 

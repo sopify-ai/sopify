@@ -1,4 +1,9 @@
-# Design: Sopify 总纲
+# Design: Sopify 总纲（已降级为历史证据源）
+
+> **⚠️ 本文件已于 2026-05-01 降级。**
+> Canonical 设计基线已迁移至 `../../blueprint/design.md`。
+> ADR 实体已迁移至 `../../../docs/adr/ADR-013.md`、`ADR-016.md`、`ADR-017.md`。
+> 本文件保留为历史证据源，供实现阶段追溯决策上下文。不应作为当前 machine truth 引用。
 
 ## §1 战略方向
 
