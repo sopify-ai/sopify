@@ -87,7 +87,7 @@
 - **Wave 2 拆为 4 个子波 + proof**，不一次性做。原因：route alias 收敛 735+ refs 和 host action 删减是不同维度的工作，一次性做等于控制平面重写
   - **2a**（`continue_host_workflow` → `continue_host_develop`）：类似 Wave 1 手法，17 refs，低风险先做
   - **2b**（`archive_review` receipt 化）：从 host action 退出，30 refs。Wave 1 已把 archive_completed 吸入 archive_review，本波让 archive_review 自身退出 host action 空间
-  - **2c**（`develop_checkpoint` 降级）：12 refs + AGENTS.md 4。**关键决策：不删 helper 能力，只退出 checkpoint/route 概念**——重命名为 develop callback source
+  - **2c**（`develop_checkpoint` → `develop_callback` 完整重命名）：26 个活跃文件。**关键决策：保留 helper 能力，完整退出 checkpoint/route 概念**——从文件名、脚本名、manifest key（含 `host_bridge_status`/`entry_guard` section）、entry guard、policy/source/truth id、prompt-layer、smoke/sync/test/infra 全部重命名为 `develop_callback`。不兼容、不加 legacy alias、不扩语义。`checkpoint_kind` (decision|clarification)、`checkpoint_request.py`、`DEVELOP_RESUME_*`、route names、`phase == "develop"` 不改
   - **2d**（route family 真收敛）：精确审计 route_name literal 后，对 router + engine + handoff + output + guard 做真收敛——内部主链路开始使用 6 canonical family，旧 alias 只允许在入口解析边界短期存在。**2d 独占 engine.py**，完成后才开 3a/3b。不删 plan_proposal/execution_confirm 语义，只挂到 canonical family 下
   - 测试同步范围：每个子波各自同步涉及的断言；`test_runtime_router.py`(52) 主要受 2d 影响
   - Contract YAML：当前 `decision_tables.yaml` 和 `failure_recovery_table.yaml` 对 Wave 2 三个目标引用为 0（已审计）
@@ -102,3 +102,57 @@
   - 测试同步范围：`test_runtime_engine.py`(剩余 execution_confirm 断言)、`test_runtime_decision.py`(部分)、`test_runtime_state.py`(17)、`fixtures/fail_close_case_matrix.yaml`(9)
   - Contract YAML：`decision_tables.yaml` / `failure_recovery_table.yaml` 中 `confirm_execute` 全部条目
 - 每一波都必须同步更新 `Codex/Skills/{CN,EN}/AGENTS.md`、`scripts/check-prompt-runtime-gate-smoke.py`、`scripts/sync-runtime-assets.sh` 等消费面；它们不是收尾附属品，而是 cutover 完成态的一部分
+
+### Wave 2c 命名映射表
+
+| 旧 | 新 | 说明 |
+|----|-----|------|
+| `runtime/develop_checkpoint.py` | `runtime/develop_callback.py` | 模块文件 |
+| `scripts/develop_checkpoint_runtime.py` | `scripts/develop_callback_runtime.py` | CLI entry |
+| `DevelopCheckpointError` | `DevelopCallbackError` | 异常类 |
+| `submit_develop_checkpoint()` | `submit_develop_callback()` | 核心提交函数 |
+| `is_develop_checkpoint_state()` | `is_develop_callback_state()` | 状态检测 |
+| `inspect_develop_checkpoint_context()` | `inspect_develop_callback_context()` | 上下文检查 |
+| `build_develop_checkpoint_request()` | `build_develop_callback_request()` | 请求构造 |
+| `DEVELOP_CHECKPOINT_*` constants | `DEVELOP_CALLBACK_*` | 模块常量 |
+| manifest `develop_checkpoint_callback` | `develop_callback` | capability key |
+| manifest `develop_checkpoint_entry` | `develop_callback_entry` | limits key |
+| manifest `develop_checkpoint_hosts` | `develop_callback_hosts` | limits key |
+| entry_guard `develop_checkpoint_callback_required` | `develop_callback_required` | reason code |
+| `policy_id: "develop_checkpoint_callback"` | `policy_id: "develop_callback"` | 策略标识 |
+| `required_helper: "develop_checkpoint"` | `required_helper: "develop_callback"` | quality helper key |
+| `requires_develop_checkpoint()` | `requires_develop_callback()` | checkpoint trigger predicate |
+| manifest `host_bridge_status.develop_checkpoint` | `host_bridge_status.develop_callback` | bridge 状态 key |
+| manifest `entry_guard.develop_checkpoint_callback_reason_code` | `entry_guard.develop_callback_reason_code` | entry_guard JSON key |
+
+不改：`checkpoint_kind` (decision\|clarification)、`checkpoint_request.py`、`DEVELOP_RESUME_*`、route names (decision_pending/clarification_pending)、`phase == "develop"`
+
+### Wave 2c 影响面（26 个活跃文件）
+
+| 层 | 文件 | 改动性质 |
+|----|------|---------|
+| runtime | develop_checkpoint.py → develop_callback.py | 文件重命名 + 内部名全改 |
+| runtime | develop_quality.py | `required_helper` key + `requires_develop_checkpoint` → `requires_develop_callback` |
+| runtime | engine.py | import path + 2 个函数调用重命名（机械改，不碰 route family） |
+| runtime | entry_guard.py | `DEVELOP_CHECKPOINT_ENTRY` + `develop_checkpoint_callback` reason code |
+| runtime | manifest.py | `DEVELOP_CHECKPOINT_ENTRY` + 5 个 manifest contract keys（含 `host_bridge_status`、`entry_guard` section） |
+| runtime | state_invariants.py | `develop_checkpoint_callback` → `develop_callback` |
+| installer | bootstrap_workspace.py, payload.py, runtime_bundle.py, validate.py | 文件路径 + capability key |
+| scripts | develop_checkpoint_runtime.py → develop_callback_runtime.py | 文件重命名 + import |
+| scripts | check-runtime-smoke.sh | `DEVELOP_CHECKPOINT_ENTRY` 变量 |
+| scripts | sync-runtime-assets.sh | 文件名引用 |
+| prompt | CLAUDE.md ×2, AGENTS.md ×2 | 脚本名 + 契约名 |
+| tests | test_installer.py, test_runtime_decision.py, test_runtime_engine.py | 函数名 + 脚本路径 + manifest key |
+| tests | runtime_test_support.py | import path（2 处，不改 ImportError） |
+| infra | .githooks/pre-commit | 脚本路径正则匹配（不改 release sync 触发失效） |
+| docs | .sopify-skills/project.md | 运行时指引文档脚本路径 |
+| docs | blueprint design.md, ADR-017.md | 迁移说明（保留旧名作历史记录可以接受） |
+| release | CHANGELOG.md | release-sync 自动处理 |
+
+### Wave 2c 执行原则
+
+1. **不兼容、不加 legacy alias** — 旧脚本名/manifest key 直接消失，不保留 fallback
+2. **engine.py 改动限于 import rename** — 不碰 route family 收敛（2d 范围）
+3. **`develop_quality.py:79` 的 `required_helper` 是机器 key** — 需审计消费链（engine.py `_should_attempt_develop_checkpoint` 附近）一并改名
+4. **冻结测试** — `develop_checkpoint` 不得出现在 CHECKPOINT_KINDS / route names；manifest 不再暴露 `develop_checkpoint_*` key
+5. **blueprint docs 中 "旧类型 develop_checkpoint → develop callback source" 的历史迁移说明保留** — 那是迁移记录，不是运行面残留
