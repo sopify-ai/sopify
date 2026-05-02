@@ -6,6 +6,137 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-05-02.234429] - 2026-05-02
+
+### Docs
+
+- Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/_models/handoff.py`
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_recovery.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/contracts/decision_tables.schema.json`
+  - `runtime/contracts/decision_tables.yaml`
+  - `runtime/contracts/failure_recovery_table.schema.json`
+  - `runtime/contracts/failure_recovery_table.yaml`
+  - `runtime/contracts/host_message_templates.schema.json`
+  - `runtime/contracts/side_effect_mapping_table.schema.json`
+  - `runtime/contracts/signal_priority_table.schema.json`
+  - `runtime/deterministic_guard.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/plan_proposal.py`
+  - `runtime/router.py`
+  - `runtime/state.py`
+  - `runtime/vnext_phase_boundary.py`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-prompt-runtime-gate-smoke.py`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/fixtures/context_fail_close_contract.yaml`
+  - `tests/fixtures/fail_close_case_matrix.yaml`
+  - `tests/fixtures/sample_invariant_gate_matrix.yaml`
+  - `tests/test_action_intent.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_failure_recovery.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_plan_reuse.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_sample_invariant_gate.py`
+  - `tests/test_runtime_state.py`
+
+### Changed
+
+- Updated project files:
+  - `CHANGELOG.md`
+
+## [2026-05-02.234058] - 2026-05-02
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/_models/handoff.py`
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_recovery.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/contracts/decision_tables.schema.json`
+  - `runtime/contracts/decision_tables.yaml`
+  - `runtime/contracts/failure_recovery_table.schema.json`
+  - `runtime/contracts/failure_recovery_table.yaml`
+  - `runtime/contracts/host_message_templates.schema.json`
+  - `runtime/contracts/side_effect_mapping_table.schema.json`
+  - `runtime/contracts/signal_priority_table.schema.json`
+  - `runtime/deterministic_guard.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/plan_proposal.py`
+  - `runtime/router.py`
+  - `runtime/state.py`
+  - `runtime/vnext_phase_boundary.py`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-prompt-runtime-gate-smoke.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/fixtures/context_fail_close_contract.yaml`
+  - `tests/fixtures/fail_close_case_matrix.yaml`
+  - `tests/fixtures/sample_invariant_gate_matrix.yaml`
+  - `tests/test_action_intent.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_failure_recovery.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_plan_reuse.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_sample_invariant_gate.py`
+  - `tests/test_runtime_state.py`
+
 ## [2026-05-02.205827] - 2026-05-02
 
 ### Docs

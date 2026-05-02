@@ -159,7 +159,6 @@ consult_readonly_contract:
     - consult_exit_is_under_validation
   ignored_required_host_actions:
     - confirm_decision
-    - confirm_plan_package
     - confirm_execute
     - answer_questions
     - review_or_execute_plan
@@ -269,7 +268,6 @@ consult_readonly_contract:
     - consult_exit_is_under_validation
   ignored_required_host_actions:
     - confirm_decision
-    - confirm_plan_package
     - confirm_execute
     - answer_questions
     - review_or_execute_plan

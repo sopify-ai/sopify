@@ -19,7 +19,6 @@ from .models import (
     DecisionState,
     DecisionSubmission,
     PlanArtifact,
-    PlanProposalState,
     RouteDecision,
     RunState,
     RuntimeConfig,
@@ -49,7 +48,6 @@ class StateStore:
         self.current_run_path = self.root / "current_run.json"
         self.last_route_path = self.root / "last_route.json"
         self.current_plan_path = self.root / "current_plan.json"
-        self.current_plan_proposal_path = self.root / "current_plan_proposal.json"
         self.current_handoff_path = self.root / "current_handoff.json"
         # Archive can complete against a non-active plan while another active
         # flow remains current. Persist that route-scoped result separately so
@@ -124,17 +122,6 @@ class StateStore:
 
     def clear_current_plan(self) -> None:
         self.current_plan_path.unlink(missing_ok=True)
-
-    def get_current_plan_proposal(self) -> Optional[PlanProposalState]:
-        payload = self._read_json(self.current_plan_proposal_path)
-        return PlanProposalState.from_dict(payload) if payload else None
-
-    def set_current_plan_proposal(self, proposal_state: PlanProposalState) -> None:
-        self.ensure()
-        self._write_json(self.current_plan_proposal_path, proposal_state.to_dict())
-
-    def clear_current_plan_proposal(self) -> None:
-        self.current_plan_proposal_path.unlink(missing_ok=True)
 
     def get_current_clarification(self) -> Optional[ClarificationState]:
         payload = self._read_json(self.current_clarification_path)
@@ -282,7 +269,6 @@ class StateStore:
     def reset_active_flow(self) -> None:
         self.clear_current_run()
         self.clear_current_plan()
-        self.clear_current_plan_proposal()
         self.clear_current_handoff()
         self.clear_current_archive_receipt()
         self.clear_current_clarification()

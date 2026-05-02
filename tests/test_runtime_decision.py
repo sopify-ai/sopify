@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from tests.runtime_test_support import *
-from runtime.checkpoint_request import checkpoint_request_from_plan_proposal_state
 from runtime.decision import parse_decision_response
-from runtime.plan_proposal import parse_plan_proposal_response
 
 
 class DecisionContractTests(unittest.TestCase):
@@ -33,89 +31,6 @@ class DecisionContractTests(unittest.TestCase):
         self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint，不要取消全部").action, "cancel")
         self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint！").action, "cancel")
         self.assertEqual(parse_decision_response(decision_state, "取消这个 checkpoint…").action, "cancel")
-
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint").action, "cancel")
-        self.assertEqual(parse_plan_proposal_response("不要取消这个 checkpoint").action, "inspect")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint。").action, "cancel")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint。为什么还会新建 proposal").action, "inspect")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint: 为什么还会新建 proposal").action, "inspect")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint；为什么还会新建 proposal").action, "inspect")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint?").action, "inspect")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint？为什么还会新建 proposal").action, "inspect")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint，不要取消全部").action, "cancel")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint！").action, "cancel")
-        self.assertEqual(parse_plan_proposal_response("取消这个 checkpoint…").action, "cancel")
-
-    def test_plan_proposal_question_like_constraint_short_circuit_stays_local(self) -> None:
-        self.assertEqual(parse_plan_proposal_response("continue with this?").action, "inspect")
-        self.assertNotEqual(parse_plan_proposal_response("this is it continue with this").action, "inspect")
-
-    def test_plan_proposal_natural_confirm_phrase_prefers_confirm(self) -> None:
-        self.assertEqual(parse_plan_proposal_response("继续按这个方案").action, "confirm")
-        self.assertEqual(parse_plan_proposal_response("继续按这个方案走").action, "confirm")
-        self.assertEqual(parse_plan_proposal_response("continue with this").action, "confirm")
-        self.assertEqual(parse_plan_proposal_response("continue with this plan").action, "confirm")
-
-    def test_plan_proposal_natural_confirm_with_explicit_revision_stays_revise(self) -> None:
-        self.assertEqual(parse_plan_proposal_response("继续按这个方案，补一下风险").action, "revise")
-
-    def test_plan_proposal_natural_confirm_question_stays_local(self) -> None:
-        self.assertEqual(parse_plan_proposal_response("继续按这个方案？").action, "inspect")
-        self.assertEqual(parse_plan_proposal_response("继续按这个方案吗？").action, "inspect")
-
-    def test_plan_proposal_constraint_followup_question_stays_local(self) -> None:
-        cases = (
-            "继续按这个方案会有什么风险",
-            "继续按这个方案会有什么风险？",
-            "按这个最小范围会有什么风险",
-            "按这个最小范围会有什么风险？",
-        )
-        for text in cases:
-            with self.subTest(text=text):
-                self.assertEqual(parse_plan_proposal_response(text).action, "inspect")
-
-    def test_plan_proposal_implicit_question_like_constraint_without_question_mark_stays_local(self) -> None:
-        self.assertEqual(parse_plan_proposal_response("按这个最小范围能不能直接进").action, "inspect")
-        self.assertEqual(parse_plan_proposal_response("按这个最小范围是否直接进").action, "inspect")
-
-    def test_plan_proposal_plain_retopic_phrase_prefers_revision(self) -> None:
-        cases = (
-            "方案改成 runtime gate receipt compaction",
-            "这个方案改成 runtime gate receipt compaction",
-            "change the plan to runtime gate receipt compaction",
-            "switch this plan to runtime gate receipt compaction",
-        )
-        for text in cases:
-            with self.subTest(text=text):
-                self.assertEqual(parse_plan_proposal_response(text).action, "revise")
-
-    def test_plan_proposal_question_like_retopic_stays_local(self) -> None:
-        cases = (
-            "这个方案改成 runtime gate receipt compaction？",
-            "change the plan to runtime gate receipt compaction?",
-            "能不能把这个方案改成 runtime gate receipt compaction",
-            "是否把这个方案改成 runtime gate receipt compaction",
-            "这个方案能不能改成 runtime gate receipt compaction",
-        )
-        for text in cases:
-            with self.subTest(text=text):
-                self.assertEqual(parse_plan_proposal_response(text).action, "inspect")
-
-    def test_plan_proposal_question_like_retopic_with_followup_revision_prefers_revision(self) -> None:
-        cases = (
-            "是否把这个方案改成 runtime gate receipt compaction 并补一下风险",
-            "这个方案能不能改成 runtime gate receipt compaction 再补一下风险",
-            "can we change the plan to runtime gate receipt compaction and add risk notes",
-        )
-        for text in cases:
-            with self.subTest(text=text):
-                self.assertEqual(parse_plan_proposal_response(text).action, "revise")
-
-    def test_plan_proposal_mixed_question_and_revision_prefers_revision(self) -> None:
-        self.assertEqual(
-            parse_plan_proposal_response("为什么先做这个？按这个最小范围直接进 3.1 -> 3.6").action,
-            "revise",
-        )
 
     def test_decision_policy_keeps_current_planning_semantic_baseline(self) -> None:
         route = RouteDecision(
@@ -467,45 +382,6 @@ class DecisionContractTests(unittest.TestCase):
             self.assertEqual(materialized.required_host_action, "answer_questions")
             self.assertEqual(materialized.clarification_state.clarification_id, clarification_state.clarification_id)
             self.assertEqual(materialized.clarification_state.missing_facts, clarification_state.missing_facts)
-
-    def test_checkpoint_request_roundtrip_preserves_confirmed_decision_in_plan_proposal(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            pending = run_runtime(
-                "payload 放 host root 还是 workspace/.sopify-runtime",
-                workspace_root=workspace,
-                user_home=workspace / "home",
-            )
-
-            self.assertEqual(pending.route.route_name, "decision_pending")
-            confirmed = confirm_decision(
-                pending.recovered_context.current_decision,
-                option_id="option_1",
-                source="text",
-                raw_input="1",
-            )
-            StateStore(config).set_current_decision(confirmed)
-
-            proposal_result = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home")
-
-            self.assertEqual(proposal_result.route.route_name, "plan_proposal_pending")
-            proposal_state = proposal_result.recovered_context.current_plan_proposal
-            self.assertTrue(proposal_state.confirmed_decision)
-
-            request = checkpoint_request_from_plan_proposal_state(proposal_state)
-            materialized = materialize_checkpoint_request(request.to_dict(), config=config)
-
-            self.assertEqual(materialized.required_host_action, "confirm_plan_package")
-            self.assertTrue(materialized.plan_proposal_state.confirmed_decision)
-            self.assertEqual(
-                materialized.plan_proposal_state.confirmed_decision["decision_id"],
-                confirmed.decision_id,
-            )
-            self.assertEqual(
-                materialized.plan_proposal_state.confirmed_decision["status"],
-                "confirmed",
-            )
 
     def test_materialize_checkpoint_request_rejects_invalid_decision_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

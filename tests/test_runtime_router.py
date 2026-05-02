@@ -144,8 +144,8 @@ class RouterTests(unittest.TestCase):
             route = router.classify("design 阶段现在怎么收口？", skills=skills)
 
             self.assertEqual(route.route_name, "workflow")
-            self.assertEqual(route.plan_package_policy, "confirm")
-            self.assertFalse(route.should_create_plan)
+            self.assertEqual(route.plan_package_policy, "immediate")
+            self.assertTrue(route.should_create_plan)
             self.assertEqual(
                 route.artifacts.get("entry_guard_reason_code"),
                 DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE,
@@ -163,8 +163,8 @@ class RouterTests(unittest.TestCase):
             route = router.classify("~go 不要新建新的 plan 包，直接在当前 plan 上细化 tasks", skills=skills)
 
             self.assertEqual(route.route_name, "workflow")
-            self.assertEqual(route.plan_package_policy, "confirm")
-            self.assertFalse(route.should_create_plan)
+            self.assertEqual(route.plan_package_policy, "immediate")
+            self.assertTrue(route.should_create_plan)
 
     def test_consult_guard_falls_back_when_tradeoff_or_long_term_split_detected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -333,231 +333,6 @@ class RouterTests(unittest.TestCase):
             self.assertEqual(route.route_name, "light_iterate")
             self.assertNotIn("meta-debug", route.reason)
 
-    def test_pending_plan_proposal_blocks_go_command_as_inspect(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            go_route = router.classify("~go", skills=skills)
-
-            self.assertEqual(go_route.route_name, "plan_proposal_pending")
-            self.assertEqual(go_route.command, "~go")
-            self.assertEqual(go_route.active_run_action, "inspect_plan_proposal")
-            self.assertIn("before workflow can continue", go_route.reason)
-
-    def test_pending_plan_proposal_defaults_questions_to_inspect_and_explicit_edits_to_revise(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            question_route = router.classify("为什么是这个方案？", skills=skills)
-            revise_route = router.classify("把 level 改成 standard", skills=skills)
-
-            self.assertEqual(question_route.route_name, "plan_proposal_pending")
-            self.assertEqual(question_route.active_run_action, "inspect_plan_proposal")
-            self.assertIn("waiting for package confirmation", question_route.reason)
-            self.assertEqual(revise_route.route_name, "plan_proposal_pending")
-            self.assertEqual(revise_route.active_run_action, "revise_plan_proposal")
-            self.assertIn("feedback", revise_route.reason)
-
-    def test_pending_plan_proposal_treats_minimal_scope_push_as_revise(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            revise_route = router.classify("按这个最小范围直接进 3.1 -> 3.6 注意不要过度设计", skills=skills)
-
-            self.assertEqual(revise_route.route_name, "plan_proposal_pending")
-            self.assertEqual(revise_route.active_run_action, "revise_plan_proposal")
-            self.assertIn("feedback", revise_route.reason)
-
-    def test_pending_plan_proposal_mixed_revision_and_question_stays_revise(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            revise_route = router.classify(
-                "按这个最小范围直接进 3.1 -> 3.6 确认是否覆盖风险并补一下",
-                skills=skills,
-            )
-
-            self.assertEqual(revise_route.route_name, "plan_proposal_pending")
-            self.assertEqual(revise_route.active_run_action, "revise_plan_proposal")
-            self.assertIn("feedback", revise_route.reason)
-
-    def test_pending_plan_proposal_question_with_constraint_cue_stays_inspect(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            question_route = router.classify("为什么先做这个？", skills=skills)
-
-            self.assertEqual(question_route.route_name, "plan_proposal_pending")
-            self.assertEqual(question_route.active_run_action, "inspect_plan_proposal")
-            self.assertIn("waiting for package confirmation", question_route.reason)
-
-    def test_pending_plan_proposal_question_like_constraint_fragment_stays_inspect(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            question_route = router.classify("按这个最小范围直接进吗？", skills=skills)
-
-            self.assertEqual(question_route.route_name, "plan_proposal_pending")
-            self.assertEqual(question_route.active_run_action, "inspect_plan_proposal")
-            self.assertIn("waiting for package confirmation", question_route.reason)
-
-    def test_pending_plan_proposal_blocks_go_plan_pass_through(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            routed = router.classify("~go plan 按这个最小范围直接进 3.1 -> 3.6", skills=skills)
-
-            self.assertEqual(routed.route_name, "plan_proposal_pending")
-            self.assertEqual(routed.command, "~go plan")
-            self.assertEqual(routed.active_run_action, "inspect_plan_proposal")
-            self.assertIn("before plan_only can continue", routed.reason)
-
-    def test_pending_plan_proposal_treats_cancel_prefix_as_cancel_with_negation_guard(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            cancel_route = router.classify("取消这个 checkpoint", skills=skills)
-            negated_route = router.classify("不要取消这个 checkpoint", skills=skills)
-            soft_negated_route = router.classify("先别取消", skills=skills)
-
-            self.assertEqual(cancel_route.route_name, "cancel_active")
-            self.assertEqual(negated_route.route_name, "plan_proposal_pending")
-            self.assertEqual(negated_route.active_run_action, "inspect_plan_proposal")
-            self.assertEqual(soft_negated_route.route_name, "plan_proposal_pending")
-            self.assertEqual(soft_negated_route.active_run_action, "inspect_plan_proposal")
-
-    def test_pending_plan_proposal_cancel_prefix_without_boundary_stays_pending(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            question_route = router.classify("取消后为什么还会新建 proposal", skills=skills)
-
-            self.assertEqual(question_route.route_name, "plan_proposal_pending")
-            self.assertEqual(question_route.active_run_action, "inspect_plan_proposal")
-
-    def test_pending_plan_proposal_question_mark_cancel_is_fail_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            bare_question_route = router.classify("取消这个 checkpoint?", skills=skills)
-            trailing_question_route = router.classify("取消这个 checkpoint？为什么还会新建 proposal", skills=skills)
-            emphatic_route = router.classify("取消这个 checkpoint！", skills=skills)
-
-            self.assertEqual(bare_question_route.route_name, "plan_proposal_pending")
-            self.assertEqual(bare_question_route.active_run_action, "inspect_plan_proposal")
-            self.assertEqual(trailing_question_route.route_name, "plan_proposal_pending")
-            self.assertEqual(trailing_question_route.active_run_action, "inspect_plan_proposal")
-            self.assertEqual(emphatic_route.route_name, "cancel_active")
-
-    def test_pending_plan_proposal_period_and_clause_punctuation_are_fail_closed_when_text_follows(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            period_route = router.classify("取消这个 checkpoint。为什么还会新建 proposal", skills=skills)
-            colon_route = router.classify("取消这个 checkpoint: 为什么还会新建 proposal", skills=skills)
-            semicolon_route = router.classify("取消这个 checkpoint；为什么还会新建 proposal", skills=skills)
-            bare_period_route = router.classify("取消这个 checkpoint。", skills=skills)
-
-            self.assertEqual(period_route.route_name, "plan_proposal_pending")
-            self.assertEqual(period_route.active_run_action, "inspect_plan_proposal")
-            self.assertEqual(colon_route.route_name, "plan_proposal_pending")
-            self.assertEqual(colon_route.active_run_action, "inspect_plan_proposal")
-            self.assertEqual(semicolon_route.route_name, "plan_proposal_pending")
-            self.assertEqual(semicolon_route.active_run_action, "inspect_plan_proposal")
-            self.assertEqual(bare_period_route.route_name, "cancel_active")
-
-    def test_pending_plan_proposal_mixed_sentence_cancel_still_cancels(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
-
-            mixed_route = router.classify("取消这个 checkpoint，不要取消全部", skills=skills)
-
-            self.assertEqual(mixed_route.route_name, "cancel_active")
-
     def test_ready_plan_routes_continue_and_exec_into_execution_confirm(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -653,62 +428,6 @@ class RouterTests(unittest.TestCase):
             blocked_exec = router.classify("~go exec", skills=skills)
             self.assertEqual(blocked_exec.route_name, "decision_pending")
             self.assertEqual(blocked_exec.active_run_action, "inspect_decision")
-
-    def test_session_decision_beats_ghost_global_proposal(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            global_store = StateStore(config)
-            review_store = StateStore(config, session_id="session-a")
-            global_store.ensure()
-            review_store.ensure()
-
-            global_store.set_current_plan_proposal(
-                PlanProposalState(
-                    schema_version="1",
-                    checkpoint_id="proposal-ghost",
-                    request_text="继续",
-                    analysis_summary="ghost proposal",
-                    proposed_level="standard",
-                    proposed_path=".sopify-skills/plan/ghost",
-                    estimated_task_count=1,
-                    candidate_files=(),
-                    topic_key="ghost",
-                    reserved_plan_id="ghost",
-                    resume_route="workflow",
-                    capture_mode="off",
-                    candidate_skill_ids=(),
-                )
-            )
-            review_store.set_current_decision(
-                DecisionState(
-                    schema_version="2",
-                    decision_id="decision-1",
-                    feature_key="runtime",
-                    phase="design",
-                    status="pending",
-                    decision_type="design_choice",
-                    question="继续哪个选项？",
-                    summary="session decision should win",
-                    options=(
-                        DecisionOption(
-                            option_id="option_1",
-                            title="option 1",
-                            summary="summary",
-                        ),
-                    ),
-                    created_at=iso_now(),
-                    updated_at=iso_now(),
-                )
-            )
-
-            router = Router(config, state_store=review_store, global_state_store=global_store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            routed = router.classify("~go exec", skills=skills)
-
-            self.assertEqual(routed.route_name, "decision_pending")
-            self.assertEqual(routed.active_run_action, "inspect_decision")
 
     def test_state_conflict_routes_to_inspect_until_user_cancels(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

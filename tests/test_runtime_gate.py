@@ -31,7 +31,7 @@ from installer.hosts.claude import CLAUDE_ADAPTER
 from installer.hosts.codex import CODEX_ADAPTER
 from installer.outcome_contract import annotate_outcome_payload, render_outcome_summary
 from installer.payload import install_global_payload
-from runtime.models import DecisionOption, DecisionState, PlanArtifact, PlanProposalState, RouteDecision, RunState, RuntimeHandoff
+from runtime.models import ClarificationState, DecisionOption, DecisionState, PlanArtifact, RouteDecision, RunState, RuntimeHandoff
 from runtime.plan_scaffold import create_plan_scaffold
 from runtime.state import StateStore, iso_now, stable_request_sha1
 from runtime.workspace_preflight import _drop_cli_arg_pairs
@@ -1824,21 +1824,12 @@ class RuntimeGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
 
-            proposal = enter_runtime_gate(
+            first = enter_runtime_gate(
                 "实现 runtime plugin bridge",
                 workspace_root=workspace,
                 user_home=workspace / "home",
             )
-            self.assertEqual(proposal["status"], "ready")
-            self.assertEqual(proposal["handoff"]["required_host_action"], "confirm_plan_package")
-            session_id = proposal["session_id"]
-
-            first = enter_runtime_gate(
-                "继续",
-                workspace_root=workspace,
-                session_id=session_id,
-                user_home=workspace / "home",
-            )
+            session_id = first["session_id"]
             self.assertEqual(first["status"], "ready")
             self.assertEqual(first["handoff"]["required_host_action"], "review_or_execute_plan")
 
@@ -1957,29 +1948,6 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertEqual(result["handoff"]["handoff_kind"], "consult")
             self.assertTrue(result["evidence"]["current_request_produced_handoff"])
             self.assertTrue(Path(result["receipt_path"]).exists())
-
-    def test_gate_surfaces_trigger_evidence_for_protected_plan_assets(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-
-            result = enter_runtime_gate(
-                "分析下 .sopify-skills/plan/20260320_kb_layout_v2/tasks.md 的当前任务，并整理 README 职责表边界",
-                workspace_root=workspace,
-                user_home=workspace / "home",
-            )
-
-            self.assertEqual(result["status"], "ready")
-            self.assertEqual(result["runtime"]["route_name"], "plan_proposal_pending")
-            self.assertEqual(result["handoff"]["required_host_action"], "confirm_plan_package")
-            self.assertEqual(
-                result["trigger_evidence"]["entry_guard_reason_code"],
-                DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE,
-            )
-            self.assertEqual(result["trigger_evidence"]["direct_edit_guard_kind"], "protected_plan_asset")
-            self.assertIn(
-                "protected .sopify-skills/plan assets",
-                result["trigger_evidence"]["direct_edit_guard_trigger"],
-            )
 
     def test_gate_marks_reused_prior_handoff_observability(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2293,17 +2261,15 @@ class RuntimeGateTests(unittest.TestCase):
             session_id = "session-conflict"
             store = StateStore(config, session_id=session_id)
             store.ensure()
-            store.set_current_plan_proposal(
-                PlanProposalState(
-                    schema_version="1",
-                    checkpoint_id="proposal-1",
-                    reserved_plan_id="plan-1",
-                    topic_key="runtime",
-                    proposed_level="standard",
-                    proposed_path=".sopify-skills/plan/proposal",
-                    analysis_summary="pending proposal",
-                    estimated_task_count=2,
-                    request_text="继续",
+            store.set_current_clarification(
+                ClarificationState(
+                    clarification_id="clarify-1",
+                    feature_key="runtime",
+                    phase="analyze",
+                    status="pending",
+                    summary="pending clarification",
+                    questions=("q1",),
+                    missing_facts=("scope",),
                     created_at=iso_now(),
                     updated_at=iso_now(),
                 )

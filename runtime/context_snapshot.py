@@ -14,7 +14,6 @@ from .models import (
     ClarificationState,
     DecisionState,
     PlanArtifact,
-    PlanProposalState,
     RouteDecision,
     RunState,
     RuntimeConfig,
@@ -26,17 +25,15 @@ from .state_invariants import is_supported_phase
 _NEGOTIATION_RUN_STAGE_ACTIONS = {
     "clarification_pending": "answer_questions",
     "decision_pending": "confirm_decision",
-    "plan_proposal_pending": "confirm_plan_package",
     "ready_for_execution": "confirm_execute",
     "execution_confirm_pending": "confirm_execute",
 }
 _DECISION_CONFLICT_STATUSES = {"pending", "collecting", "confirmed", "cancelled", "timed_out"}
 _CLARIFICATION_CONFLICT_STATUSES = {"pending", "collecting"}
-_PENDING_HOST_ACTIONS = {"answer_questions", "confirm_decision", "confirm_plan_package", "confirm_execute"}
+_PENDING_HOST_ACTIONS = {"answer_questions", "confirm_decision", "confirm_execute"}
 _PENDING_ACTION_EXPECTED_STATE_KINDS = {
     "answer_questions": {"current_clarification"},
     "confirm_decision": {"current_decision"},
-    "confirm_plan_package": {"current_plan_proposal"},
 }
 _CONFLICT_ALLOWED_USER_INTENTS = ("cancel", "force_cancel")
 _CONFLICT_ALLOWED_INTERNAL_ACTIONS = ("abort_negotiation",)
@@ -82,7 +79,7 @@ class ContextResolvedSnapshot:
     resolution_id: str
     current_run: RunState | None = None
     current_plan: PlanArtifact | None = None
-    current_plan_proposal: PlanProposalState | None = None
+    current_plan_proposal: Any | None = None  # Wave 3a: field kept for structural compat, always None
     current_clarification: ClarificationState | None = None
     current_decision: DecisionState | None = None
     current_handoff: RuntimeHandoff | None = None
@@ -124,18 +121,6 @@ def resolve_context_snapshot(
     quarantined: list[QuarantinedStateItem] = []
     conflicts: list[StateConflictDetail] = []
     notes: list[str] = []
-
-    review_proposal = _load_plan_proposal(
-        store=review_store,
-        scope=review_scope,
-        quarantined=quarantined,
-    )
-    if not same_scope_store:
-        _ = _load_plan_proposal(
-            store=global_store,
-            scope="global",
-            quarantined=quarantined,
-        )
 
     review_clarification = _load_clarification(
         store=review_store,
@@ -202,7 +187,6 @@ def resolve_context_snapshot(
             scope=review_store.scope,
             current_run=review_run,
             current_handoff=review_handoff,
-            current_plan_proposal=review_proposal,
             current_clarification=review_clarification,
             current_decision=review_decision,
         )
@@ -214,7 +198,6 @@ def resolve_context_snapshot(
                 scope="global",
                 current_run=global_run,
                 current_handoff=global_handoff,
-                current_plan_proposal=None,
                 current_clarification=global_clarification,
                 current_decision=global_decision,
             )
@@ -223,7 +206,6 @@ def resolve_context_snapshot(
     pending_items = _collect_pending_items(
         review_store=review_store,
         global_store=global_store,
-        review_proposal=review_proposal,
         review_clarification=review_clarification,
         review_decision=review_decision,
         global_clarification=global_clarification,
@@ -249,7 +231,6 @@ def resolve_context_snapshot(
         active_pending_action=active_pending_action,
         active_pending_store=active_pending_store,
         active_pending_path=active_pending_path,
-        review_proposal=review_proposal,
         review_clarification=review_clarification,
         review_decision=review_decision,
         global_clarification=global_clarification,
@@ -308,7 +289,6 @@ def resolve_context_snapshot(
         resolution_id=uuid4().hex,
         current_run=current_run,
         current_plan=current_plan,
-        current_plan_proposal=review_proposal,
         current_clarification=review_clarification or global_clarification,
         current_decision=review_decision or global_decision,
         current_handoff=current_handoff,
@@ -350,52 +330,6 @@ def snapshot_state_conflict_artifacts(snapshot: ContextResolvedSnapshot) -> dict
         },
         "quarantined_items": [item.to_dict() for item in snapshot.quarantined_items],
     }
-
-
-def _load_plan_proposal(
-    *,
-    store: StateStore,
-    scope: str,
-    quarantined: list[QuarantinedStateItem],
-) -> PlanProposalState | None:
-    payload, payload_error = _read_json_payload(store.current_plan_proposal_path)
-    if payload_error is not None:
-        quarantined.append(
-            _quarantined_item(
-                store=store,
-                path=store.current_plan_proposal_path,
-                state_kind="current_plan_proposal",
-                reason=payload_error,
-                provenance_status="invalid_payload",
-            )
-        )
-        return None
-    if payload is None:
-        return None
-    if scope not in {"session", _PRIMARY_SCOPE}:
-        quarantined.append(
-            _quarantined_item(
-                store=store,
-                path=store.current_plan_proposal_path,
-                state_kind="current_plan_proposal",
-                reason="proposal_session_only_global_fallback_disabled",
-                provenance_status="scope_mismatch",
-            )
-        )
-        return None
-    proposal = PlanProposalState.from_dict(payload)
-    if _proposal_contract_missing(proposal):
-        quarantined.append(
-            _quarantined_item(
-                store=store,
-                path=store.current_plan_proposal_path,
-                state_kind="current_plan_proposal",
-                reason="proposal_contract_missing",
-                provenance_status="provenance_missing",
-            )
-        )
-        return None
-    return proposal
 
 
 def _load_clarification(
@@ -781,7 +715,6 @@ def _collect_run_handoff_conflicts(
     scope: str,
     current_run: RunState | None,
     current_handoff: RuntimeHandoff | None,
-    current_plan_proposal: PlanProposalState | None,
     current_clarification: ClarificationState | None,
     current_decision: DecisionState | None,
 ) -> list[StateConflictDetail]:
@@ -826,15 +759,6 @@ def _collect_run_handoff_conflicts(
                 )
             )
 
-    if required_host_action == "confirm_plan_package" and current_plan_proposal is None:
-        conflicts.append(
-            StateConflictDetail(
-                code="proposal_missing_for_pending_handoff",
-                message="Handoff requires plan-package confirmation but no valid proposal is available",
-                path=store.relative_path(store.current_handoff_path),
-                state_scope=scope,
-            )
-        )
     if required_host_action == "answer_questions" and current_clarification is None:
         conflicts.append(
             StateConflictDetail(
@@ -860,15 +784,12 @@ def _collect_pending_items(
     *,
     review_store: StateStore,
     global_store: StateStore,
-    review_proposal: PlanProposalState | None,
     review_clarification: ClarificationState | None,
     review_decision: DecisionState | None,
     global_clarification: ClarificationState | None,
     global_decision: DecisionState | None,
 ) -> list[tuple[str, str]]:
     pending: list[tuple[str, str]] = []
-    if review_proposal is not None:
-        pending.append(("current_plan_proposal", review_store.relative_path(review_store.current_plan_proposal_path)))
     if review_clarification is not None and review_clarification.status in _CLARIFICATION_CONFLICT_STATUSES:
         pending.append(("current_clarification", review_store.relative_path(review_store.current_clarification_path)))
     if global_clarification is not None and global_clarification.status in _CLARIFICATION_CONFLICT_STATUSES:
@@ -942,7 +863,6 @@ def _execution_confirm_review_checkpoint_conflict(
     active_pending_action: str,
     active_pending_store: StateStore | None,
     active_pending_path: str,
-    review_proposal: PlanProposalState | None,
     review_clarification: ClarificationState | None,
     review_decision: DecisionState | None,
     global_clarification: ClarificationState | None,
@@ -952,8 +872,6 @@ def _execution_confirm_review_checkpoint_conflict(
         return None
 
     observed_kinds: set[str] = set()
-    if review_proposal is not None:
-        observed_kinds.add("current_plan_proposal")
     if review_clarification is not None and review_clarification.status in _CLARIFICATION_CONFLICT_STATUSES:
         observed_kinds.add("current_clarification")
     if global_clarification is not None and global_clarification.status in _CLARIFICATION_CONFLICT_STATUSES:
@@ -1087,15 +1005,6 @@ def _read_json_payload(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     return (payload, None)
 
 
-def _proposal_contract_missing(proposal: PlanProposalState) -> bool:
-    return not all(
-        (
-            str(proposal.checkpoint_id or "").strip(),
-            str(proposal.reserved_plan_id or "").strip(),
-            str(proposal.topic_key or "").strip(),
-            str(proposal.proposed_path or "").strip(),
-        )
-    )
 
 
 def _freeze_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:

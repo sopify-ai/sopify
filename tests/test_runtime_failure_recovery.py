@@ -20,7 +20,6 @@ CASE_MATRIX_PATH = REPO_ROOT / "tests" / "fixtures" / "fail_close_case_matrix.ya
 REQUIRED_HOST_ACTIONS = [
     "answer_questions",
     "confirm_decision",
-    "confirm_plan_package",
     "confirm_execute",
     "review_or_execute_plan",
 ]
@@ -60,7 +59,6 @@ def _build_base_recovery_rows() -> list[dict[str, object]]:
     resolution_prompt_mode_by_action = {
         "answer_questions": "reask_answer_questions",
         "confirm_decision": "reask_confirm_decision",
-        "confirm_plan_package": "reask_confirm_plan_package",
         "confirm_execute": "reask_confirm_execute",
         "review_or_execute_plan": "reask_plan_review",
     }
@@ -159,7 +157,7 @@ class FailureRecoveryTests(unittest.TestCase):
         self.assertEqual(Path(table["source_path"]), DEFAULT_DECISION_TABLES_PATH.resolve())
         self.assertEqual(Path(table["schema_source_path"]), DEFAULT_FAILURE_RECOVERY_SCHEMA_PATH.resolve())
         self.assertEqual(Path(table["decision_tables_source_path"]), DEFAULT_DECISION_TABLES_PATH.resolve())
-        self.assertEqual(len(table["rows"]), 20)
+        self.assertEqual(len(table["rows"]), 16)
 
     def test_legacy_standalone_recovery_asset_can_still_load_explicitly(self) -> None:
         table = load_failure_recovery_table(LEGACY_FAILURE_RECOVERY_TABLE_PATH)
@@ -226,13 +224,12 @@ class FailureRecoveryTests(unittest.TestCase):
             decision_tables=decision_tables,
             recovery_table=recovery_table,
         )
-        self.assertEqual(len(results), 8)
+        self.assertEqual(len(results), 7)
         self.assertEqual(
             [item["case_id"] for item in results],
             [
                 "A-1_explain_only_consult_guard",
                 "A-2_decision_selection_with_suffix_text",
-                "A-3_existing_plan_referent_analysis",
                 "A-4_cancel_checkpoint_idempotent",
                 "A-5_mixed_clause_conflict",
                 "A-6_execution_confirm_state_conflict_abort",
@@ -242,7 +239,7 @@ class FailureRecoveryTests(unittest.TestCase):
         )
         self.assertEqual(results[0]["primary_failure_type"], "non_stable_truth")
         self.assertEqual(results[0]["secondary_failure_members"], ["schema_mismatch"])
-        self.assertEqual(results[4]["effective_allowed_response_mode"], "normal_runtime_followup")
+        self.assertEqual(results[3]["effective_allowed_response_mode"], "normal_runtime_followup")
 
     def test_recovery_table_rejects_allowed_response_mode_field(self) -> None:
         rows = _build_base_recovery_rows()

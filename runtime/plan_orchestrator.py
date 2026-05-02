@@ -23,7 +23,7 @@ from .workspace_preflight import WorkspacePreflightError, preflight_workspace_ru
 PLAN_ORCHESTRATOR_PENDING_EXIT = 2
 PLAN_ORCHESTRATOR_CANCELLED_EXIT = 3
 PLAN_ORCHESTRATOR_DEFAULT_MAX_LOOPS = 8
-_STABLE_HOST_ACTIONS = {"review_or_execute_plan", "confirm_plan_package", "confirm_execute"}
+_STABLE_HOST_ACTIONS = {"review_or_execute_plan", "confirm_execute"}
 _BRIDGED_HOST_ACTIONS = {"answer_questions", "confirm_decision"}
 
 PromptReader = Callable[[str], str]

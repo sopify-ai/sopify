@@ -14,7 +14,6 @@ _SUPPORTED_PROJECTION_ACTIONS = frozenset(
         "answer_questions",
         "confirm_decision",
         "confirm_execute",
-        "confirm_plan_package",
         "review_or_execute_plan",
         "continue_host_consult",
         "continue_host_develop",
@@ -137,21 +136,6 @@ def _build_confirm_execute_fields(
         "risk_level": str(summary.get("risk_level") or "").strip(),
         "key_risk": str(summary.get("key_risk") or "").strip(),
         "mitigation": str(summary.get("mitigation") or "").strip(),
-    }
-
-
-def _build_confirm_plan_package_fields(
-    *,
-    plan_id: str | None,
-    plan_path: str | None,
-    current_run: RunState | None,
-    artifacts: Mapping[str, Any],
-) -> dict[str, Any]:
-    proposal = _require_mapping(artifacts.get("proposal"), label="proposal")
-    return {
-        "analysis_summary": str(proposal.get("analysis_summary") or "").strip(),
-        "proposed_path": str(proposal.get("proposed_path") or "").strip(),
-        "estimated_task_count": int(proposal.get("estimated_task_count") or 0),
     }
 
 
@@ -288,7 +272,6 @@ _PROJECTION_BUILDERS = {
     "answer_questions": _build_answer_questions_fields,
     "confirm_decision": _build_confirm_decision_fields,
     "confirm_execute": _build_confirm_execute_fields,
-    "confirm_plan_package": _build_confirm_plan_package_fields,
     "review_or_execute_plan": _build_plan_review_fields,
     "continue_host_consult": _build_continue_host_consult_fields,
     "continue_host_develop": _build_continue_host_develop_fields,

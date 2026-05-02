@@ -12,7 +12,6 @@ from .decision import has_submitted_decision, parse_decision_response
 from .entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
 from .execution_confirm import parse_execution_confirm_response
 from .plan_scaffold import find_plan_by_request_reference, request_explicitly_wants_new_plan
-from .plan_proposal import parse_plan_proposal_response
 from .models import ClarificationState, DecisionState, RouteDecision, RuntimeConfig, SkillMeta
 from .skill_resolver import resolve_route_candidate_skills, resolve_runtime_skill_id
 from .state import StateStore
@@ -30,7 +29,6 @@ SUPPORTED_ROUTE_NAMES = (
     "quick_fix",
     "clarification_pending",
     "clarification_resume",
-    "plan_proposal_pending",
     "execution_confirm_pending",
     "resume_active",
     "exec_plan",
@@ -265,7 +263,6 @@ class Router:
 
         current_clarification = snapshot.current_clarification
         current_decision = snapshot.current_decision
-        current_plan_proposal = snapshot.current_plan_proposal
         review_active_run = snapshot.current_run
         execution_active_run = snapshot.execution_active_run
         global_active_run = execution_active_run if snapshot.preferred_state_scope == "global" else None
@@ -333,14 +330,6 @@ class Router:
                 },
             )
 
-        if current_plan_proposal is not None:
-            pending_plan_proposal = _classify_pending_plan_proposal(
-                text,
-                command_decision=command_decision,
-                skills=skills,
-            )
-            if pending_plan_proposal is not None:
-                return self._with_capture(pending_plan_proposal)
 
         if execution_active_run is not None and execution_current_plan is not None:
             pending_execution_confirm = _classify_pending_execution_confirm(
@@ -644,53 +633,6 @@ def _classify_pending_decision(
     return None
 
 
-def _classify_pending_plan_proposal(
-    text: str,
-    *,
-    command_decision: RouteDecision | None,
-    skills: Iterable[SkillMeta],
-) -> RouteDecision | None:
-    if command_decision is not None:
-        return RouteDecision(
-            route_name="plan_proposal_pending",
-            request_text=text,
-            reason=f"Pending proposal confirmation must be resolved before {command_decision.route_name} can continue",
-            command=command_decision.command,
-            complexity="medium",
-            should_recover_context=True,
-            candidate_skill_ids=_candidate_skills("plan_proposal_pending", skills, "design"),
-            active_run_action="inspect_plan_proposal",
-        )
-
-    response = parse_plan_proposal_response(text)
-    if response.action == "cancel":
-        return RouteDecision(
-            route_name="cancel_active",
-            request_text=text,
-            reason="Pending plan proposal cancelled by user",
-            complexity="simple",
-            should_recover_context=True,
-            active_run_action="cancel",
-        )
-    action_to_reason = {
-        "confirm": "Received confirmation to materialize the proposed plan package",
-        "inspect": "Plan proposal is still waiting for package confirmation",
-        "revise": "Received plan-proposal feedback before package materialization",
-    }
-    action_to_active_run_action = {
-        "confirm": "confirm_plan_proposal",
-        "inspect": "inspect_plan_proposal",
-        "revise": "revise_plan_proposal",
-    }
-    return RouteDecision(
-        route_name="plan_proposal_pending",
-        request_text=text,
-        reason=action_to_reason.get(response.action, "Plan proposal is still pending"),
-        complexity="medium",
-        should_recover_context=True,
-        candidate_skill_ids=_candidate_skills("plan_proposal_pending", skills, "design"),
-        active_run_action=action_to_active_run_action.get(response.action, "inspect_plan_proposal"),
-    )
 
 
 def _classify_pending_clarification(
@@ -913,9 +855,7 @@ def _plan_package_policy_for_route(route_name: str, request_text: str, *, config
         return "immediate"
     if route_name not in {"workflow", "light_iterate"}:
         return "none"
-    if _request_explicitly_materializes_plan(request_text, config=config):
-        return "immediate"
-    return "confirm"
+    return "immediate"
 
 
 def _request_explicitly_materializes_plan(request_text: str, *, config: RuntimeConfig) -> bool:

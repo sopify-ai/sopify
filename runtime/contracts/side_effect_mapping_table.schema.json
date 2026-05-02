@@ -23,7 +23,6 @@
     "continue_checkpoint_confirmation"
   ],
   "checkpoint_kinds": [
-    "confirm_plan_package",
     "confirm_decision",
     "confirm_execute"
   ],
@@ -43,7 +42,6 @@
       "output_mode"
     ],
     "required_host_actions": [
-      "confirm_plan_package",
       "continue_host_consult",
       "continue_host_develop"
     ],

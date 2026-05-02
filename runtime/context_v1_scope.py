@@ -8,24 +8,20 @@ from typing import Any, Mapping, Sequence
 SUPPORTED_CHECKPOINT_KINDS_V1 = (
     "confirm_decision",
     "confirm_execute",
-    "confirm_plan_package",
 )
 
 ALLOWED_V1_STATE_EFFECTS = (
     "current_decision",
     "current_plan",
-    "current_plan_proposal",
     "current_run",
 )
 
 FORBIDDEN_V1_SIDE_EFFECTS = (
     "advance_to_develop",
     "clear_current_decision",
-    "clear_current_plan_proposal",
     "materialize_new_plan_package",
     "mutate_plan_identity",
     "recreate_execution_confirm_checkpoint",
-    "rewrite_reserved_plan_id",
     "submit_decision_selection",
 )
 

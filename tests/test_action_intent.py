@@ -67,7 +67,7 @@ class ActionValidatorTests(unittest.TestCase):
 
     def test_consult_readonly_none_with_checkpoint(self) -> None:
         """Checkpoint 上方 consult 共存 — checkpoint pending 时仍可 consult。"""
-        ctx = ValidationContext(checkpoint_kind="confirm_plan_package")
+        ctx = ValidationContext(checkpoint_kind="confirm_execute")
         proposal = ActionProposal("consult_readonly", "none", "high")
         result = self.validator.validate(proposal, ctx)
         self.assertEqual(result.decision, DECISION_AUTHORIZE)
@@ -343,12 +343,12 @@ class ActionProposalSerializationTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# P0-E: Side-effect mapping row for confirm_plan_package + consult_readonly
+# P0-E: Side-effect mapping row ordering (post-Wave-3a)
 # ---------------------------------------------------------------------------
 
 
-class SideEffectMappingConfirmPlanPackageConsultTests(unittest.TestCase):
-    """Verify the new switch_to_consult_readonly row for confirm_plan_package."""
+class SideEffectMappingRowOrderingTests(unittest.TestCase):
+    """Verify row ordering after Wave 3a proposal removal."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -367,49 +367,6 @@ class SideEffectMappingConfirmPlanPackageConsultTests(unittest.TestCase):
             f"resolved_action={resolved_action}, checkpoint_kind={checkpoint_kind}"
         )
 
-    def test_row_exists(self) -> None:
-        row = self._find_row("switch_to_consult_readonly", "confirm_plan_package")
-        self.assertIsNotNone(row)
-
-    def test_preserves_proposal_and_run(self) -> None:
-        row = self._find_row("switch_to_consult_readonly", "confirm_plan_package")
-        self.assertIn("current_plan_proposal", row["state_mutators"]["preserve"])
-        self.assertIn("current_run", row["state_mutators"]["preserve"])
-
-    def test_forbidden_effects(self) -> None:
-        row = self._find_row("switch_to_consult_readonly", "confirm_plan_package")
-        for effect in (
-            "materialize_new_plan_package",
-            "advance_to_develop",
-            "clear_current_plan_proposal",
-        ):
-            self.assertIn(effect, row["forbidden_state_effects"])
-
-    def test_handoff_protocol(self) -> None:
-        row = self._find_row("switch_to_consult_readonly", "confirm_plan_package")
-        hp = row["handoff_protocol"]
-        self.assertEqual(hp["required_host_action"], "continue_host_consult")
-        self.assertEqual(hp["resume_route"], "plan_proposal_pending")
-        self.assertEqual(hp["output_mode"], "consult_answer")
-        self.assertIn("checkpoint_request", hp["artifact_keys"])
-        self.assertIn("proposal", hp["artifact_keys"])
-
-    def test_preserved_identity(self) -> None:
-        row = self._find_row("switch_to_consult_readonly", "confirm_plan_package")
-        for key in ("checkpoint_id", "reserved_plan_id", "topic_key"):
-            self.assertIn(key, row["preserved_identity"])
-
-    def test_terminality(self) -> None:
-        row = self._find_row("switch_to_consult_readonly", "confirm_plan_package")
-        self.assertEqual(row["terminality"], "route_terminal")
-
-    def test_reason_code(self) -> None:
-        row = self._find_row("switch_to_consult_readonly", "confirm_plan_package")
-        self.assertEqual(
-            row["reason_code"],
-            "effect.hard_constraint.analysis_only_consult_readonly",
-        )
-
     def test_existing_decision_row_unchanged(self) -> None:
         """Existing switch_to_consult_readonly for confirm_decision is preserved."""
         row = self._find_row("switch_to_consult_readonly", "confirm_decision")
@@ -420,9 +377,6 @@ class SideEffectMappingConfirmPlanPackageConsultTests(unittest.TestCase):
         """Rows must follow frozen ordered_resolved_actions order."""
         actions = [r["resolved_action"] for r in self.rows]
         ordered = [
-            "stay_in_checkpoint_and_inspect",
-            "submit_revision_feedback",
-            "switch_to_consult_readonly",
             "switch_to_consult_readonly",
             "continue_checkpoint_confirmation",
         ]
@@ -460,7 +414,7 @@ def _build_duplicate_row_yaml() -> str:
 
     original = DEFAULT_DECISION_TABLES_PATH.read_text(encoding="utf-8")
     # Find the first row block and duplicate it.
-    marker = "    - resolved_action: stay_in_checkpoint_and_inspect\n"
+    marker = "    - resolved_action: switch_to_consult_readonly\n"
     first_pos = original.index(marker)
     # Find where the next row starts (next "    - resolved_action:")
     next_row_pos = original.index("    - resolved_action:", first_pos + len(marker))
@@ -568,7 +522,7 @@ class GateActionProposalTests(unittest.TestCase):
         state = contract["state"]
         expected_keys = {
             "scope", "state_root", "current_plan_path",
-            "current_plan_proposal_path", "current_run_path",
+            "current_run_path",
             "current_handoff_path", "current_clarification_path",
             "current_decision_path", "last_route_path",
         }

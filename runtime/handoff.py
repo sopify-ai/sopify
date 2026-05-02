@@ -14,7 +14,6 @@ from .checkpoint_request import (
     checkpoint_request_from_clarification_state,
     checkpoint_request_from_decision_state,
     checkpoint_request_from_execution_confirm,
-    checkpoint_request_from_plan_proposal_state,
     normalize_checkpoint_request,
 )
 from .action_projection import ActionProjectionError, build_action_projection, supports_action_projection
@@ -29,7 +28,7 @@ from .decision_policy import has_tradeoff_checkpoint_signal
 from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .entry_guard import build_entry_guard_contract
 from .execution_confirm import build_execution_summary
-from .plan_proposal import CURRENT_PLAN_PROPOSAL_RELATIVE_PATH
+
 from .resolution_planner import (
     ResolutionPlannerError,
     build_resolution_planner,
@@ -74,7 +73,6 @@ _ROUTE_HANDOFF_KIND = {
     "decision_pending": "decision",
     "decision_resume": "decision",
     # Wave 3a/3b — not converged in 2d
-    "plan_proposal_pending": "plan_proposal",
     "execution_confirm_pending": "execution_confirm",
     # non-family surface
     "state_conflict": "state_conflict",
@@ -83,7 +81,6 @@ _ROUTE_HANDOFF_KIND = {
 _STATE_CONFLICT_ABORT_RESUME_ACTIONS = {
     "clarification_pending": "answer_questions",
     "decision_pending": "confirm_decision",
-    "plan_proposal_pending": "confirm_plan_package",
     "ready_for_execution": "confirm_execute",
     "execution_confirm_pending": "confirm_execute",
     "develop_pending": "continue_host_develop",
@@ -128,7 +125,6 @@ def build_runtime_handoff(
         decision=decision,
         current_run=current_run,
         current_plan=resolved_plan,
-        current_plan_proposal=resolved_context.current_plan_proposal,
         kb_artifact=kb_artifact,
         replay_session_dir=replay_session_dir,
         skill_result=skill_result,
@@ -224,8 +220,6 @@ def _required_host_action(
         if _should_use_execution_confirm_handoff(current_run):
             return "confirm_execute"
         return "review_or_execute_plan"
-    if route_name == "plan_proposal_pending":
-        return "confirm_plan_package"
     if route_name in {"workflow", "light_iterate"}:
         return "continue_host_develop"
     if route_name == "archive_lifecycle":
@@ -267,7 +261,6 @@ def _collect_handoff_artifacts(
     decision: RouteDecision,
     current_run: RunState | None,
     current_plan: PlanArtifact | None,
-    current_plan_proposal: Any | None,
     kb_artifact: KbArtifact | None,
     replay_session_dir: str | None,
     skill_result: Mapping[str, Any] | None,
@@ -316,15 +309,6 @@ def _collect_handoff_artifacts(
         artifacts["execution_summary"] = execution_summary_payload.to_dict()
     if current_plan is not None and current_plan.files:
         artifacts["plan_files"] = list(current_plan.files)
-    if current_plan_proposal is not None:
-        artifacts["proposal_file"] = CURRENT_PLAN_PROPOSAL_RELATIVE_PATH
-        artifacts["proposal_checkpoint_id"] = getattr(current_plan_proposal, "checkpoint_id", None)
-        artifacts["proposal_status"] = "pending"
-        artifacts["proposal"] = current_plan_proposal.to_dict() if hasattr(current_plan_proposal, "to_dict") else {}
-        artifacts["checkpoint_request"] = checkpoint_request_from_plan_proposal_state(
-            current_plan_proposal,
-            source_route=decision.route_name,
-        ).to_dict()
     if required_host_action == "continue_host_develop":
         artifacts["develop_quality_contract"] = build_develop_quality_contract()
         carry_forward_develop_quality_artifacts(artifacts, source=decision.artifacts)

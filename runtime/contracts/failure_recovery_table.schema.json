@@ -19,7 +19,6 @@
   "required_host_actions": [
     "answer_questions",
     "confirm_decision",
-    "confirm_plan_package",
     "confirm_execute",
     "review_or_execute_plan"
   ],
@@ -32,7 +31,6 @@
     "request_state_recovery",
     "reask_answer_questions",
     "reask_confirm_decision",
-    "reask_confirm_plan_package",
     "reask_confirm_execute",
     "reask_plan_review",
     "safe_retry_after_contract_fix"

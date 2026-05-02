@@ -125,11 +125,11 @@ def run_smoke(*, temp_root: Path) -> dict[str, Any]:
             request="分析下 .sopify-skills/plan/20260320_kb_layout_v2/tasks.md 的当前任务，并整理 README 职责表边界",
             expected_exit_code=0,
             expected_status="ready",
-            expected_mode="checkpoint_only",
-            expected_action="confirm_plan_package",
+            expected_mode="normal_runtime_followup",
+            expected_action="review_or_execute_plan",
             expected_error_code=None,
-            expected_state_files=("current_handoff.json", "current_plan_proposal.json", CURRENT_GATE_RECEIPT_FILENAME),
-            expected_runtime_route="plan_proposal_pending",
+            expected_state_files=("current_handoff.json", "current_plan.json", CURRENT_GATE_RECEIPT_FILENAME),
+            expected_runtime_route="plan_only",
             expected_entry_guard_reason_code=DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE,
             expected_direct_edit_guard_kind="protected_plan_asset",
         )
@@ -283,7 +283,7 @@ def _run_gate_scenario(
         if receipt.get("evidence", {}).get("strict_runtime_entry") != payload.get("evidence", {}).get("strict_runtime_entry"):
             failures.append("receipt.evidence.strict_runtime_entry drifted from gate payload")
 
-    if expected_action in {"answer_questions", "confirm_decision", "confirm_plan_package", "confirm_execute"}:
+    if expected_action in {"answer_questions", "confirm_decision", "confirm_execute"}:
         if payload.get("allowed_response_mode") == "normal_runtime_followup":
             failures.append("pending checkpoint unexpectedly escaped to normal_runtime_followup")
         if not payload.get("handoff", {}).get("pending_fail_closed"):
@@ -358,7 +358,6 @@ def _resolve_expected_state_path(*, workspace: Path, payload: Mapping[str, Any],
         return None
     relative_path = {
         "current_plan.json": state_contract.get("current_plan_path"),
-        "current_plan_proposal.json": state_contract.get("current_plan_proposal_path"),
         "current_run.json": state_contract.get("current_run_path"),
         "current_handoff.json": state_contract.get("current_handoff_path"),
         "current_clarification.json": state_contract.get("current_clarification_path"),

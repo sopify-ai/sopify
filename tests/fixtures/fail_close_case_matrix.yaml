@@ -49,28 +49,6 @@ cases:
         - a2-decision-checkpoint
         - fail_closed
         - a2-identity
-  - case_id: A-3_existing_plan_referent_analysis
-    checkpoint_id: a3-plan-referent
-    required_host_action: confirm_plan_package
-    allowed_response_mode: checkpoint_only
-    failure_signals:
-      - no_match
-    durable_identity: a3-identity
-    expected:
-      primary_failure_type: resolution_failure
-      primary_failure_member: no_match
-      secondary_failure_members: []
-      fallback_action: repeat_current_checkpoint
-      prompt_mode: reask_confirm_plan_package
-      retry_policy: allow_retry_after_user_input
-      reason_code: recovery.resolution_failure.inspect_required.confirm_plan_package
-      unresolved_outcome_family: inspect_required
-      counts_toward_streak: true
-      effective_allowed_response_mode: checkpoint_only
-      streak_key:
-        - a3-plan-referent
-        - inspect_required
-        - a3-identity
   - case_id: A-4_cancel_checkpoint_idempotent
     checkpoint_id: a4-cancel-checkpoint
     required_host_action: confirm_execute
