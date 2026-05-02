@@ -92,7 +92,7 @@
   - 测试同步范围：每个子波各自同步涉及的断言；`test_runtime_router.py`(52) 主要受 2d 影响
   - Contract YAML：当前 `decision_tables.yaml` 和 `failure_recovery_table.yaml` 对 Wave 2 三个目标引用为 0（已审计）
   - 精确审计原则：2d 启动前区分 route_name literal/comparison/dispatch/persisted contract vs 变量名/注释/概念词，不把后者算进工作量
-- **Wave 2 proof 绑定 2d 完成态**：`consult` route 的 Protocol → Validator → Receipt proof 作为 Wave 2 的验收项；要求输出包含 `route_family=consult`
+- **Wave 2 proof 绑定 2d 完成态**：`consult` route 的 Protocol → Validator → Receipt proof 作为 Wave 2 的验收项；要求输出包含 `handoff_kind=consult`
   - Proof 前置断言：`consult` 不经过 `plan_proposal` / `execution_confirm` 路径（已验证：router 中 consult 走 `_is_consultation` → `route_name="consult"`，不触发 plan_proposal / execution_confirm 分支）
 - **Wave 2 验收标准**：新链路和 prompt 只消费 family/canonical action，不是"源码里看不到旧 route 字符串"
 - **Wave 3a** 先单拆 `plan_proposal`：目标是一并折叠 `current_plan_proposal.json`、`confirm_plan_package`、`plan_proposal_pending`

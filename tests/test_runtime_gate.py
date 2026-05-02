@@ -1935,6 +1935,29 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertEqual(resumed["runtime"]["route_name"], "resume_active")
             self.assertEqual(resumed["handoff"]["required_host_action"], "continue_host_develop")
 
+    def test_consult_route_produces_canonical_contract(self) -> None:
+        """Wave 2 consult proof (4e): modern-host consult via ActionProposal."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            result = enter_runtime_gate(
+                "这个模块的职责边界是什么？",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal_json='{"action_type":"consult_readonly"}',
+            )
+
+            self.assertEqual(result["status"], "ready")
+            self.assertTrue(result["gate_passed"])
+            self.assertEqual(result["runtime"]["route_name"], "consult")
+            self.assertEqual(result["handoff"]["required_host_action"], "continue_host_consult")
+            self.assertEqual(result["handoff"]["handoff_kind"], "consult")
+            self.assertTrue(result["evidence"]["current_request_produced_handoff"])
+            self.assertTrue(Path(result["receipt_path"]).exists())
+
     def test_gate_surfaces_trigger_evidence_for_protected_plan_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
