@@ -39,7 +39,6 @@ ARCHIVE_BLOCKING_HOST_ACTIONS = frozenset(
     {
         "answer_questions",
         "confirm_decision",
-        "confirm_execute",
         "resolve_state_conflict",
     }
 )

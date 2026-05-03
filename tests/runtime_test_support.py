@@ -184,7 +184,7 @@ def _prepare_ready_plan_state(
         workspace,
         plan_artifact,
         scope_lines=("runtime/router.py, runtime/engine.py", f"runtime/router.py, runtime/engine.py, {DEFAULT_RUNTIME_WORKFLOW_TEST_FILE}"),
-        risk_lines=("需要确保执行前确认不会误触发 develop", "统一通过 execution_confirm_pending 与 gate ready 再进入执行"),
+        risk_lines=("需要确保执行前确认不会误触发 develop", "gate ready 后直接进入 develop_pending 阶段"),
     )
     gate = evaluate_execution_gate(
         decision=RouteDecision(
@@ -220,8 +220,7 @@ def _prepare_ready_plan_state(
 
 def _enter_active_develop_context(workspace: Path) -> None:
     _prepare_ready_plan_state(workspace)
-    run_runtime("~go exec", workspace_root=workspace, user_home=workspace / "home")
-    result = run_runtime("开始", workspace_root=workspace, user_home=workspace / "home")
+    result = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home")
     assert result.handoff is not None
     assert result.handoff.required_host_action == "continue_host_develop"
 

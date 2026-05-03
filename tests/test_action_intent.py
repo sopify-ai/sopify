@@ -67,7 +67,7 @@ class ActionValidatorTests(unittest.TestCase):
 
     def test_consult_readonly_none_with_checkpoint(self) -> None:
         """Checkpoint 上方 consult 共存 — checkpoint pending 时仍可 consult。"""
-        ctx = ValidationContext(checkpoint_kind="confirm_execute")
+        ctx = ValidationContext(checkpoint_kind="confirm_decision")
         proposal = ActionProposal("consult_readonly", "none", "high")
         result = self.validator.validate(proposal, ctx)
         self.assertEqual(result.decision, DECISION_AUTHORIZE)
@@ -378,7 +378,6 @@ class SideEffectMappingRowOrderingTests(unittest.TestCase):
         actions = [r["resolved_action"] for r in self.rows]
         ordered = [
             "switch_to_consult_readonly",
-            "continue_checkpoint_confirmation",
         ]
         self.assertEqual(actions, ordered)
 
@@ -413,14 +412,18 @@ def _build_duplicate_row_yaml() -> str:
     from runtime.decision_tables import DEFAULT_DECISION_TABLES_PATH
 
     original = DEFAULT_DECISION_TABLES_PATH.read_text(encoding="utf-8")
-    # Find the first row block and duplicate it.
     marker = "    - resolved_action: switch_to_consult_readonly\n"
     first_pos = original.index(marker)
-    # Find where the next row starts (next "    - resolved_action:")
-    next_row_pos = original.index("    - resolved_action:", first_pos + len(marker))
-    first_row_block = original[first_pos:next_row_pos]
-    # Insert duplicate right after the first row.
-    return original[:next_row_pos] + first_row_block + original[next_row_pos:]
+    # Find where this row block ends: next line not indented by 6+ spaces.
+    end_pos = first_pos + len(marker)
+    while end_pos < len(original):
+        line_end = original.index("\n", end_pos) + 1 if "\n" in original[end_pos:] else len(original)
+        line = original[end_pos:line_end]
+        if line.strip() and not line.startswith("      "):
+            break
+        end_pos = line_end
+    first_row_block = original[first_pos:end_pos]
+    return original[:end_pos] + first_row_block + original[end_pos:]
 
 
 # ---------------------------------------------------------------------------

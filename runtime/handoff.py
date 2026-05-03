@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from hashlib import sha1
 import json
 from pathlib import Path
+import re
 from tempfile import NamedTemporaryFile
 from typing import Any, Mapping, Sequence
 
@@ -13,7 +14,6 @@ from .checkpoint_request import (
     CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED,
     checkpoint_request_from_clarification_state,
     checkpoint_request_from_decision_state,
-    checkpoint_request_from_execution_confirm,
     normalize_checkpoint_request,
 )
 from .action_projection import ActionProjectionError, build_action_projection, supports_action_projection
@@ -27,7 +27,6 @@ from .develop_quality import build_develop_quality_contract, carry_forward_devel
 from .decision_policy import has_tradeoff_checkpoint_signal
 from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .entry_guard import build_entry_guard_contract
-from .execution_confirm import build_execution_summary
 
 from .resolution_planner import (
     ResolutionPlannerError,
@@ -44,7 +43,7 @@ from .vnext_phase_boundary import (
     build_vnext_phase_boundary,
     supports_vnext_phase_boundary,
 )
-from .models import KbArtifact, PlanArtifact, RecoveredContext, RouteDecision, RunState, RuntimeConfig, RuntimeHandoff
+from .models import ExecutionSummary, KbArtifact, PlanArtifact, RecoveredContext, RouteDecision, RunState, RuntimeConfig, RuntimeHandoff
 
 HANDOFF_SCHEMA_VERSION = "1"
 CURRENT_HANDOFF_FILENAME = "current_handoff.json"
@@ -72,8 +71,6 @@ _ROUTE_HANDOFF_KIND = {
     # decision family
     "decision_pending": "decision",
     "decision_resume": "decision",
-    # Wave 3a/3b — not converged in 2d
-    "execution_confirm_pending": "execution_confirm",
     # non-family surface
     "state_conflict": "state_conflict",
 }
@@ -81,8 +78,9 @@ _ROUTE_HANDOFF_KIND = {
 _STATE_CONFLICT_ABORT_RESUME_ACTIONS = {
     "clarification_pending": "answer_questions",
     "decision_pending": "confirm_decision",
-    "ready_for_execution": "confirm_execute",
-    "execution_confirm_pending": "confirm_execute",
+    # Wave 3b: ready_for_execution exits pending-checkpoint negotiation surface,
+    # gate ready routes directly to develop.
+    "ready_for_execution": "continue_host_develop",
     "develop_pending": "continue_host_develop",
     "executing": "continue_host_develop",
 }
@@ -217,8 +215,6 @@ def _required_host_action(
 ) -> str:
     route_name = decision.route_name
     if route_name == "plan_only":
-        if _should_use_execution_confirm_handoff(current_run):
-            return "confirm_execute"
         return "review_or_execute_plan"
     if route_name in {"workflow", "light_iterate"}:
         return "continue_host_develop"
@@ -226,10 +222,6 @@ def _required_host_action(
         return "continue_host_consult"
     if route_name in {"clarification_pending", "clarification_resume"}:
         return "answer_questions"
-    if route_name == "execution_confirm_pending":
-        if decision.active_run_action == "revise_execution":
-            return "review_or_execute_plan"
-        return "confirm_execute"
     if route_name in {"resume_active", "exec_plan"}:
         return "continue_host_develop"
     if route_name == "quick_fix":
@@ -247,12 +239,6 @@ def _required_host_action(
     if route_name == "consult" or route_name == "replay":
         return "continue_host_consult"
     return "continue_host_develop"
-
-
-def _should_use_execution_confirm_handoff(current_run: RunState | None) -> bool:
-    if current_run is None:
-        return False
-    return str(current_run.stage or "").strip() in {"ready_for_execution", "execution_confirm_pending"}
 
 
 def _collect_handoff_artifacts(
@@ -420,14 +406,6 @@ def _collect_handoff_artifacts(
             resume_context=getattr(current_decision, "resume_context", None),
             phase=getattr(current_decision, "phase", None),
         )
-    elif required_host_action == "confirm_execute" and current_plan is not None and execution_summary_payload is not None:
-        artifacts["checkpoint_request"] = checkpoint_request_from_execution_confirm(
-            config=config,
-            decision=decision,
-            current_plan=current_plan,
-        ).to_dict()
-    if decision.route_name == "execution_confirm_pending" and decision.active_run_action == "revise_execution":
-        artifacts["execution_feedback"] = decision.request_text.strip()
     # Archive lifecycle is a terminal receipt surface — it expresses results
     # via archive_lifecycle artifact + archive_receipt_status, not via the
     # consult guard/projection surface it borrows as transport label.
@@ -485,14 +463,76 @@ def _attach_resume_context_artifacts(
 
 
 def _should_attach_execution_summary(*, decision: RouteDecision, current_run: RunState | None) -> bool:
-    if decision.route_name == "execution_confirm_pending":
-        return True
     if current_run is None:
         return False
-    if current_run.stage in {"ready_for_execution", "execution_confirm_pending", "executing"}:
+    if current_run.stage in {"ready_for_execution", "executing"}:
         return True
     execution_gate = current_run.execution_gate
     return execution_gate is not None and execution_gate.gate_status == "ready"
+
+
+# ── Plan execution summary helpers (migrated from execution_confirm.py, Wave 3b) ──
+
+_TASK_RE = re.compile(r"^- \[(?: |x|!|-)\]\s+", re.MULTILINE)
+_RISK_LEVEL_KEYWORDS = {
+    "high": ("认证", "授权", "auth", "schema", "migration", "删除", "drop", "truncate", "权限"),
+    "medium": ("边界", "兼容", "回滚", "rollback", "范围", "scope", "tradeoff", "trade-off"),
+}
+
+
+def build_execution_summary(*, plan_artifact: PlanArtifact, config: RuntimeConfig) -> ExecutionSummary:
+    """Build the minimum plan summary required before execution."""
+    plan_dir = config.workspace_root / plan_artifact.path
+    task_text = _read_first_existing(plan_dir, "tasks.md", "plan.md")
+    risk_text = _read_first_existing(plan_dir, "background.md", "plan.md", "design.md")
+
+    key_risk = _extract_prefixed_line(risk_text, "- 风险:", "- Risk:") or _default_risk(config.language)
+    mitigation = _extract_prefixed_line(risk_text, "- 缓解:", "- Mitigation:") or _default_mitigation(config.language)
+    return ExecutionSummary(
+        plan_path=plan_artifact.path,
+        summary=plan_artifact.summary,
+        task_count=len(_TASK_RE.findall(task_text)),
+        risk_level=_infer_risk_level(key_risk, mitigation),
+        key_risk=key_risk,
+        mitigation=mitigation,
+    )
+
+
+def _read_first_existing(plan_dir: Path, *filenames: str) -> str:
+    for filename in filenames:
+        candidate = plan_dir / filename
+        if candidate.exists() and candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    return ""
+
+
+def _extract_prefixed_line(text: str, *prefixes: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        for prefix in prefixes:
+            if stripped.casefold().startswith(prefix.casefold()):
+                return stripped[len(prefix) :].strip()
+    return ""
+
+
+def _infer_risk_level(key_risk: str, mitigation: str) -> str:
+    aggregate_text = f"{key_risk}\n{mitigation}".casefold()
+    for level, keywords in _RISK_LEVEL_KEYWORDS.items():
+        if any(keyword.casefold() in aggregate_text for keyword in keywords):
+            return level
+    return "low"
+
+
+def _default_risk(language: str) -> str:
+    if language == "en-US":
+        return "No standalone risk was recorded; execution should still stay within the documented scope."
+    return "当前未单独记录额外风险，执行时仍需严格约束在已确认范围内。"
+
+
+def _default_mitigation(language: str) -> str:
+    if language == "en-US":
+        return "Keep the change minimal, re-check the file scope, and finish with focused verification."
+    return "保持最小改动，复核文件范围，并在收口前完成针对性验证。"
 
 
 def _attach_v1_guardrail_artifacts(

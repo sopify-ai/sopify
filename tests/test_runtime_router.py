@@ -333,25 +333,7 @@ class RouterTests(unittest.TestCase):
             self.assertEqual(route.route_name, "light_iterate")
             self.assertNotIn("meta-debug", route.reason)
 
-    def test_ready_plan_routes_continue_and_exec_into_execution_confirm(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config, store, _ = _prepare_ready_plan_state(workspace)
-            router = Router(config, state_store=store)
-            skills = SkillRegistry(config, user_home=workspace / "home").discover()
-
-            continue_route = router.classify("继续", skills=skills)
-            exec_route = router.classify("~go exec", skills=skills)
-            revise_route = router.classify("先把风险部分再展开一点", skills=skills)
-
-            self.assertEqual(continue_route.route_name, "execution_confirm_pending")
-            self.assertEqual(continue_route.active_run_action, "confirm_execution")
-            self.assertEqual(exec_route.route_name, "execution_confirm_pending")
-            self.assertEqual(exec_route.active_run_action, "inspect_execution_confirm")
-            self.assertEqual(revise_route.route_name, "execution_confirm_pending")
-            self.assertEqual(revise_route.active_run_action, "revise_execution")
-
-    def test_ready_plan_does_not_hijack_unrelated_requests_into_execution_confirm(self) -> None:
+    def test_ready_plan_does_not_hijack_unrelated_requests(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             config, store, _ = _prepare_ready_plan_state(workspace)
@@ -359,7 +341,7 @@ class RouterTests(unittest.TestCase):
             skills = SkillRegistry(config, user_home=workspace / "home").discover()
 
             quick_fix_route = router.classify("修改 README 里的 helper 路径说明", skills=skills)
-            consult_route = router.classify("解释一下 execution_confirm_pending 和 decision_pending 的区别", skills=skills)
+            consult_route = router.classify("解释一下 decision_pending 和 clarification_pending 的区别", skills=skills)
 
             self.assertEqual(quick_fix_route.route_name, "quick_fix")
             self.assertIsNone(quick_fix_route.active_run_action)

@@ -6,6 +6,103 @@ This changelog is maintained manually (not auto-generated).
 
 ## [Unreleased]
 
+## [2026-05-03.201958] - 2026-05-03
+
+### Docs
+
+- Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/deterministic_guard.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/execution_confirm.py`
+  - `runtime/execution_gate.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/router.py`
+  - `runtime/vnext_phase_boundary.py`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/runtime_test_support.py`
+  - `tests/test_action_intent.py`
+  - `tests/test_context_v1_scope.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_execution_gate.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_message_templates.py`
+  - `tests/test_runtime_router.py`
+
+### Changed
+
+- Updated project files:
+  - `CHANGELOG.md`
+
+## [2026-05-03.195008] - 2026-05-03
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/deterministic_guard.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/execution_confirm.py`
+  - `runtime/execution_gate.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/router.py`
+  - `runtime/vnext_phase_boundary.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/runtime_test_support.py`
+  - `tests/test_action_intent.py`
+  - `tests/test_context_v1_scope.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_execution_gate.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_message_templates.py`
+  - `tests/test_runtime_router.py`
+
 ## [2026-05-02.234429] - 2026-05-02
 
 ### Docs

@@ -10,7 +10,6 @@ from .clarification import has_submitted_clarification, parse_clarification_resp
 from .context_snapshot import ContextResolvedSnapshot, resolve_context_snapshot, snapshot_state_conflict_artifacts
 from .decision import has_submitted_decision, parse_decision_response
 from .entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
-from .execution_confirm import parse_execution_confirm_response
 from .plan_scaffold import find_plan_by_request_reference, request_explicitly_wants_new_plan
 from .models import ClarificationState, DecisionState, RouteDecision, RuntimeConfig, SkillMeta
 from .skill_resolver import resolve_route_candidate_skills, resolve_runtime_skill_id
@@ -29,7 +28,6 @@ SUPPORTED_ROUTE_NAMES = (
     "quick_fix",
     "clarification_pending",
     "clarification_resume",
-    "execution_confirm_pending",
     "resume_active",
     "exec_plan",
     "cancel_active",
@@ -184,16 +182,6 @@ _EXPLICIT_PLAN_PACKAGE_PATTERNS = (
     re.compile(r"(写到|写入|落到).*(\.sopify-skills/plan/)", re.IGNORECASE),
     re.compile(r"(create|write).*(plan package|background\.md|design\.md|tasks\.md)", re.IGNORECASE),
 )
-_EXECUTION_CONFIRM_PLAN_FEEDBACK_PATTERNS = (
-    re.compile(r"(这个|当前|该)\s*(plan|方案)", re.IGNORECASE),
-    re.compile(r"(风险|任务|范围|scope|task|plan|方案).*(展开|补充|调整|更新|修改|review|评审|重写|再收口)", re.IGNORECASE),
-    re.compile(r"(写进|写入|挂到|并入|回到).*(plan|方案)", re.IGNORECASE),
-)
-_EXECUTION_CONFIRM_REVISION_PATTERNS = (
-    re.compile(r"(先把|先将|先).*(风险|任务|范围|scope|task|plan|方案)", re.IGNORECASE),
-    re.compile(r"(展开一点|补充一下|再展开|再补充|再收口|再评审)", re.IGNORECASE),
-    re.compile(r"(风险|任务|范围|scope|task|plan|方案).*(更具体|更清楚|再具体一点|再细一点)", re.IGNORECASE),
-)
 _LIGHT_EDIT_HINTS = ("readme", "注释", "comment", "typo", "文案", "assert", "断言", "路径说明")
 @dataclass(frozen=True)
 class _ComplexitySignal:
@@ -330,17 +318,6 @@ class Router:
                 },
             )
 
-
-        if execution_active_run is not None and execution_current_plan is not None:
-            pending_execution_confirm = _classify_pending_execution_confirm(
-                text,
-                active_run_stage=execution_active_run.stage,
-                current_plan=execution_current_plan,
-                command_decision=command_decision,
-                skills=skills,
-            )
-            if pending_execution_confirm is not None:
-                return self._with_capture(pending_execution_confirm)
 
         if command_decision is not None:
             return self._with_capture(command_decision)
@@ -708,66 +685,6 @@ def _classify_pending_clarification(
     )
 
 
-def _classify_pending_execution_confirm(
-    text: str,
-    *,
-    active_run_stage: str,
-    current_plan,
-    command_decision: RouteDecision | None,
-    skills: Iterable[SkillMeta],
-) -> RouteDecision | None:
-    if active_run_stage not in {"ready_for_execution", "execution_confirm_pending"}:
-        return None
-
-    if command_decision is not None:
-        if command_decision.route_name in {"plan_only", "workflow", "light_iterate"}:
-            return None
-        if command_decision.route_name == "exec_plan":
-            return RouteDecision(
-                route_name="execution_confirm_pending",
-                request_text=text,
-                reason="Execution confirmation is still required before develop can start",
-                complexity="medium",
-                should_recover_context=True,
-                candidate_skill_ids=_candidate_skills("execution_confirm_pending", skills, "develop"),
-                active_run_action="inspect_execution_confirm",
-            )
-
-    if not _looks_like_execution_confirm_feedback(text, current_plan=current_plan):
-        return None
-
-    response = parse_execution_confirm_response(text)
-    if response.action == "cancel":
-        return RouteDecision(
-            route_name="cancel_active",
-            request_text=text,
-            reason="Execution confirmation cancelled by user",
-            complexity="simple",
-            should_recover_context=True,
-            active_run_action="cancel",
-        )
-
-    action_to_reason = {
-        "confirm": "Matched a natural-language execution confirmation reply",
-        "status": "Execution confirmation is still waiting for user confirmation",
-        "revise": "Received plan feedback before execution confirmation",
-        "invalid": response.message or "Execution confirmation still requires a valid reply",
-    }
-    action_to_active_run_action = {
-        "confirm": "confirm_execution",
-        "status": "inspect_execution_confirm",
-        "revise": "revise_execution",
-        "invalid": "inspect_execution_confirm",
-    }
-    return RouteDecision(
-        route_name="execution_confirm_pending",
-        request_text=text,
-        reason=action_to_reason.get(response.action, "Execution confirmation is still pending"),
-        complexity="medium",
-        should_recover_context=True,
-        candidate_skill_ids=_candidate_skills("execution_confirm_pending", skills, "develop"),
-        active_run_action=action_to_active_run_action.get(response.action, "inspect_execution_confirm"),
-    )
 
 
 def _estimate_complexity(text: str) -> _ComplexitySignal:
@@ -917,33 +834,6 @@ def _split_active_plan_review_fragments(text: str) -> tuple[str, ...]:
     return tuple(fragments)
 
 
-
-def _looks_like_execution_confirm_feedback(text: str, *, current_plan) -> bool:
-    normalized = text.strip()
-    if not normalized:
-        return False
-
-    response = parse_execution_confirm_response(normalized)
-    if response.action in {"confirm", "status", "cancel"}:
-        return True
-
-    if _is_consultation(normalized):
-        return False
-
-    if any(pattern.search(normalized) is not None for pattern in _EXECUTION_CONFIRM_PLAN_FEEDBACK_PATTERNS):
-        return True
-    if any(pattern.search(normalized) is not None for pattern in _EXECUTION_CONFIRM_REVISION_PATTERNS):
-        return True
-
-    if current_plan is None:
-        return False
-
-    lowered = normalized.casefold()
-    for anchor in (getattr(current_plan, "plan_id", ""), getattr(current_plan, "path", ""), getattr(current_plan, "title", "")):
-        candidate = str(anchor or "").strip().casefold()
-        if candidate and candidate in lowered:
-            return True
-    return False
 
 
 def _contains_intent(text: str, keywords: Iterable[str]) -> bool:

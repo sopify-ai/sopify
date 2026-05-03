@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from tests.runtime_test_support import *
-from runtime.engine import _advance_planning_route, _handle_execution_confirm
+from runtime.engine import _advance_planning_route
 
 
 _FRONT_MATTER_RE = re.compile(r"\A---\n(?P<front>.*?)\n---\n", re.DOTALL)
@@ -201,37 +201,6 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(result.recovered_context.current_run.execution_gate.blocking_reason, "missing_info")
             self.assertIsNone(result.handoff)
 
-    def test_ready_plan_enters_execution_confirm_flow_before_develop(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            _prepare_ready_plan_state(workspace)
-
-            result = run_runtime("~go exec", workspace_root=workspace, user_home=workspace / "home")
-
-            self.assertEqual(result.route.route_name, "execution_confirm_pending")
-            self.assertEqual(result.recovered_context.current_run.stage, "execution_confirm_pending")
-            self.assertEqual(result.handoff.required_host_action, "confirm_execute")
-            summary = result.handoff.artifacts["execution_summary"]
-            v1_stats = result.handoff.observability["v1_stats"]
-            self.assertEqual(summary["plan_path"], result.recovered_context.current_plan.path)
-            self.assertEqual(summary["task_count"], 5)
-            self.assertIn("执行前确认", summary["key_risk"])
-            self.assertIn("execution_confirm_pending", summary["mitigation"])
-            self.assertEqual(v1_stats["reason_code"], "guard.checkpoint.stable.confirm_execute")
-            self.assertEqual(v1_stats["outcome"], "ready")
-            self.assertEqual(v1_stats["fallback_path"], "repeat_current_checkpoint")
-            self.assertEqual(v1_stats["checkpoint_kind"], "confirm_execute")
-            rendered = render_runtime_output(
-                result,
-                brand="demo-ai",
-                language="zh-CN",
-                title_color="none",
-                use_color=False,
-            )
-            self.assertIn("任务数: 5", rendered)
-            self.assertIn("关键风险:", rendered)
-            self.assertIn("Next: 回复 继续 / next / 开始 确认执行", rendered)
-
     def test_session_review_plan_promotes_to_global_execution_truth_on_exec(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -246,9 +215,8 @@ class EngineIntegrationTests(unittest.TestCase):
 
             global_store = StateStore(config)
             global_run = global_store.get_current_run()
-            self.assertEqual(result.route.route_name, "execution_confirm_pending")
+            self.assertIn(result.route.route_name, {"exec_plan", "resume_active"})
             self.assertIsNotNone(global_store.get_current_plan())
-            self.assertIsNotNone(global_run)
             self.assertEqual(global_run.owner_session_id, "session-a")
             self.assertEqual(global_run.owner_host, "runtime")
             self.assertEqual(global_run.owner_run_id, global_run.run_id)
@@ -280,7 +248,7 @@ class EngineIntegrationTests(unittest.TestCase):
             )
 
             global_run = global_store.get_current_run()
-            self.assertEqual(result.route.route_name, "execution_confirm_pending")
+            self.assertIn(result.route.route_name, {"exec_plan", "resume_active"})
             self.assertTrue(any("Soft ownership warning" in note for note in result.notes))
             self.assertIsNotNone(global_run)
             self.assertEqual(global_run.owner_session_id, "session-b")
@@ -698,7 +666,7 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(cleared.route.active_run_action, "abort_conflict")
             self.assertFalse(cleared.recovered_context.state_conflict)
             self.assertIsNotNone(current_run)
-            self.assertEqual(current_run.stage, "executing")
+            self.assertEqual(current_run.stage, "develop_pending")
             self.assertIsNotNone(restored_handoff)
             self.assertEqual(restored_handoff.required_host_action, "continue_host_develop")
 
@@ -795,98 +763,22 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(surviving_decision.phase, "develop")
             self.assertEqual(surviving_decision.selected_option_id, "option_1")
 
-    def test_natural_language_execution_confirmation_starts_executing(self) -> None:
+    def test_natural_language_exec_starts_executing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             _prepare_ready_plan_state(workspace)
-            run_runtime("~go exec", workspace_root=workspace, user_home=workspace / "home")
 
-            result = run_runtime("开始", workspace_root=workspace, user_home=workspace / "home")
+            result = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home")
 
             self.assertEqual(result.route.route_name, "resume_active")
-            self.assertEqual(result.recovered_context.current_run.stage, "executing")
+            self.assertEqual(result.recovered_context.current_run.stage, "develop_pending")
             self.assertEqual(result.handoff.required_host_action, "continue_host_develop")
             self.assertEqual(
                 result.handoff.artifacts["develop_quality_contract"]["verification_discovery_order"],
                 ["project_contract", "project_native", "not_configured"],
             )
 
-    def test_execution_confirm_helper_uses_explicit_confirmed_decision_context(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config, store, plan_artifact = _prepare_ready_plan_state(workspace)
-            _rewrite_background_scope(
-                workspace,
-                plan_artifact,
-                scope_lines=("runtime/router.py, runtime/engine.py", "runtime/router.py, runtime/engine.py"),
-                risk_lines=("范围取舍仍待拍板", "继续推进前需要先明确最终选项"),
-            )
-
-            current_run = store.get_current_run()
-            self.assertIsNotNone(current_run)
-            gate = evaluate_execution_gate(
-                decision=RouteDecision(
-                    route_name="resume_active",
-                    request_text="开始",
-                    reason="test",
-                    complexity="medium",
-                    candidate_skill_ids=("develop",),
-                ),
-                plan_artifact=plan_artifact,
-                current_clarification=None,
-                current_decision=None,
-                config=config,
-            )
-            self.assertEqual(gate.gate_status, "decision_required")
-            self.assertEqual(gate.blocking_reason, "scope_tradeoff")
-
-            pending_decision = build_execution_gate_decision_state(
-                RouteDecision(
-                    route_name="resume_active",
-                    request_text="开始",
-                    reason="test",
-                    complexity="medium",
-                    candidate_skill_ids=("develop",),
-                ),
-                gate=gate,
-                current_plan=plan_artifact,
-                config=config,
-            )
-            self.assertIsNotNone(pending_decision)
-            confirmed = confirm_decision(
-                pending_decision,
-                option_id=pending_decision.options[0].option_id,
-                source="text",
-                raw_input="1",
-            )
-
-            routed, routed_plan, notes = _handle_execution_confirm(
-                RouteDecision(
-                    route_name="execution_confirm_pending",
-                    request_text="开始",
-                    reason="test",
-                    complexity="medium",
-                    should_recover_context=True,
-                    candidate_skill_ids=("develop",),
-                    active_run_action="confirm_execution",
-                ),
-                state_store=store,
-                current_plan=plan_artifact,
-                current_run=current_run,
-                current_clarification=None,
-                current_decision=confirmed,
-                config=config,
-                session_id=None,
-            )
-
-            self.assertEqual(routed.route_name, "resume_active")
-            self.assertIsNotNone(routed_plan)
-            self.assertEqual(routed_plan.plan_id, plan_artifact.plan_id)
-            self.assertEqual(store.get_current_run().stage, "executing")
-            self.assertIsNone(store.get_current_decision())
-            self.assertTrue(any("Execution confirmed by user" in note for note in notes))
-
-    def test_execution_confirm_surfaces_new_gate_decision_in_same_round_result_context(self) -> None:
+    def test_exec_surfaces_new_gate_decision_in_same_round_result_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             _prepare_ready_plan_state(workspace)
@@ -1545,42 +1437,6 @@ class EngineIntegrationTests(unittest.TestCase):
             )
 
             self.assertFalse((state_root / "current_clarification.json").exists())
-
-    def test_ready_plan_with_residual_review_checkpoint_enters_execution_confirm_conflict(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config, store, _ = _prepare_ready_plan_state(workspace)
-            store.set_current_clarification(
-                ClarificationState(
-                    clarification_id="clarify-1",
-                    feature_key="runtime",
-                    phase="analyze",
-                    status="pending",
-                    summary="pending clarification",
-                    questions=("q1",),
-                    missing_facts=("scope",),
-                    created_at=iso_now(),
-                    updated_at=iso_now(),
-                )
-            )
-
-            conflicted = run_runtime("status", workspace_root=workspace, user_home=workspace / "home")
-
-            self.assertEqual(conflicted.route.route_name, "state_conflict")
-            self.assertEqual(conflicted.handoff.required_host_action, "resolve_state_conflict")
-            self.assertEqual(conflicted.recovered_context.state_conflict["code"], "execution_confirm_review_checkpoint_conflict")
-
-    def test_execution_confirmation_feedback_routes_back_to_plan_review(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            _prepare_ready_plan_state(workspace)
-
-            result = run_runtime("风险描述再具体一点", workspace_root=workspace, user_home=workspace / "home")
-
-            self.assertEqual(result.route.route_name, "execution_confirm_pending")
-            self.assertEqual(result.recovered_context.current_run.stage, "execution_confirm_pending")
-            self.assertEqual(result.handoff.required_host_action, "review_or_execute_plan")
-            self.assertEqual(result.handoff.artifacts["execution_feedback"], "风险描述再具体一点")
 
     def test_engine_handles_plan_resume_and_cancel(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2292,11 +2148,7 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(resumed.plan_artifact.path, plan_artifact.path)
             self.assertEqual(resumed.recovered_context.current_run.stage, "ready_for_execution")
             self.assertEqual(resumed.recovered_context.current_run.execution_gate.gate_status, "ready")
-            self.assertEqual(resumed.handoff.required_host_action, "confirm_execute")
-            self.assertEqual(
-                resumed.handoff.artifacts["checkpoint_request"]["checkpoint_kind"],
-                "execution_confirm",
-            )
+            self.assertEqual(resumed.handoff.required_host_action, "review_or_execute_plan")
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
 
     def test_engine_handoff_contracts_cover_replay(self) -> None:
@@ -2782,7 +2634,6 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((bundle_root / "runtime" / "clarification_bridge.py").exists())
             self.assertTrue((bundle_root / "runtime" / "cli_interactive.py").exists())
             self.assertTrue((bundle_root / "runtime" / "develop_callback.py").exists())
-            self.assertTrue((bundle_root / "runtime" / "execution_confirm.py").exists())
             self.assertTrue((bundle_root / "runtime" / "decision_bridge.py").exists())
             self.assertTrue((bundle_root / "runtime" / "gate.py").exists())
             self.assertTrue((bundle_root / "runtime" / "workspace_preflight.py").exists())
@@ -2886,11 +2737,9 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIn("plan_only", manifest["limits"]["host_required_routes"])
             self.assertIn("clarification_pending", manifest["limits"]["host_required_routes"])
             self.assertIn("clarification_resume", manifest["limits"]["host_required_routes"])
-            self.assertIn("execution_confirm_pending", manifest["limits"]["host_required_routes"])
             self.assertIn("decision_pending", manifest["limits"]["host_required_routes"])
             self.assertTrue(manifest["limits"]["entry_guard"]["strict_runtime_entry"])
             self.assertEqual(manifest["limits"]["entry_guard"]["default_runtime_entry"], "scripts/sopify_runtime.py")
-            self.assertIn("confirm_execute", manifest["limits"]["entry_guard"]["pending_checkpoint_actions"])
             self.assertIn("~go exec", manifest["limits"]["entry_guard"]["bypass_blocked_commands"])
             self.assertEqual(manifest["limits"]["session_state"]["review_scope"], "session")
             self.assertEqual(manifest["limits"]["session_state"]["execution_scope"], "global")
@@ -3171,22 +3020,6 @@ class EngineIntegrationTests(unittest.TestCase):
             helper_script = target_root / ".sopify-runtime" / "scripts" / "develop_callback_runtime.py"
 
             _prepare_ready_plan_state(workspace)
-            exec_pending = subprocess.run(
-                [
-                    sys.executable,
-                    str(runtime_script),
-                    "--allow-direct-entry",
-                    "--workspace-root",
-                    str(workspace),
-                    "--no-color",
-                    "~go",
-                    "exec",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertEqual(exec_pending.returncode, 0, msg=exec_pending.stderr)
             started = subprocess.run(
                 [
                     sys.executable,
@@ -3195,7 +3028,7 @@ class EngineIntegrationTests(unittest.TestCase):
                     "--workspace-root",
                     str(workspace),
                     "--no-color",
-                    "开始",
+                    "继续",
                 ],
                 capture_output=True,
                 text=True,

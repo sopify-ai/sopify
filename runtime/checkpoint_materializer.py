@@ -51,10 +51,10 @@ def materialize_checkpoint_request(
             required_host_action="confirm_decision",
             decision_state=_materialize_decision_state(request),
         )
-    return CheckpointMaterialization(
-        request=request,
-        required_host_action="confirm_execute",
-        execution_summary=request.execution_summary,
+    # Wave 3b: fail-close on unknown checkpoint kinds
+    raise ValueError(
+        f"Unsupported checkpoint kind {request.checkpoint_kind!r}; "
+        "only 'clarification' and 'decision' are valid materializations"
     )
 
 

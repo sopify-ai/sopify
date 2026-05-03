@@ -677,7 +677,7 @@ def _store_for_route(
     global_store = StateStore(config)
     session_store = StateStore(config, session_id=session_id)
 
-    if route_name in {"execution_confirm_pending", "resume_active", "exec_plan", "archive_lifecycle"}:
+    if route_name in {"resume_active", "exec_plan", "archive_lifecycle"}:
         return global_store
 
     runtime_handoff = getattr(runtime_result, "handoff", None)

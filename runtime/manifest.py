@@ -179,7 +179,6 @@ def build_bundle_manifest(
                 "quick_fix",
                 "clarification_pending",
                 "clarification_resume",
-                "execution_confirm_pending",
                 "resume_active",
                 "exec_plan",
                 "decision_pending",
@@ -190,7 +189,6 @@ def build_bundle_manifest(
             "host_bridge_status": {
                 "develop": "required",
                 "develop_callback": "required",
-                "execution_confirm": "required",
                 "replay": "required",
             },
             "entry_guard": {

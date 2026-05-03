@@ -2,7 +2,7 @@
 
 The default runtime entry stays unchanged. This module only automates the
 planning-mode clarification/decision checkpoints and intentionally stops at
-stable handoff points such as `review_or_execute_plan` and `confirm_execute`.
+stable handoff points such as `review_or_execute_plan`.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from .workspace_preflight import WorkspacePreflightError, preflight_workspace_ru
 PLAN_ORCHESTRATOR_PENDING_EXIT = 2
 PLAN_ORCHESTRATOR_CANCELLED_EXIT = 3
 PLAN_ORCHESTRATOR_DEFAULT_MAX_LOOPS = 8
-_STABLE_HOST_ACTIONS = {"review_or_execute_plan", "confirm_execute"}
+_STABLE_HOST_ACTIONS = {"review_or_execute_plan"}
 _BRIDGED_HOST_ACTIONS = {"answer_questions", "confirm_decision"}
 
 PromptReader = Callable[[str], str]
@@ -118,7 +118,7 @@ def run_plan_loop(
         if handoff is None:
             exit_code = 0
             stop_reason = "no_handoff"
-            if result.route.route_name in {"clarification_pending", "decision_pending", "execution_confirm_pending"}:
+            if result.route.route_name in {"clarification_pending", "decision_pending"}:
                 exit_code = PLAN_ORCHESTRATOR_PENDING_EXIT
                 stop_reason = "missing_handoff_for_pending_checkpoint"
             return PlanOrchestratorResult(
@@ -141,7 +141,7 @@ def run_plan_loop(
 
         if host_action not in _BRIDGED_HOST_ACTIONS:
             exit_code = 0
-            if result.route.route_name not in {"plan_only", "workflow", "light_iterate", "execution_confirm_pending"}:
+            if result.route.route_name not in {"plan_only", "workflow", "light_iterate"}:
                 exit_code = PLAN_ORCHESTRATOR_PENDING_EXIT
             return PlanOrchestratorResult(
                 runtime_result=result,

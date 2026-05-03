@@ -74,7 +74,7 @@ def _prepare_ready_plan_state(
         workspace,
         plan_artifact,
         scope_lines=("runtime/gate.py, scripts/runtime_gate.py", "runtime/gate.py, scripts/runtime_gate.py, tests/test_runtime_gate.py"),
-        risk_lines=("需要确保执行前确认不会误触发 develop", "统一通过 execution_confirm_pending 与 gate ready 再进入执行"),
+        risk_lines=("需要确保执行前确认不会误触发 develop", "gate ready 后直接进入 develop_pending 阶段"),
     )
     gate = evaluate_execution_gate(
         decision=RouteDecision(
@@ -1762,23 +1762,6 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertEqual(result["handoff"]["entry_guard_reason_code"], "entry_guard_decision_pending")
             self.assertEqual(result["allowed_response_mode"], CHECKPOINT_ONLY)
 
-    def test_gate_maps_execution_confirm_pending_to_checkpoint_only(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            _prepare_ready_plan_state(workspace)
-
-            result = enter_runtime_gate(
-                "~go exec",
-                workspace_root=workspace,
-                user_home=workspace / "home",
-            )
-
-            self.assertEqual(result["status"], "ready")
-            self.assertEqual(result["runtime"]["route_name"], "execution_confirm_pending")
-            self.assertEqual(result["handoff"]["required_host_action"], "confirm_execute")
-            self.assertEqual(result["handoff"]["entry_guard_reason_code"], "entry_guard_execution_confirm_pending")
-            self.assertEqual(result["allowed_response_mode"], CHECKPOINT_ONLY)
-
     def test_gate_returns_ready_for_archive_completion_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -2497,7 +2480,6 @@ class RuntimeGateTests(unittest.TestCase):
         self.assertIn("protected_plan_asset_runtime_first", scenario_ids)
         self.assertIn("clarification_checkpoint_only", scenario_ids)
         self.assertIn("decision_checkpoint_only", scenario_ids)
-        self.assertIn("execution_confirm_checkpoint_only", scenario_ids)
         self.assertIn("fail_closed_missing_handoff", scenario_ids)
 
 

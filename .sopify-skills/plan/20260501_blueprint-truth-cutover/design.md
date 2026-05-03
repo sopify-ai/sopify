@@ -99,8 +99,27 @@
   - 测试同步范围：`test_context_v1_scope.py`(47)、`test_runtime_engine.py`(大量 plan_proposal 断言)、`test_runtime_sample_invariant_gate.py`(37)、`fixtures/context_fail_close_contract.yaml`(45)、`fixtures/sample_invariant_gate_matrix.yaml`(26)
   - Contract YAML：`decision_tables.yaml` 中 `confirm_plan_package` / `current_plan_proposal` 全部条目（~30+）
 - **Wave 3b** 再拆 `execution_confirm`：目标是一并折叠 `confirm_execute`、`execution_confirm_pending` 与相关 execution confirmation proof surface
-  - 测试同步范围：`test_runtime_engine.py`(剩余 execution_confirm 断言)、`test_runtime_decision.py`(部分)、`test_runtime_state.py`(17)、`fixtures/fail_close_case_matrix.yaml`(9)
-  - Contract YAML：`decision_tables.yaml` / `failure_recovery_table.yaml` 中 `confirm_execute` 全部条目
+  - **已确认决策口径**：
+    - hard cut，与 3a 完全对齐：不补 ExecutionAuthorizationReceipt，不建过渡层，不新增 action surface
+    - gate ready → `next_required_action = continue_host_develop`（复用已有 canonical action，不造新 `ready`/`proceed` 值）
+    - `ready_for_execution` stage 本波保留为内部 transitional truth，不纳入删除范围（否则扩大为状态面重构）
+    - `execution_confirm.py` 整删；`build_execution_summary` 搬到 `handoff.py` 作为 private helper（handoff 在 stage=ready_for_execution/executing 时仍附加 plan 摘要）
+    - legacy execution_confirm checkpoint request 不兼容，fail-close/quarantine；`checkpoint_materializer.py` 默认分支不再把未知 checkpoint 物化成 `confirm_execute`
+    - `~go plan` 不因删 confirm_execute 而误入 develop：`plan_orchestrator.py` 改为 plan_only 仍停在 `review_or_execute_plan`
+    - doctor/status pending_checkpoint 展示降级：不再借 `confirm_execute` 旧名义，改看 `current_run.stage` + `execution_gate.gate_status`
+  - **实施边界硬约束**：
+    - `ready_for_execution` 是 internal transitional stage，**不再属于 pending checkpoint negotiation surface**。禁止把 `continue_host_develop` 加入 `_PENDING_HOST_ACTIONS`——否则会把 develop handoff 错误协商化
+    - `build_execution_summary` 迁移到 `handoff.py` 必须与删除 `checkpoint_request_from_execution_confirm` + `handoff.py` 中该 producer 的调用点绑定为**同一原子改动**
+  - **实际影响面（精确审计）**：
+    - 整删：`runtime/execution_confirm.py`
+    - 主战场：`runtime/engine.py`（26 refs，含 `_handle_execution_confirm()` ~170 行 + `_execution_confirm_pending_route()` + 5 个 constant sets）
+    - 控制平面：`router.py`(19) + `checkpoint_request.py`(8) + `deterministic_guard.py`(5) + `plan_orchestrator.py`(4) + `entry_guard.py`(2) + `gate.py`(1) + `execution_gate.py`(1)
+    - 状态解析：`context_snapshot.py`（冲突函数 + 映射条目）
+    - 呈现层：`handoff.py`(16) + `output.py`(16) + `action_projection.py`(3)
+    - V1 guard-rail：`context_v1_scope.py`(2) + `vnext_phase_boundary.py`(1) + `action_intent.py`(1) + `checkpoint_materializer.py`(1) + `manifest.py`(2)
+  - 测试同步范围：`test_runtime_engine.py`(25) + `test_context_v1_scope.py`(47) + `test_installer_status_doctor.py`(9) + `test_runtime_router.py`(7) + `test_runtime_gate.py`(6) + `test_runtime_decision.py`(5) + `test_runtime_sample_invariant_gate.py`(4) + `test_runtime_message_templates.py`(4) + `test_runtime_failure_recovery.py`(3) + `test_runtime_decision_tables.py`(2) + `test_runtime_execution_gate.py`(1) + `test_action_intent.py`(1) + `runtime_test_support.py`(1)。全部 ADAPT（无纯 KILL）
+  - Fixture YAML：`context_fail_close_contract.yaml`(18) + `sample_invariant_gate_matrix.yaml`(7) + `fail_close_case_matrix.yaml`(6)
+  - Contract YAML：`decision_tables.yaml`(18) + `failure_recovery_table.yaml`(9)
 - 每一波都必须同步更新 `Codex/Skills/{CN,EN}/AGENTS.md`、`scripts/check-prompt-runtime-gate-smoke.py`、`scripts/sync-runtime-assets.sh` 等消费面；它们不是收尾附属品，而是 cutover 完成态的一部分
 
 ### Wave 2c 命名映射表

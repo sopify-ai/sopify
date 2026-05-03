@@ -15,26 +15,22 @@ _CHECKPOINT_ACTIONS = frozenset(
     {
         "answer_questions",
         "confirm_decision",
-        "confirm_execute",
     }
 )
 _CHECKPOINT_REQUEST_KIND_BY_ACTION = {
     "answer_questions": "clarification",
     "confirm_decision": "decision",
-    "confirm_execute": "execution_confirm",
 }
 _PLAN_REVIEW_STAGES = frozenset(
     {
         "plan_generated",
         "ready_for_execution",
-        "execution_confirm_pending",
         "develop_pending",
     }
 )
 _HOST_ACTION_ALLOWED_ACTIONS = {
     "answer_questions": ("answer", "inspect", "cancel"),
     "confirm_decision": ("choose", "status", "cancel"),
-    "confirm_execute": ("confirm", "inspect", "revise", "cancel"),
     "review_or_execute_plan": ("continue", "inspect", "revise", "cancel"),
     "continue_host_consult": ("consult", "block"),
     "continue_host_develop": ("continue", "checkpoint", "consult", "inspect", "block"),
@@ -42,7 +38,6 @@ _HOST_ACTION_ALLOWED_ACTIONS = {
 _HOST_ACTION_EXPECTED_RESPONSE_MODE = {
     "answer_questions": CHECKPOINT_ONLY,
     "confirm_decision": CHECKPOINT_ONLY,
-    "confirm_execute": CHECKPOINT_ONLY,
     "review_or_execute_plan": NORMAL_RUNTIME_FOLLOWUP,
     "continue_host_consult": NORMAL_RUNTIME_FOLLOWUP,
     "continue_host_develop": NORMAL_RUNTIME_FOLLOWUP,

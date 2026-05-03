@@ -207,7 +207,7 @@ host_support:
 1. 命中 `plan/design/develop/decision/checkpoint/handoff` 任一流程语义
 2. 命中 `~go/~go plan/~go exec/~go finalize/~compare` 任一命令语义
 3. 变更目标位于 `.sopify-skills/plan/*` 的结构化任务资产
-4. 任何 `required_host_action` 处于 pending 三态（`answer_questions/confirm_decision/confirm_execute`）
+4. 任何 `required_host_action` 处于 pending 二态（`answer_questions/confirm_decision`）
 
 ### 咨询问答边界
 

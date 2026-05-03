@@ -335,7 +335,7 @@ knowledge_sync:
 ### Runtime state scope
 
 - Review state 默认落在 `state/sessions/<session_id>/`，覆盖 `current_plan/current_run/current_handoff/current_clarification/current_decision/last_route`
-- 根级 `state/` 只承载 global execution truth（当前仍包含 `execution_confirm_pending / resume_active / exec_plan` 等 transitional 语义，将随 ExecutionAuthorizationReceipt 和 route 收敛逐步清理）
+- 根级 `state/` 只承载 global execution truth（当前仍包含 `resume_active / exec_plan` 等 transitional 语义，将随 route 收敛逐步清理；`execution_confirm_pending` 已在 Wave 3b 删除）
 - Archive lifecycle 只在归档主体等于当前 global `current_plan` 时清理对应执行状态
 - `session_id` 由宿主透传或 gate 自动生成；同一条 review 续轮必须复用同一个 `session_id`
 - 并发 review 使用不同 `session_id`；global truth 只补 soft ownership 观测字段

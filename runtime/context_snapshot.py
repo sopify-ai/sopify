@@ -25,12 +25,10 @@ from .state_invariants import is_supported_phase
 _NEGOTIATION_RUN_STAGE_ACTIONS = {
     "clarification_pending": "answer_questions",
     "decision_pending": "confirm_decision",
-    "ready_for_execution": "confirm_execute",
-    "execution_confirm_pending": "confirm_execute",
 }
 _DECISION_CONFLICT_STATUSES = {"pending", "collecting", "confirmed", "cancelled", "timed_out"}
 _CLARIFICATION_CONFLICT_STATUSES = {"pending", "collecting"}
-_PENDING_HOST_ACTIONS = {"answer_questions", "confirm_decision", "confirm_execute"}
+_PENDING_HOST_ACTIONS = {"answer_questions", "confirm_decision"}
 _PENDING_ACTION_EXPECTED_STATE_KINDS = {
     "answer_questions": {"current_clarification"},
     "confirm_decision": {"current_decision"},
@@ -227,17 +225,6 @@ def resolve_context_snapshot(
         review_decision=review_decision,
         global_decision=global_decision,
     )
-    execution_confirm_conflict = _execution_confirm_review_checkpoint_conflict(
-        active_pending_action=active_pending_action,
-        active_pending_store=active_pending_store,
-        active_pending_path=active_pending_path,
-        review_clarification=review_clarification,
-        review_decision=review_decision,
-        global_clarification=global_clarification,
-        global_decision=global_decision,
-    )
-    if not conflicts and execution_confirm_conflict is not None:
-        conflicts.append(execution_confirm_conflict)
     pending_mismatch = _pending_checkpoint_handoff_mismatch(
         active_pending_action=active_pending_action,
         active_pending_store=active_pending_store,
@@ -857,39 +844,6 @@ def _filter_pending_items_for_active_action(
         filtered.append((kind, path))
     return filtered
 
-
-def _execution_confirm_review_checkpoint_conflict(
-    *,
-    active_pending_action: str,
-    active_pending_store: StateStore | None,
-    active_pending_path: str,
-    review_clarification: ClarificationState | None,
-    review_decision: DecisionState | None,
-    global_clarification: ClarificationState | None,
-    global_decision: DecisionState | None,
-) -> StateConflictDetail | None:
-    if active_pending_action != "confirm_execute" or active_pending_store is None:
-        return None
-
-    observed_kinds: set[str] = set()
-    if review_clarification is not None and review_clarification.status in _CLARIFICATION_CONFLICT_STATUSES:
-        observed_kinds.add("current_clarification")
-    if global_clarification is not None and global_clarification.status in _CLARIFICATION_CONFLICT_STATUSES:
-        observed_kinds.add("current_clarification")
-    if review_decision is not None:
-        observed_kinds.add("current_decision")
-    if global_decision is not None:
-        observed_kinds.add("current_decision")
-    if not observed_kinds:
-        return None
-
-    observed = ",".join(sorted(observed_kinds))
-    return StateConflictDetail(
-        code="execution_confirm_review_checkpoint_conflict",
-        message=f"execution confirmation cannot coexist with review checkpoint carriers [{observed}]",
-        path=active_pending_path,
-        state_scope=active_pending_store.scope,
-    )
 
 
 def _pending_checkpoint_handoff_mismatch(

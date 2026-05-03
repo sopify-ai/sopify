@@ -274,7 +274,7 @@ class LocalContextBuilderTests(unittest.TestCase):
                 {"role": "user", "content": "最新输入"},
             ],
             checkpoint_summary={
-                "checkpoint_kind": "confirm_execute",
+                "checkpoint_kind": "confirm_decision",
                 "required_host_action": "continue_host_develop",
             },
             allowed_actions=["continue", "checkpoint", "continue"],
@@ -290,7 +290,7 @@ class LocalContextBuilderTests(unittest.TestCase):
         self.assertEqual(
             dict(local_context.checkpoint_summary),
             {
-                "checkpoint_kind": "confirm_execute",
+                "checkpoint_kind": "confirm_decision",
                 "required_host_action": "continue_host_develop",
             },
         )
@@ -316,7 +316,7 @@ class LocalContextBuilderTests(unittest.TestCase):
 
 
 class DeterministicGuardTests(unittest.TestCase):
-    def test_plan_review_guard_stays_plan_review_even_when_execution_gate_points_to_confirm_execute(self) -> None:
+    def test_plan_review_guard_stays_plan_review_even_when_execution_gate_is_ready(self) -> None:
         current_plan = PlanArtifact(
             plan_id="plan-1",
             title="Plan 1",
@@ -341,7 +341,7 @@ class DeterministicGuardTests(unittest.TestCase):
                 gate_status="ready",
                 blocking_reason="none",
                 plan_completion="complete",
-                next_required_action="confirm_execute",
+                next_required_action="continue_host_develop",
                 notes=("ready",),
             ),
         )
@@ -362,15 +362,15 @@ class DeterministicGuardTests(unittest.TestCase):
         self.assertEqual(guard.checkpoint_kind, "")
         self.assertEqual(guard.allowed_actions, ("continue", "inspect", "revise", "cancel"))
         self.assertIn(
-            "execution_gate.next_required_action=confirm_execute",
+            "execution_gate.next_required_action=continue_host_develop",
             guard.proofs,
         )
 
     def test_checkpoint_guard_fails_closed_when_allowed_mode_conflicts_with_required_action(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
 
         self.assertEqual(guard.truth_status, "contract_invalid")
@@ -380,14 +380,14 @@ class DeterministicGuardTests(unittest.TestCase):
         self.assertEqual(guard.prompt_mode, "request_state_recovery")
         self.assertEqual(
             guard.reason_code,
-            "recovery.truth_layer_contract_invalid.fail_closed.confirm_execute",
+            "recovery.truth_layer_contract_invalid.fail_closed.confirm_decision",
         )
 
     def test_checkpoint_guard_fails_closed_when_checkpoint_kind_mismatches_required_action(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=CHECKPOINT_ONLY,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "clarification"},
         )
 
         self.assertEqual(guard.truth_status, "contract_invalid")
@@ -396,39 +396,12 @@ class DeterministicGuardTests(unittest.TestCase):
         self.assertEqual(guard.prompt_mode, "request_state_recovery")
         self.assertEqual(
             guard.reason_code,
-            "recovery.truth_layer_contract_invalid.fail_closed.confirm_execute",
+            "recovery.truth_layer_contract_invalid.fail_closed.confirm_decision",
         )
-        self.assertIn("checkpoint_kind=execution_confirm", guard.notes[0])
+        self.assertIn("checkpoint_kind=decision", guard.notes[0])
 
 
 class ActionProjectionTests(unittest.TestCase):
-    def test_confirm_execute_projection_uses_execution_summary_surface(self) -> None:
-        guard = evaluate_deterministic_guard(
-            allowed_response_mode=CHECKPOINT_ONLY,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
-        )
-
-        projection = build_action_projection(
-            guard,
-            plan_path=".sopify-skills/plan/20260409_plan_1",
-            artifacts={
-                "execution_summary": {
-                    "plan_path": ".sopify-skills/plan/20260409_plan_1",
-                    "risk_level": "medium",
-                    "key_risk": "需要复核执行前确认",
-                    "mitigation": "继续前先核对风险摘要",
-                }
-            },
-        )
-        payload = projection.to_dict()
-
-        self.assertEqual(payload["required_host_action"], "confirm_execute")
-        self.assertEqual(payload["checkpoint_kind"], "confirm_execute")
-        self.assertEqual(payload["plan_path"], ".sopify-skills/plan/20260409_plan_1")
-        self.assertEqual(payload["risk_level"], "medium")
-        self.assertEqual(payload["allowed_actions"], ["confirm", "inspect", "revise", "cancel"])
-
     def test_confirm_decision_projection_extracts_primary_question_and_options(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=CHECKPOINT_ONLY,
@@ -466,8 +439,8 @@ class ActionProjectionTests(unittest.TestCase):
     def test_action_projection_requires_stable_guard(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
 
         with self.assertRaisesRegex(ActionProjectionError, r"stable deterministic guard"):
@@ -479,49 +452,6 @@ class ActionProjectionTests(unittest.TestCase):
 
 
 class ResolutionPlannerTests(unittest.TestCase):
-    def test_resolution_planner_exposes_supported_and_blocked_actions_for_confirm_execute(self) -> None:
-        guard = evaluate_deterministic_guard(
-            allowed_response_mode=CHECKPOINT_ONLY,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
-        )
-
-        planner = build_resolution_planner(guard).to_dict()
-
-        self.assertTrue(planner["resolution_enabled"])
-        self.assertEqual(
-            planner["standard_resolved_actions"],
-            [
-                "stay_in_checkpoint_and_inspect",
-                "switch_to_consult_readonly",
-                "continue_checkpoint_confirmation",
-                "cancel_current_checkpoint",
-            ],
-        )
-        self.assertEqual(planner["supported_resolved_actions"], ["continue_checkpoint_confirmation"])
-        self.assertEqual(
-            planner["blocked_resolved_actions"],
-            [
-                "stay_in_checkpoint_and_inspect",
-                "switch_to_consult_readonly",
-                "cancel_current_checkpoint",
-            ],
-        )
-        supported = next(
-            profile
-            for profile in planner["profiles"]
-            if profile["resolved_action"] == "continue_checkpoint_confirmation"
-        )
-        self.assertEqual(supported["effect_contract_status"], "supported")
-        self.assertEqual(
-            supported["forbidden_state_effects"],
-            ["recreate_execution_confirm_checkpoint", "mutate_plan_identity"],
-        )
-        self.assertEqual(
-            planner["default_effect_contract_recovery"]["reason_code"],
-            "recovery.effect_contract_invalid.fail_closed.confirm_execute",
-        )
-
     def test_resolution_planner_makes_plan_review_boundary_explicit(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
@@ -572,24 +502,24 @@ class ResolutionPlannerTests(unittest.TestCase):
     def test_resolution_planner_requires_stable_guard(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
         with self.assertRaisesRegex(ResolutionPlannerError, r"stable deterministic guard"):
             build_resolution_planner(guard)
 
     def test_resolution_planner_only_applies_to_signal_resolution_actions(self) -> None:
-        self.assertTrue(supports_resolution_planner("confirm_execute"))
+        self.assertTrue(supports_resolution_planner("confirm_decision"))
         self.assertFalse(supports_resolution_planner("continue_host_develop"))
 
     def test_resolution_planner_fails_closed_when_default_tables_escape_v1_scope(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=CHECKPOINT_ONLY,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
         mutated_asset = DEFAULT_DECISION_TABLES_PATH.read_text(encoding="utf-8").replace(
-            "        update:\n          - current_run\n",
+            "        update: []\n",
             "        update:\n          - current_handoff\n",
             1,
         )
@@ -616,8 +546,8 @@ class SidecarClassifierBoundaryTests(unittest.TestCase):
     def test_sidecar_classifier_boundary_keeps_v1_disabled_and_candidate_only(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=CHECKPOINT_ONLY,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
 
         planner = build_resolution_planner(guard)
@@ -632,7 +562,7 @@ class SidecarClassifierBoundaryTests(unittest.TestCase):
         self.assertEqual(boundary["evidence_tier_cap"], "weak_semantic_hint")
         self.assertEqual(
             boundary["eligible_signal_ids"],
-            ["analysis_only_no_write_brake", "continue_current_checkpoint"],
+            ["analysis_only_no_write_brake", "continue_current_checkpoint", "retopic_current_subject"],
         )
         self.assertFalse(boundary["can_emit_resolved_action"])
         self.assertFalse(boundary["can_write_state"])
@@ -653,17 +583,17 @@ class SidecarClassifierBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(
             boundary["shared_fail_close_contract"]["reason_code"],
-            "recovery.resolution_failure.inspect_required.confirm_execute",
+            "recovery.resolution_failure.inspect_required.confirm_decision",
         )
 
     def test_sidecar_classifier_boundary_requires_stable_guard(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
         planner = ResolutionPlanner(
-            required_host_action="confirm_execute",
+            required_host_action="confirm_decision",
             resolution_enabled=False,
         )
 
@@ -674,7 +604,7 @@ class SidecarClassifierBoundaryTests(unittest.TestCase):
             build_sidecar_classifier_boundary(guard, planner)
 
     def test_sidecar_classifier_boundary_only_applies_to_signal_resolution_actions(self) -> None:
-        self.assertTrue(supports_sidecar_classifier_boundary("confirm_execute"))
+        self.assertTrue(supports_sidecar_classifier_boundary("confirm_decision"))
         self.assertFalse(supports_sidecar_classifier_boundary("continue_host_develop"))
 
 
@@ -682,8 +612,8 @@ class VNextPhaseBoundaryTests(unittest.TestCase):
     def test_vnext_phase_boundary_keeps_parser_first_v1_as_the_only_active_path(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=CHECKPOINT_ONLY,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
 
         boundary = build_vnext_phase_boundary(guard).to_dict()
@@ -708,8 +638,8 @@ class VNextPhaseBoundaryTests(unittest.TestCase):
     def test_vnext_phase_boundary_splits_v1_and_v2_readiness_gates(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=CHECKPOINT_ONLY,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
 
         boundary = build_vnext_phase_boundary(guard).to_dict()
@@ -744,15 +674,15 @@ class VNextPhaseBoundaryTests(unittest.TestCase):
     def test_vnext_phase_boundary_requires_stable_guard(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
-            required_host_action="confirm_execute",
-            checkpoint_request={"checkpoint_id": "exec-1", "checkpoint_kind": "execution_confirm"},
+            required_host_action="confirm_decision",
+            checkpoint_request={"checkpoint_id": "decision-1", "checkpoint_kind": "decision"},
         )
 
         with self.assertRaisesRegex(VNextPhaseBoundaryError, r"stable deterministic guard"):
             build_vnext_phase_boundary(guard)
 
     def test_vnext_phase_boundary_only_applies_to_signal_resolution_actions(self) -> None:
-        self.assertTrue(supports_vnext_phase_boundary("confirm_execute"))
+        self.assertTrue(supports_vnext_phase_boundary("confirm_decision"))
         self.assertFalse(supports_vnext_phase_boundary("continue_host_develop"))
 
     def test_sidecar_supported_actions_remain_subset_of_vnext_supported_actions(self) -> None:
@@ -804,53 +734,16 @@ class GuardrailIntegrationTests(unittest.TestCase):
             self.assertEqual(v1_stats["fallback_path"], "repeat_current_checkpoint")
             self.assertEqual(v1_stats["checkpoint_kind"], "review_or_execute_plan")
 
-    def test_execution_confirm_handoff_exposes_guard_and_projection_artifacts(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            _prepare_ready_plan_state(workspace)
-
-            result = run_runtime("~go exec", workspace_root=workspace, user_home=workspace / "home")
-
-            guard = result.handoff.artifacts["deterministic_guard"]
-            projection = result.handoff.artifacts["action_projection"]
-            planner = result.handoff.artifacts["resolution_planner"]
-            boundary = result.handoff.artifacts["sidecar_classifier_boundary"]
-            phase_boundary = result.handoff.artifacts["vnext_phase_boundary"]
-            v1_stats = result.handoff.observability["v1_stats"]
-            self.assertEqual(guard["checkpoint_kind"], "confirm_execute")
-            self.assertEqual(guard["allowed_response_mode"], CHECKPOINT_ONLY)
-            self.assertEqual(projection["plan_path"], result.recovered_context.current_plan.path)
-            self.assertEqual(projection["required_host_action"], "confirm_execute")
-            self.assertEqual(
-                planner["supported_resolved_actions"],
-                ["continue_checkpoint_confirmation"],
-            )
-            self.assertFalse(boundary["v1_enabled"])
-            self.assertEqual(boundary["allowed_signal_origin"], "semantic_classifier")
-            self.assertEqual(
-                phase_boundary["readiness_gates"][0]["gate_name"],
-                "Ready-for-V1-Execution",
-            )
-            self.assertEqual(
-                phase_boundary["readiness_gates"][1]["gate_name"],
-                "Ready-for-V2-Trial",
-            )
-            self.assertEqual(v1_stats["reason_code"], "guard.checkpoint.stable.confirm_execute")
-            self.assertEqual(v1_stats["outcome"], "ready")
-            self.assertEqual(v1_stats["fallback_path"], "repeat_current_checkpoint")
-            self.assertEqual(v1_stats["checkpoint_kind"], "confirm_execute")
-
     def test_vnext_phase_boundary_survives_resolution_planner_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
-            _prepare_ready_plan_state(workspace)
 
             with patch(
                 "runtime.handoff.build_resolution_planner",
                 side_effect=ResolutionPlannerError("planner unavailable"),
             ):
                 result = run_runtime(
-                    "~go exec",
+                    "~go plan 补 runtime 骨架",
                     workspace_root=workspace,
                     user_home=workspace / "home",
                 )

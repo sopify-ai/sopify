@@ -11,14 +11,13 @@ DECISION_BRIDGE_ENTRY = "scripts/decision_bridge_runtime.py"
 DEVELOP_CALLBACK_ENTRY = "scripts/develop_callback_runtime.py"
 
 ENTRY_GUARD_SCHEMA_VERSION = "1"
-ENTRY_GUARD_PENDING_ACTIONS = ("answer_questions", "confirm_decision", "confirm_execute", "resolve_state_conflict")
+ENTRY_GUARD_PENDING_ACTIONS = ("answer_questions", "confirm_decision", "resolve_state_conflict")
 ENTRY_GUARD_BYPASS_BLOCKED_COMMANDS = ("~go exec",)
 ENTRY_GUARD_DEVELOP_CALLBACK_REASON_CODE = "develop_callback_required"
 DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE = "direct_edit_blocked_runtime_required"
 ENTRY_GUARD_REASON_CODES = {
     "answer_questions": "entry_guard_clarification_pending",
     "confirm_decision": "entry_guard_decision_pending",
-    "confirm_execute": "entry_guard_execution_confirm_pending",
     "resolve_state_conflict": "entry_guard_state_conflict",
 }
 

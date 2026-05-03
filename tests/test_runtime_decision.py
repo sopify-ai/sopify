@@ -582,22 +582,6 @@ class DecisionContractTests(unittest.TestCase):
             self.assertEqual(inspected.handoff.artifacts["decision_submission_state"]["status"], "submitted")
             self.assertEqual(inspected.handoff.artifacts["decision_submission_state"]["answer_keys"], ["selected_option_id"])
 
-    def test_handoff_includes_execution_confirm_checkpoint_request(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            _prepare_ready_plan_state(workspace)
-
-            result = run_runtime("~go exec", workspace_root=workspace, user_home=workspace / "home")
-
-            self.assertEqual(result.route.route_name, "execution_confirm_pending")
-            self.assertEqual(result.handoff.required_host_action, "confirm_execute")
-            self.assertEqual(result.handoff.artifacts["checkpoint_request"]["checkpoint_kind"], "execution_confirm")
-            self.assertEqual(result.handoff.artifacts["entry_guard_reason_code"], "entry_guard_execution_confirm_pending")
-            self.assertEqual(
-                result.handoff.artifacts["checkpoint_request"]["execution_summary"]["plan_path"],
-                result.handoff.artifacts["execution_summary"]["plan_path"],
-            )
-
     def test_handoff_marks_missing_checkpoint_request_when_tradeoff_candidates_exist(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -1055,13 +1039,7 @@ class DecisionContractTests(unittest.TestCase):
             session_id = "session-a"
             config, _, _ = _prepare_ready_plan_state(workspace, session_id=session_id)
             run_runtime(
-                "~go exec",
-                workspace_root=workspace,
-                session_id=session_id,
-                user_home=workspace / "home",
-            )
-            run_runtime(
-                "开始",
+                "继续",
                 workspace_root=workspace,
                 session_id=session_id,
                 user_home=workspace / "home",
