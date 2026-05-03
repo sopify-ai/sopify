@@ -234,7 +234,7 @@ def _validate_host_message_template_rendering(tables: dict[str, object]) -> int:
 
     fallback_result = render_host_message(
         reason_code="recovery.unknown_reason.smoke",
-        prompt_mode="reask_confirm_execute",
+        prompt_mode="reask_confirm_decision",
         variables=_TEMPLATE_SMOKE_VARIABLES,
         locale=default_locale,
         templates=template_contract,

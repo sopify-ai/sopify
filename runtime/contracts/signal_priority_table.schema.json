@@ -56,7 +56,6 @@
   "allowed_checkpoint_kinds": [
     "answer_questions",
     "confirm_decision",
-    "confirm_execute",
     "review_or_execute_plan"
   ],
   "signal_groups": [

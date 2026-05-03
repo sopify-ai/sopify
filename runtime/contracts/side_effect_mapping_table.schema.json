@@ -23,8 +23,7 @@
     "continue_checkpoint_confirmation"
   ],
   "checkpoint_kinds": [
-    "confirm_decision",
-    "confirm_execute"
+    "confirm_decision"
   ],
   "state_mutators": {
     "ordered_keys": [

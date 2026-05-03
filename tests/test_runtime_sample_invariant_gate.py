@@ -72,9 +72,7 @@ class SampleInvariantAssetTests(unittest.TestCase):
         self.assertEqual(
             matrix["v1_gate_cases"],
             [
-                "A-4_cancel_checkpoint",
                 "A-5_mixed_clause_after_comma",
-                "A-6_execution_confirm_state_conflict_evidence_gate",
                 "A-8_analysis_only_no_write_process_semantic",
             ],
         )
@@ -85,16 +83,13 @@ class SampleInvariantAssetTests(unittest.TestCase):
             [
                 "A-1_explain_only",
                 "A-2_decision_selection_with_suffix_text",
-                "A-4_cancel_checkpoint",
                 "A-5_mixed_clause_after_comma",
-                "A-6_execution_confirm_state_conflict_evidence_gate",
                 "A-7_question_like_retopic_baseline",
                 "A-8_analysis_only_no_write_process_semantic",
             ],
         )
 
         replay_required = {
-            "A-4_cancel_checkpoint",
             "A-5_mixed_clause_after_comma",
             "A-8_analysis_only_no_write_process_semantic",
         }
@@ -110,11 +105,6 @@ class SampleInvariantAssetTests(unittest.TestCase):
             self.assertTrue(case["forbidden_side_effects"], msg=case["case_id"])
             if case["case_id"] in replay_required:
                 self.assertTrue(case.get("replay_examples"), msg=case["case_id"])
-
-        a6 = _cases_by_id()["A-6_execution_confirm_state_conflict_evidence_gate"]
-        self.assertIn("evidence_chain", a6)
-        self.assertFalse(a6.get("replay_examples"))
-        self.assertEqual(a6["evidence_chain"]["conflict_code"], "execution_confirm_review_checkpoint_conflict")
 
     def test_fixture_aligns_with_fail_close_matrix_and_effect_profiles(self) -> None:
         failure_cases = _failure_cases_by_id()
@@ -138,48 +128,6 @@ class SampleInvariantAssetTests(unittest.TestCase):
 
 
 class SampleInvariantReplayTests(unittest.TestCase):
-    def test_a4_cancel_checkpoint_examples_clear_only_current_decision(self) -> None:
-        case = _cases_by_id()["A-4_cancel_checkpoint"]
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            _enter_decision_pending(workspace)
-            cancelled = run_runtime(
-                case["positive_examples"][0]["utterance"],
-                workspace_root=workspace,
-                user_home=workspace / "home",
-            )
-            state_root = workspace / ".sopify-skills" / "state"
-
-            self.assertEqual(cancelled.route.route_name, "cancel_active")
-            self.assertFalse((state_root / "current_decision.json").exists())
-            self.assertFalse((state_root / "current_clarification.json").exists())
-            self.assertEqual(_plan_dir_count(workspace), 0)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            _enter_decision_pending(workspace)
-            negative = run_runtime(
-                case["negative_examples"][0]["utterance"],
-                workspace_root=workspace,
-                user_home=workspace / "home",
-            )
-            self.assertEqual(negative.route.route_name, "decision_pending")
-            self.assertEqual(negative.handoff.required_host_action, "confirm_decision")
-            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            _enter_decision_pending(workspace)
-            boundary = run_runtime(
-                case["boundary_examples"][0]["utterance"],
-                workspace_root=workspace,
-                user_home=workspace / "home",
-            )
-            self.assertEqual(boundary.route.route_name, "decision_pending")
-            self.assertEqual(boundary.handoff.required_host_action, "confirm_decision")
-            self.assertTrue((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
-
     def test_a5_mixed_clause_examples_freeze_local_action_surface(self) -> None:
         case = _cases_by_id()["A-5_mixed_clause_after_comma"]
 

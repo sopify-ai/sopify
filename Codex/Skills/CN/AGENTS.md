@@ -136,12 +136,10 @@ Next: {下一步提示}
 说明：当首次激活返回 `ROOT_CONFIRM_REQUIRED` 时，宿主必须先停在 root 选择：默认推荐“当前目录”，备选“仓库根目录”，并允许用户手动指定其他目录；确认后以同一请求重新调用 gate，并显式传入 `activation_root`。这一类返回属于 pre-runtime checkpoint，`allowed_response_mode` 应为 `checkpoint_only`，而不是普通 `error_visible_retry`。`~go init` 只表示确认写入，不得绕过这一步 root 选择。
 说明：长期偏好注入是独立 prompt 块，固定优先级为：当前任务明确要求 > `preferences.md` > 默认规则。“当前任务明确要求”指用户在当前任务中显式给出的临时执行指令；冲突时优先，非冲突时叠加，且默认不回写为长期偏好。
 说明：runtime 执行后，若存在 `.sopify-skills/state/current_handoff.json`，宿主必须优先按其中的 `required_host_action`、`recommended_skill_ids` 与 `artifacts` 决定下一步；若存在 `artifacts.checkpoint_request`，必须优先消费该标准化 contract，再回退到 route-specific artifact；`Next:` 行仅作为面向人的摘要提示，不应作为唯一机器依据。
-说明：普通主链路不需要记住 `~go exec`；当 plan 达到 `ready_for_execution` 后，宿主必须继续按 `confirm_execute` + 自然语言确认推进。
 说明：若 `current_handoff.json.artifacts.execution_gate` 存在，宿主必须继续读取其中的 `gate_status / blocking_reason / plan_completion / next_required_action`，并结合 `.sopify-skills/state/current_run.json.stage` 判断当前 plan 只是已生成，还是已经达到 `ready_for_execution`。
 说明：当 `current_handoff.json.required_host_action == answer_questions` 时，宿主必须继续读取 `.sopify-skills/state/current_clarification.json`，向用户展示 missing_facts/questions，并等待用户补充事实信息后再恢复默认 runtime 入口；在补充完成前不得自行物化正式 plan 或跳到 `~go exec`。
 说明：当 `current_handoff.json.required_host_action == confirm_decision` 时，宿主必须优先读取 `current_handoff.json.artifacts.decision_checkpoint` 与 `decision_submission_state`；若 handoff 缺失完整 checkpoint，再回退到 `.sopify-skills/state/current_decision.json`。宿主应向用户展示 question/options/recommended_option_id，等待用户确认后再恢复默认 runtime 入口；在确认前不得自行生成正式 plan 或跳到 `~go exec`。
 说明：当 `current_handoff.json.required_host_action == confirm_plan_package` 时，宿主必须优先读取 `current_handoff.json.artifacts.proposal` 与 `checkpoint_request`；若 handoff 缺失完整 proposal，再回退到 `.sopify-skills/state/current_plan_proposal.json`。宿主至少应展示 `proposed_path / analysis_summary / estimated_task_count / candidate_files`，并等待用户通过自然语言 `继续 / next` 确认生成方案包、回复 `status` 查看摘要，或直接给出修订意见；在确认前不得自行创建正式 plan，也不得把 `~go exec` 当成绕过入口。
-说明：当 `current_handoff.json.required_host_action == confirm_execute` 时，宿主必须继续读取 `current_handoff.json.artifacts.execution_summary`，至少向用户展示 `plan_path / summary / task_count / risk_level / key_risk / mitigation`，并等待用户通过自然语言 `继续 / next / 开始`（或明确修改意见）恢复默认 runtime 入口；在执行确认前不得自行跳到 develop，也不得把 `~go exec` 当成绕过入口。
 说明：当 `current_handoff.json.required_host_action == continue_host_develop` 时，宿主继续负责真实代码修改；但若开发中再次出现“需要用户补事实 / 拍板选路”的分叉，宿主不得自由追问，也不得手写 `current_decision.json / current_handoff.json`，而必须调用 `scripts/develop_callback_runtime.py submit --payload-json ...`（vendored 对应 `.sopify-runtime/scripts/develop_callback_runtime.py`）回调 runtime。payload 必须包含 `checkpoint_kind` 与 `resume_context`；当前 `resume_context` 至少要求 `active_run_stage / current_plan_path / task_refs / changed_files / working_summary / verification_todo`。
 说明：当 `current_handoff.json.required_host_action == continue_host_consult` 时，宿主只可在已消费当前回合 gate contract 的前提下继续问答；不得在 gate 前自行路由，也不得在 gate 后再次重判 consult / 非 consult。宿主的回答应基于当前 gate contract 与 `handoff.artifacts` 暴露的 consult context（如有）生成；若缺少额外 consult context，应显式按当前请求降级回答，而不是用宿主侧语义分析补出另一条路由。
 
@@ -330,7 +328,7 @@ progressive: 按需创建文件 (默认)
 - 用户确认后，宿主必须在同一工作区重新调用默认 runtime 入口，让 runtime 负责按既定 `reserved_plan_id` 物化唯一正式 plan；若恢复后 `current_plan_proposal.json` 被清理，视为正常收口。
 - 当 `current_handoff.json.required_host_action == continue_host_consult` 时，宿主必须把当前消息回合 gate tool call 返回的 contract 与 `.sopify-skills/state/current_handoff.json` 一起视为 consult 问答的机器事实来源；在生成回答前不要再次自行判断是否应改走其他路由。
 - `~go exec` 只应被当作高级恢复入口；若当前没有活动 plan 或恢复态，宿主不应把它当成普通开发入口。
-- 即使用户显式输入 `~go exec`，只要仍处于 `clarification_pending / decision_pending / plan_proposal_pending / execution_confirm_pending`，宿主也必须继续遵守对应 checkpoint 的机器契约。
+- 即使用户显式输入 `~go exec`，只要仍处于 `clarification_pending / decision_pending / plan_proposal_pending`，宿主也必须继续遵守对应 checkpoint 的机器契约。
 
 ---
 

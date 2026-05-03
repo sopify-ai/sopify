@@ -60,7 +60,6 @@ consult_readonly_contract:
     - consult_exit_is_under_validation
   ignored_required_host_actions:
     - confirm_decision
-    - confirm_execute
     - answer_questions
     - review_or_execute_plan
   required_fields:
@@ -125,7 +124,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - confirm_execute
         - review_or_execute_plan
       signal_group: inspect_request
       target_kind: checkpoint
@@ -148,7 +146,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - confirm_execute
         - review_or_execute_plan
       signal_group: hard_constraint
       target_kind: write_scope
@@ -177,7 +174,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - confirm_execute
         - review_or_execute_plan
       signal_group: progress_action
       target_kind: checkpoint
@@ -203,7 +199,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - confirm_execute
         - review_or_execute_plan
       signal_group: hard_stop
       target_kind: checkpoint
@@ -266,14 +261,6 @@ failure_recovery_table:
       unresolved_outcome_family: fail_closed
       counts_toward_streak: true
     - primary_failure_type: non_stable_truth
-      required_host_action: confirm_execute
-      fallback_action: enter_blocking_recovery_branch
-      prompt_mode: request_state_recovery
-      retry_policy: manual_recovery_only
-      reason_code: recovery.non_stable_truth.fail_closed.confirm_execute
-      unresolved_outcome_family: fail_closed
-      counts_toward_streak: true
-    - primary_failure_type: non_stable_truth
       required_host_action: review_or_execute_plan
       fallback_action: enter_blocking_recovery_branch
       prompt_mode: request_state_recovery
@@ -295,14 +282,6 @@ failure_recovery_table:
       prompt_mode: request_state_recovery
       retry_policy: manual_recovery_only
       reason_code: recovery.truth_layer_contract_invalid.fail_closed.confirm_decision
-      unresolved_outcome_family: fail_closed
-      counts_toward_streak: true
-    - primary_failure_type: truth_layer_contract_invalid
-      required_host_action: confirm_execute
-      fallback_action: enter_blocking_recovery_branch
-      prompt_mode: request_state_recovery
-      retry_policy: manual_recovery_only
-      reason_code: recovery.truth_layer_contract_invalid.fail_closed.confirm_execute
       unresolved_outcome_family: fail_closed
       counts_toward_streak: true
     - primary_failure_type: truth_layer_contract_invalid
@@ -330,14 +309,6 @@ failure_recovery_table:
       unresolved_outcome_family: inspect_required
       counts_toward_streak: true
     - primary_failure_type: resolution_failure
-      required_host_action: confirm_execute
-      fallback_action: repeat_current_checkpoint
-      prompt_mode: reask_confirm_execute
-      retry_policy: allow_retry_after_user_input
-      reason_code: recovery.resolution_failure.inspect_required.confirm_execute
-      unresolved_outcome_family: inspect_required
-      counts_toward_streak: true
-    - primary_failure_type: resolution_failure
       required_host_action: review_or_execute_plan
       fallback_action: repeat_current_checkpoint
       prompt_mode: reask_plan_review
@@ -359,14 +330,6 @@ failure_recovery_table:
       prompt_mode: safe_retry_after_contract_fix
       retry_policy: retry_after_contract_fix
       reason_code: recovery.effect_contract_invalid.fail_closed.confirm_decision
-      unresolved_outcome_family: fail_closed
-      counts_toward_streak: true
-    - primary_failure_type: effect_contract_invalid
-      required_host_action: confirm_execute
-      fallback_action: block_side_effect_and_retry_when_safe
-      prompt_mode: safe_retry_after_contract_fix
-      retry_policy: retry_after_contract_fix
-      reason_code: recovery.effect_contract_invalid.fail_closed.confirm_execute
       unresolved_outcome_family: fail_closed
       counts_toward_streak: true
     - primary_failure_type: effect_contract_invalid
@@ -409,29 +372,6 @@ side_effect_mapping_table:
         output_mode: consult_answer
       terminality: route_terminal
       reason_code: effect.hard_constraint.analysis_only_consult_readonly
-    - resolved_action: continue_checkpoint_confirmation
-      checkpoint_kind: confirm_execute
-      state_mutators:
-        preserve:
-          - current_plan
-        clear: []
-        update:
-          - current_run
-        write: []
-      forbidden_state_effects:
-        - recreate_execution_confirm_checkpoint
-        - mutate_plan_identity
-      preserved_identity:
-        - plan_id
-      handoff_protocol:
-        required_host_action: continue_host_develop
-        artifact_keys:
-          - execution_summary
-          - execution_gate
-        resume_route: develop
-        output_mode: continue_develop
-      terminality: route_terminal
-      reason_code: effect.execution.confirm_to_develop
 host_message_templates:
   schema_version: host_message_templates.v1
   asset_version: fixture-2026-04-08
@@ -479,7 +419,6 @@ host_message_templates:
       prompt_modes:
         - reask_answer_questions
         - reask_confirm_decision
-        - reask_confirm_execute
         - reask_plan_review
       locales:
         zh-CN: 当前输入还不足以唯一判定{required_host_action_label}；我先保持在当前 checkpoint。请{rephrase_hint}。
@@ -499,9 +438,6 @@ host_message_templates:
       zh-CN: 当前输入还不足以继续；我先停在当前 checkpoint。请换一种更明确的说法。
       en-US: The current input is still insufficient to continue; staying on the current checkpoint. Please restate it more explicitly.
     reask_confirm_decision:
-      zh-CN: 当前输入还不足以继续；我先停在当前 checkpoint。请换一种更明确的说法。
-      en-US: The current input is still insufficient to continue; staying on the current checkpoint. Please restate it more explicitly.
-    reask_confirm_execute:
       zh-CN: 当前输入还不足以继续；我先停在当前 checkpoint。请换一种更明确的说法。
       en-US: The current input is still insufficient to continue; staying on the current checkpoint. Please restate it more explicitly.
     reask_plan_review:

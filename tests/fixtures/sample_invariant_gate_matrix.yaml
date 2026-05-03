@@ -1,9 +1,7 @@
 schema_version: sample_invariant_gate.v1
 asset_version: 2026-04-09-a1-a8-v1
 v1_gate_cases:
-  - A-4_cancel_checkpoint
   - A-5_mixed_clause_after_comma
-  - A-6_execution_confirm_state_conflict_evidence_gate
   - A-8_analysis_only_no_write_process_semantic
 baseline_cases:
   - A-7_question_like_retopic_baseline
@@ -52,29 +50,6 @@ cases:
     forbidden_side_effects:
       - submit_ambiguous_selection
 
-  - case_id: A-4_cancel_checkpoint
-    frozen_role: v1_gate
-    contract_ref:
-      fail_close_case_id: A-4_cancel_checkpoint_idempotent
-      required_host_action: confirm_execute
-      allowed_response_mode: checkpoint_only
-    positive_examples:
-      - utterance: "取消这个 checkpoint"
-        scenario: decision_pending_cancel
-    negative_examples:
-      - utterance: "不要取消这个 checkpoint"
-        scenario: decision_pending_cancel_guarded
-    boundary_examples:
-      - utterance: "取消这个 checkpoint?"
-        scenario: decision_pending_cancel_question
-    forbidden_side_effects:
-      - derive_new_pending_checkpoint
-      - materialize_new_plan_package
-      - advance_to_develop
-    replay_examples:
-      - utterance: "取消这个 checkpoint"
-        scenario: decision_pending_cancel
-
   - case_id: A-5_mixed_clause_after_comma
     frozen_role: v1_gate
     contract_ref:
@@ -92,42 +67,6 @@ cases:
     replay_examples:
       - utterance: "取消这个 checkpoint，不要取消全部"
         scenario: decision_pending_local_cancel
-
-  - case_id: A-6_execution_confirm_state_conflict_evidence_gate
-    frozen_role: v1_gate
-    contract_ref:
-      fail_close_case_id: A-6_execution_confirm_state_conflict_abort
-      required_host_action: confirm_execute
-      allowed_response_mode: checkpoint_only
-    positive_examples:
-      - utterance: "status"
-        scenario: ready_plan_conflict_status
-    negative_examples:
-      - utterance: "~go exec"
-        scenario: ready_plan_post_abort_followup
-    boundary_examples:
-      - utterance: "强制取消"
-        scenario: ready_plan_conflict_abort
-    forbidden_side_effects:
-      - recreate_execution_confirm_checkpoint
-      - materialize_new_plan_package
-      - loop_same_conflict
-    evidence_chain:
-      conflict_code: execution_confirm_review_checkpoint_conflict
-      initial_stage: ready_for_execution
-      residual_checkpoint_state: current_clarification
-      inspect_input: status
-      abort_inputs:
-        - 取消
-        - 强制取消
-      post_abort_invariants:
-        cleared_states:
-          - current_clarification
-        preserved_states:
-          - current_plan
-          - current_run
-        stable_stage: ready_for_execution
-        followup_input: "~go exec"
 
   - case_id: A-7_question_like_retopic_baseline
     frozen_role: baseline

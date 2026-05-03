@@ -63,18 +63,13 @@ flowchart TD
     F --> F1["展示选项 + 推荐项"]
     F1 --> F2["用户确认"]
     F2 --> D
-    E -->|否| G["开发前确认"]
-    G --> H["confirm_execute"]
-    H --> H1["展示任务 / 风险 / 缓解"]
-    H1 --> H2["用户回复 继续 / next / 开始"]
-    H2 --> I["开发实施"]
+    E -->|否| I["开发实施"]
 ```
 
 Checkpoint 规则：
 
 - `answer_questions` 用于补事实，不提前物化正式 plan
 - `confirm_decision` 用于拍板分叉，确认后再恢复默认 runtime 入口
-- `confirm_execute` 位于方案设计与开发实施之间，不属于开发阶段内部子步骤
 
 ## 目录结构与层级
 
