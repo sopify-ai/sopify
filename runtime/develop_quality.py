@@ -43,8 +43,8 @@ DEVELOP_REVIEW_STATUSES = (
     "failed",
     "not_run",
 )
-DEVELOP_CHECKPOINT_TRIGGER_RESULTS = ("replan_required",)
-DEVELOP_CHECKPOINT_TRIGGER_ROOT_CAUSES = ("scope_or_design_mismatch",)
+DEVELOP_CALLBACK_TRIGGER_RESULTS = ("replan_required",)
+DEVELOP_CALLBACK_TRIGGER_ROOT_CAUSES = ("scope_or_design_mismatch",)
 
 
 class DevelopQualityError(ValueError):
@@ -74,9 +74,9 @@ def build_develop_quality_contract() -> dict[str, Any]:
         ],
         "required_context_fields": list(DEVELOP_QUALITY_CONTEXT_FIELDS),
         "checkpoint_trigger": {
-            "result_values": list(DEVELOP_CHECKPOINT_TRIGGER_RESULTS),
-            "root_cause_values": list(DEVELOP_CHECKPOINT_TRIGGER_ROOT_CAUSES),
-            "required_helper": "develop_checkpoint",
+            "result_values": list(DEVELOP_CALLBACK_TRIGGER_RESULTS),
+            "root_cause_values": list(DEVELOP_CALLBACK_TRIGGER_ROOT_CAUSES),
+            "required_helper": "develop_callback",
         },
     }
 
@@ -245,13 +245,13 @@ def normalize_develop_review_result(raw_review: Any) -> dict[str, dict[str, str]
     return normalized
 
 
-def requires_develop_checkpoint(quality_result: Mapping[str, Any]) -> bool:
+def requires_develop_callback(quality_result: Mapping[str, Any]) -> bool:
     """Return True when a quality result must route back through a checkpoint."""
     result = str(quality_result.get("result") or "").strip()
     root_cause = str(quality_result.get("root_cause") or "").strip()
     return (
-        result in DEVELOP_CHECKPOINT_TRIGGER_RESULTS
-        or root_cause in DEVELOP_CHECKPOINT_TRIGGER_ROOT_CAUSES
+        result in DEVELOP_CALLBACK_TRIGGER_RESULTS
+        or root_cause in DEVELOP_CALLBACK_TRIGGER_ROOT_CAUSES
     )
 
 

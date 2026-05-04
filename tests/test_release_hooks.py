@@ -298,14 +298,11 @@ class ReleaseHookTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
             text = changelog.read_text(encoding="utf-8")
             unreleased = _unreleased_body(text)
-            self.assertIn("### Runtime", unreleased)
-            self.assertIn("- Updated runtime internals:", unreleased)
+            self.assertIn("### Summary", unreleased)
+            self.assertIn("Changes across:", unreleased)
+            self.assertIn("<details>", unreleased)
             self.assertIn("`runtime/gate.py`", unreleased)
-            self.assertIn("### Scripts", unreleased)
-            self.assertIn("- Adjusted maintenance scripts:", unreleased)
             self.assertIn("`scripts/release-sync.sh`", unreleased)
-            self.assertIn("### Tests", unreleased)
-            self.assertIn("- Updated automated coverage:", unreleased)
             self.assertIn("`tests/test_runtime_gate.py`", unreleased)
 
     def test_release_sync_auto_drafts_unreleased_before_version_bump(self) -> None:
@@ -326,11 +323,9 @@ class ReleaseHookTests(unittest.TestCase):
             changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
             release_body = _release_body(changelog, "2026-03-21.010203")
             self.assertIn("## [2026-03-21.010203] - 2026-03-21", changelog)
-            self.assertIn("### Runtime", release_body)
+            self.assertIn("### Summary", release_body)
             self.assertIn("`runtime/gate.py`", release_body)
-            self.assertIn("### Tests", release_body)
             self.assertIn("`tests/test_runtime_gate.py`", release_body)
-            self.assertNotIn("### Changed", release_body)
             self.assertIn("badge/version-2026--03--21.010203-orange.svg", (root / "README.md").read_text(encoding="utf-8"))
             self.assertIn("<!-- SOPIFY_VERSION: 2026-03-21.010203 -->", (root / "Codex/Skills/CN/AGENTS.md").read_text(encoding="utf-8"))
             self.assertIn("<!-- SOPIFY_VERSION: 2026-03-21.010203 -->", (root / "Claude/Skills/CN/CLAUDE.md").read_text(encoding="utf-8"))
@@ -360,14 +355,15 @@ class ReleaseHookTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
             text = changelog.read_text(encoding="utf-8")
             unreleased = _unreleased_body(text)
-            self.assertIn("### Docs", unreleased)
-            self.assertIn("### Tests", unreleased)
-            self.assertNotIn("### Runtime", unreleased)
-            self.assertNotIn("### Scripts", unreleased)
-            self.assertNotIn("### Skills", unreleased)
-            self.assertNotIn("### Changed", unreleased)
+            self.assertIn("### Summary", unreleased)
+            self.assertIn("Docs", unreleased)
+            self.assertIn("Tests", unreleased)
+            self.assertNotIn("**Runtime**", unreleased)
+            self.assertNotIn("**Scripts**", unreleased)
+            self.assertNotIn("**Skills**", unreleased)
 
     def test_release_draft_ignores_sopify_kb_paths(self) -> None:
+        """Plan/history package paths are included for attribution; non-package .sopify-skills/ paths are excluded."""
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             changelog = root / "CHANGELOG.md"
@@ -392,15 +388,17 @@ class ReleaseHookTests(unittest.TestCase):
             )
 
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
-            self.assertIn("Auto-drafted CHANGELOG [Unreleased] from 1 changed files.", completed.stdout)
             unreleased = _unreleased_body(changelog.read_text(encoding="utf-8"))
-            self.assertIn("### Runtime", unreleased)
+            # Plan package path is now included for attribution
+            self.assertIn("`20260324_task`", unreleased)
             self.assertIn("`runtime/gate.py`", unreleased)
-            self.assertNotIn(".sopify-skills/history/index.md", unreleased)
-            self.assertNotIn(".sopify-skills/plan/20260324_task/tasks.md", unreleased)
-            self.assertNotIn("### Changed", unreleased)
+            # Non-package .sopify-skills/ paths still excluded
+            self.assertNotIn("history/index.md", unreleased)
+            # Blueprint internals still excluded
+            self.assertNotIn(".sopify-skills/blueprint/", unreleased)
 
     def test_release_draft_skips_when_only_sopify_kb_paths_changed(self) -> None:
+        """Only non-package .sopify-skills/ paths → no eligible files."""
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             changelog = root / "CHANGELOG.md"
@@ -416,7 +414,9 @@ class ReleaseHookTests(unittest.TestCase):
                     "--file",
                     ".sopify-skills/history/index.md",
                     "--file",
-                    ".sopify-skills/plan/20260324_task/tasks.md",
+                    ".sopify-skills/blueprint/design.md",
+                    "--file",
+                    ".sopify-skills/state/current_run.json",
                 ],
                 capture_output=True,
                 text=True,

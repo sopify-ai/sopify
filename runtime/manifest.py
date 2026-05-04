@@ -22,7 +22,6 @@ from .entry_guard import (
 from .clarification import CURRENT_CLARIFICATION_RELATIVE_PATH
 from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
-from .plan_proposal import CURRENT_PLAN_PROPOSAL_RELATIVE_PATH
 from .knowledge_layout import CONTEXT_PROFILES, KB_LAYOUT_VERSION, KNOWLEDGE_PATHS
 from .preferences import PREFERENCES_PRELOAD_STATUSES
 from .router import SUPPORTED_ROUTE_NAMES, build_runtime_first_hints
@@ -34,7 +33,7 @@ DEFAULT_ENTRY = ENTRY_GUARD_DEFAULT_ENTRY
 PLAN_ONLY_ENTRY = ENTRY_GUARD_PLAN_ONLY_HELPER_ENTRY
 DECISION_BRIDGE_ENTRY = "scripts/decision_bridge_runtime.py"
 CLARIFICATION_BRIDGE_ENTRY = "scripts/clarification_bridge_runtime.py"
-DEVELOP_CHECKPOINT_ENTRY = "scripts/develop_checkpoint_runtime.py"
+DEVELOP_CALLBACK_ENTRY = "scripts/develop_callback_runtime.py"
 PLAN_REGISTRY_ENTRY = "scripts/plan_registry_runtime.py"
 PREFERENCES_PRELOAD_ENTRY = "scripts/preferences_preload_runtime.py"
 RUNTIME_GATE_ENTRY = "scripts/runtime_gate.py"
@@ -152,7 +151,7 @@ def build_bundle_manifest(
             "decision_bridge": True,
             "clarification_checkpoint": True,
             "clarification_bridge": True,
-            "develop_checkpoint_callback": True,
+            "develop_callback": True,
             "develop_quality_feedback": True,
             "develop_resume_context": True,
             "execution_gate": True,
@@ -180,8 +179,6 @@ def build_bundle_manifest(
                 "quick_fix",
                 "clarification_pending",
                 "clarification_resume",
-                "plan_proposal_pending",
-                "execution_confirm_pending",
                 "resume_active",
                 "exec_plan",
                 "decision_pending",
@@ -191,8 +188,7 @@ def build_bundle_manifest(
             ],
             "host_bridge_status": {
                 "develop": "required",
-                "develop_checkpoint": "required",
-                "execution_confirm": "required",
+                "develop_callback": "required",
                 "replay": "required",
             },
             "entry_guard": {
@@ -202,7 +198,7 @@ def build_bundle_manifest(
                 "pending_checkpoint_actions": list(ENTRY_GUARD_PENDING_ACTIONS),
                 "bypass_blocked_commands": list(ENTRY_GUARD_BYPASS_BLOCKED_COMMANDS),
                 "reason_codes": dict(ENTRY_GUARD_REASON_CODES),
-                "develop_checkpoint_callback_reason_code": ENTRY_GUARD_DEVELOP_CALLBACK_REASON_CODE,
+                "develop_callback_reason_code": ENTRY_GUARD_DEVELOP_CALLBACK_REASON_CODE,
             },
             "runtime_payload_required_skill_ids": [],
             "session_state": {
@@ -214,7 +210,6 @@ def build_bundle_manifest(
             },
             "clarification_file": CURRENT_CLARIFICATION_RELATIVE_PATH,
             "decision_file": CURRENT_DECISION_RELATIVE_PATH,
-            "proposal_file": CURRENT_PLAN_PROPOSAL_RELATIVE_PATH,
             "clarification_bridge_entry": CLARIFICATION_BRIDGE_ENTRY,
             "clarification_bridge_hosts": {
                 "cli": {
@@ -236,8 +231,8 @@ def build_bundle_manifest(
                     "textarea": "multiline_text",
                 },
             },
-            "develop_checkpoint_entry": DEVELOP_CHECKPOINT_ENTRY,
-            "develop_checkpoint_hosts": {
+            "develop_callback_entry": DEVELOP_CALLBACK_ENTRY,
+            "develop_callback_hosts": {
                 "cli": {
                     "preferred_mode": "structured_callback",
                     "inspect": "json_contract",

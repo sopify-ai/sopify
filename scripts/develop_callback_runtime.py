@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Internal helper for develop-stage checkpoint callbacks.
+"""Internal helper for develop-stage callbacks.
 
 Hosts may call this helper only after runtime already handed control back with
 `current_handoff.json.required_host_action == continue_host_develop`.
@@ -17,17 +17,17 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from runtime.config import ConfigError, load_runtime_config
-from runtime.develop_checkpoint import (
-    DevelopCheckpointError,
-    inspect_develop_checkpoint_context,
-    submit_develop_checkpoint,
+from runtime.develop_callback import (
+    DevelopCallbackError,
+    inspect_develop_callback_context,
+    submit_develop_callback,
     submit_develop_quality_report,
 )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI parser for the internal develop checkpoint helper."""
-    parser = argparse.ArgumentParser(description="Inspect or create a Sopify develop-stage checkpoint callback.")
+    """Build the CLI parser for the internal develop callback helper."""
+    parser = argparse.ArgumentParser(description="Inspect or create a Sopify develop-stage callback.")
     parser.add_argument(
         "--workspace-root",
         default=".",
@@ -61,12 +61,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = load_runtime_config(workspace_root, global_config_path=args.global_config_path)
         if args.command == "inspect":
-            payload = inspect_develop_checkpoint_context(config=config)
+            payload = inspect_develop_callback_context(config=config)
         elif args.command == "submit-quality":
             payload = _submit_quality(config=config, payload_json=args.payload_json)
         else:
             payload = _submit_callback(config=config, payload_json=args.payload_json)
-    except (ConfigError, DevelopCheckpointError, ValueError, json.JSONDecodeError) as exc:
+    except (ConfigError, DevelopCallbackError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"status": "error", "message": str(exc)}, ensure_ascii=False, indent=2))
         return 1
 
@@ -79,7 +79,7 @@ def _submit_callback(*, config, payload_json: str) -> dict[str, object]:
     if not isinstance(raw_payload, dict):
         raise ValueError("payload-json must decode to an object")
 
-    submission = submit_develop_checkpoint(raw_payload, config=config)
+    submission = submit_develop_callback(raw_payload, config=config)
     checkpoint_file = (
         ".sopify-skills/state/current_decision.json"
         if submission.request.checkpoint_kind == "decision"
@@ -105,8 +105,8 @@ def _submit_quality(*, config, payload_json: str) -> dict[str, object]:
         raise ValueError("payload-json must decode to an object")
 
     submission = submit_develop_quality_report(raw_payload, config=config)
-    delegated_checkpoint = submission.delegated_checkpoint
-    checkpoint_kind = delegated_checkpoint.request.checkpoint_kind if delegated_checkpoint is not None else None
+    delegated_callback = submission.delegated_callback
+    checkpoint_kind = delegated_callback.request.checkpoint_kind if delegated_callback is not None else None
 
     return {
         "status": "written",

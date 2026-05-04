@@ -188,7 +188,7 @@
       },
       "disallowed_tools": [],
       "entry_kind": null,
-      "handoff_kind": "replay",
+      "handoff_kind": "consult",
       "host_support": [
         "codex",
         "claude"

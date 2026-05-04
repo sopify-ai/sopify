@@ -317,15 +317,9 @@ class PlanReuseRuntimeTests(unittest.TestCase):
             )
 
             self.assertEqual(first.route.route_name, "decision_pending")
-            self.assertEqual(second.route.route_name, "plan_proposal_pending")
-            self.assertIsNone(second.plan_artifact)
-            self.assertIsNotNone(second.recovered_context.current_plan_proposal)
-            assert second.recovered_context.current_plan_proposal is not None
-            self.assertEqual(second.recovered_context.current_plan_proposal.resume_route, "workflow")
-            self.assertEqual(second.handoff.required_host_action, "confirm_plan_package")
 
-            self.assertEqual(third.route.route_name, "plan_only")
-            self.assertIsNotNone(third.plan_artifact)
-            assert third.plan_artifact is not None
-            self.assertNotEqual(third.plan_artifact.plan_id, current_plan.plan_id)
-            self.assertEqual(third.handoff.required_host_action, "review_or_execute_plan")
+            self.assertEqual(second.route.route_name, "plan_only")
+            self.assertIsNotNone(second.plan_artifact)
+            assert second.plan_artifact is not None
+            self.assertNotEqual(second.plan_artifact.plan_id, current_plan.plan_id)
+            self.assertEqual(second.handoff.required_host_action, "review_or_execute_plan")

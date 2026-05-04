@@ -95,7 +95,7 @@ _BUILTIN_SPECS: tuple[_BuiltinSkillSpec, ...] = (
             "zh-CN": "工作流学习子技能；用于回放、复盘与决策解释。",
             "en-US": "Workflow-learning sub-skill for replay, review, and decision explanation.",
         },
-        handoff_kind="replay",
+        handoff_kind="consult",
         supports_routes=("replay",),
         triggers=("回放", "复盘", "为什么这么做", "replay", "review the implementation"),
     ),

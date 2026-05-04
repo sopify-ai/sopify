@@ -30,7 +30,7 @@ from .develop_quality import (
     extract_develop_quality_result,
     normalize_develop_quality_context,
     normalize_develop_quality_result,
-    requires_develop_checkpoint,
+    requires_develop_callback,
 )
 from .decision_policy import has_tradeoff_checkpoint_signal
 from .handoff import build_runtime_handoff
@@ -39,15 +39,15 @@ from .models import PlanArtifact, RecoveredContext, RouteDecision, RunState, Run
 from .replay import ReplayWriter, build_develop_quality_replay_event
 from .state import StateStore, iso_now
 
-_HOST_FACING_TRUTH_KIND_DEVELOP_CHECKPOINT_CALLBACK = "develop_checkpoint_callback"
+_HOST_FACING_TRUTH_KIND_DEVELOP_CALLBACK = "develop_callback"
 
-DEVELOP_CHECKPOINT_SCHEMA_VERSION = "1"
-DEVELOP_CHECKPOINT_ALLOWED_KINDS = ("decision", "clarification")
-DEVELOP_CHECKPOINT_ACTIVE_STAGES = {"develop_pending", "executing"}
-DEVELOP_CHECKPOINT_SOURCE_SKILL_ID = "develop_checkpoint_callback"
+DEVELOP_CALLBACK_SCHEMA_VERSION = "1"
+DEVELOP_CALLBACK_ALLOWED_KINDS = ("decision", "clarification")
+DEVELOP_CALLBACK_ACTIVE_STAGES = {"develop_pending", "executing"}
+DEVELOP_CALLBACK_SOURCE_SKILL_ID = "develop_callback"
 
 
-class DevelopCheckpointError(ValueError):
+class DevelopCallbackError(ValueError):
     """Raised when a host tries to create an invalid develop callback checkpoint."""
 
 
@@ -63,7 +63,7 @@ class ActiveDevelopContext:
 
 
 @dataclass(frozen=True)
-class DevelopCheckpointSubmission:
+class DevelopCallbackSubmission:
     """Normalized develop callback output written back into runtime state."""
 
     request: CheckpointRequest
@@ -82,10 +82,10 @@ class DevelopQualitySubmission:
     run_state: RunState
     handoff: RuntimeHandoff
     replay_session_dir: str | None
-    delegated_checkpoint: DevelopCheckpointSubmission | None = None
+    delegated_callback: DevelopCallbackSubmission | None = None
 
 
-def inspect_develop_checkpoint_context(*, config: RuntimeConfig) -> Mapping[str, Any]:
+def inspect_develop_callback_context(*, config: RuntimeConfig) -> Mapping[str, Any]:
     """Return the current develop context expected by the host callback entry."""
     context = load_active_develop_context(config=config)
     execution_gate = context.current_run.execution_gate
@@ -114,7 +114,7 @@ def inspect_develop_checkpoint_context(*, config: RuntimeConfig) -> Mapping[str,
 
 
 def load_active_develop_context(*, config: RuntimeConfig) -> ActiveDevelopContext:
-    """Load the minimum runtime state required before a host may emit a develop checkpoint."""
+    """Load the minimum runtime state required before a host may emit a develop callback."""
     state_store = StateStore(config)
     snapshot = resolve_context_snapshot(
         config=config,
@@ -122,31 +122,31 @@ def load_active_develop_context(*, config: RuntimeConfig) -> ActiveDevelopContex
         global_store=state_store,
     )
     if snapshot.is_conflict:
-        raise DevelopCheckpointError("develop checkpoint callback is unavailable while runtime state_conflict is active")
+        raise DevelopCallbackError("develop callback is unavailable while runtime state_conflict is active")
     current_run = snapshot.current_run
     current_plan = snapshot.current_plan
     current_handoff = snapshot.current_handoff
 
     if current_run is None or current_plan is None or current_handoff is None:
-        raise DevelopCheckpointError(
-            "develop checkpoint callback requires an active plan, run, and handoff from continue_host_develop"
+        raise DevelopCallbackError(
+            "develop callback requires an active plan, run, and handoff from continue_host_develop"
         )
     if current_handoff.required_host_action != "continue_host_develop":
-        raise DevelopCheckpointError(
-            "develop checkpoint callback is only allowed after current_handoff.required_host_action == continue_host_develop"
+        raise DevelopCallbackError(
+            "develop callback is only allowed after current_handoff.required_host_action == continue_host_develop"
         )
-    if current_run.stage not in DEVELOP_CHECKPOINT_ACTIVE_STAGES:
-        raise DevelopCheckpointError(
-            f"develop checkpoint callback is only allowed during {sorted(DEVELOP_CHECKPOINT_ACTIVE_STAGES)}, got {current_run.stage}"
+    if current_run.stage not in DEVELOP_CALLBACK_ACTIVE_STAGES:
+        raise DevelopCallbackError(
+            f"develop callback is only allowed during {sorted(DEVELOP_CALLBACK_ACTIVE_STAGES)}, got {current_run.stage}"
         )
 
     existing_clarification = snapshot.current_clarification
     if existing_clarification is not None and existing_clarification.status in {"pending", "collecting"}:
-        raise DevelopCheckpointError("a clarification checkpoint is already pending; resume it before creating another")
+        raise DevelopCallbackError("a clarification checkpoint is already pending; resume it before creating another")
 
     existing_decision = snapshot.current_decision
     if existing_decision is not None and existing_decision.status in {"pending", "collecting"}:
-        raise DevelopCheckpointError("a decision checkpoint is already pending; resume it before creating another")
+        raise DevelopCallbackError("a decision checkpoint is already pending; resume it before creating another")
 
     return ActiveDevelopContext(
         state_store=state_store,
@@ -157,18 +157,18 @@ def load_active_develop_context(*, config: RuntimeConfig) -> ActiveDevelopContex
     )
 
 
-def submit_develop_checkpoint(
+def submit_develop_callback(
     raw_payload: Mapping[str, Any],
     *,
     config: RuntimeConfig,
-) -> DevelopCheckpointSubmission:
+) -> DevelopCallbackSubmission:
     """Normalize a host callback payload into runtime checkpoint state and handoff."""
     context = load_active_develop_context(config=config)
-    request = build_develop_checkpoint_request(raw_payload, config=config, context=context)
+    request = build_develop_callback_request(raw_payload, config=config, context=context)
     materialized = materialize_checkpoint_request(request.to_dict(), config=config)
 
-    route = _develop_checkpoint_route(request=request, current_plan=context.current_plan)
-    run_state = _develop_checkpoint_run_state(
+    route = _develop_callback_route(request=request, current_plan=context.current_plan)
+    run_state = _develop_callback_run_state(
         context=context,
         request=request,
         materialized=materialized,
@@ -198,21 +198,21 @@ def submit_develop_checkpoint(
         replay_session_dir=None,
         skill_result={"checkpoint_request": request.to_dict()},
         notes=(
-            f"Develop checkpoint callback created: {request.checkpoint_id}",
-            f"Develop checkpoint resume_after={develop_resume_after(request.resume_context)}",
+            f"Develop callback created: {request.checkpoint_id}",
+            f"Develop callback resume_after={develop_resume_after(request.resume_context)}",
         ),
     )
     if handoff is None:  # pragma: no cover - defensive guard
-        raise DevelopCheckpointError("develop checkpoint callback could not build a runtime handoff")
+        raise DevelopCallbackError("develop callback could not build a runtime handoff")
 
     run_state, handoff = state_store.set_host_facing_truth(
         run_state=run_state,
         handoff=handoff,
         resolution_id=context.resolution_id,
-        truth_kind=_HOST_FACING_TRUTH_KIND_DEVELOP_CHECKPOINT_CALLBACK,
+        truth_kind=_HOST_FACING_TRUTH_KIND_DEVELOP_CALLBACK,
     )
     state_store.set_last_route(route)
-    return DevelopCheckpointSubmission(
+    return DevelopCallbackSubmission(
         request=request,
         materialized=materialized,
         run_state=run_state,
@@ -229,11 +229,11 @@ def submit_develop_quality_report(
     """Persist a structured develop quality-loop result for the active host flow."""
     context = load_active_develop_context(config=config)
     if not isinstance(raw_payload, Mapping):
-        raise DevelopCheckpointError("develop quality payload must be an object")
+        raise DevelopCallbackError("develop quality payload must be an object")
 
     payload_version = str(raw_payload.get("schema_version") or DEVELOP_QUALITY_SCHEMA_VERSION).strip()
     if payload_version != DEVELOP_QUALITY_SCHEMA_VERSION:
-        raise DevelopCheckpointError(
+        raise DevelopCallbackError(
             f"unsupported develop quality payload schema_version: {payload_version or '<missing>'}"
         )
 
@@ -245,9 +245,9 @@ def submit_develop_quality_report(
         else:
             quality_result = normalize_develop_quality_result(raw_payload)
     except DevelopQualityError as exc:
-        raise DevelopCheckpointError(str(exc)) from exc
+        raise DevelopCallbackError(str(exc)) from exc
 
-    if requires_develop_checkpoint(quality_result):
+    if requires_develop_callback(quality_result):
         delegated = _submit_quality_checkpoint(
             raw_payload,
             context=context,
@@ -268,7 +268,7 @@ def submit_develop_quality_report(
             run_state=delegated.run_state,
             handoff=delegated.handoff,
             replay_session_dir=replay_session_dir,
-            delegated_checkpoint=delegated,
+            delegated_callback=delegated,
         )
 
     state_store = context.state_store
@@ -296,7 +296,7 @@ def submit_develop_quality_report(
     )
 
 
-def build_develop_checkpoint_request(
+def build_develop_callback_request(
     raw_payload: Mapping[str, Any],
     *,
     config: RuntimeConfig,
@@ -304,23 +304,23 @@ def build_develop_checkpoint_request(
 ) -> CheckpointRequest:
     """Convert a host callback payload into the generic checkpoint request contract."""
     if not isinstance(raw_payload, Mapping):
-        raise DevelopCheckpointError("develop checkpoint payload must be an object")
+        raise DevelopCallbackError("develop callback payload must be an object")
 
-    payload_version = str(raw_payload.get("schema_version") or DEVELOP_CHECKPOINT_SCHEMA_VERSION)
-    if payload_version != DEVELOP_CHECKPOINT_SCHEMA_VERSION:
-        raise DevelopCheckpointError(
-            f"unsupported develop checkpoint payload schema_version: {payload_version or '<missing>'}"
+    payload_version = str(raw_payload.get("schema_version") or DEVELOP_CALLBACK_SCHEMA_VERSION)
+    if payload_version != DEVELOP_CALLBACK_SCHEMA_VERSION:
+        raise DevelopCallbackError(
+            f"unsupported develop callback payload schema_version: {payload_version or '<missing>'}"
         )
 
     tradeoff_signal = has_tradeoff_checkpoint_signal(raw_payload)
     checkpoint_kind = str(raw_payload.get("checkpoint_kind") or "").strip()
-    if checkpoint_kind not in DEVELOP_CHECKPOINT_ALLOWED_KINDS:
+    if checkpoint_kind not in DEVELOP_CALLBACK_ALLOWED_KINDS:
         if tradeoff_signal:
-            raise DevelopCheckpointError(
-                f"{CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED}: unsupported develop checkpoint payload kind: {checkpoint_kind or '<missing>'}"
+            raise DevelopCallbackError(
+                f"{CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED}: unsupported develop callback payload kind: {checkpoint_kind or '<missing>'}"
             )
-        raise DevelopCheckpointError(
-            f"unsupported develop checkpoint payload kind: {checkpoint_kind or '<missing>'}"
+        raise DevelopCallbackError(
+            f"unsupported develop callback payload kind: {checkpoint_kind or '<missing>'}"
         )
 
     now = iso_now()
@@ -353,8 +353,8 @@ def build_develop_checkpoint_request(
         "source_stage": "develop",
         "source_route": str(raw_payload.get("source_route") or context.current_run.route_name or "resume_active"),
         "blocking": bool(raw_payload.get("blocking", True)),
-        "source_skill_id": DEVELOP_CHECKPOINT_SOURCE_SKILL_ID,
-        "policy_id": str(raw_payload.get("policy_id") or "develop_checkpoint_callback"),
+        "source_skill_id": DEVELOP_CALLBACK_SOURCE_SKILL_ID,
+        "policy_id": str(raw_payload.get("policy_id") or "develop_callback"),
         "trigger_reason": str(raw_payload.get("trigger_reason") or "host_callback"),
         "feature_key": context.current_plan.plan_id,
         "question": question,
@@ -384,11 +384,11 @@ def build_develop_checkpoint_request(
         return normalize_checkpoint_request(raw_request)
     except CheckpointRequestError as exc:
         if tradeoff_signal:
-            raise DevelopCheckpointError(f"{CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED}: {exc}") from exc
-        raise DevelopCheckpointError(str(exc)) from exc
+            raise DevelopCallbackError(f"{CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED}: {exc}") from exc
+        raise DevelopCallbackError(str(exc)) from exc
 
 
-def is_develop_checkpoint_state(checkpoint_state: Any) -> bool:
+def is_develop_callback_state(checkpoint_state: Any) -> bool:
     """Return True when a clarification/decision state came from the develop callback path."""
     phase = str(getattr(checkpoint_state, "phase", "") or "").strip()
     resume_context = getattr(checkpoint_state, "resume_context", None)
@@ -412,7 +412,7 @@ def _normalize_resume_context(
 ) -> Mapping[str, Any]:
     resume_context = raw_payload.get("resume_context")
     if not isinstance(resume_context, Mapping):
-        raise DevelopCheckpointError("develop checkpoint payload.resume_context is required")
+        raise DevelopCallbackError("develop callback payload.resume_context is required")
 
     normalized = {str(key): value for key, value in resume_context.items()}
     normalized.setdefault("active_run_stage", context.current_run.stage)
@@ -432,12 +432,12 @@ def _normalize_resume_context(
         try:
             normalized["develop_quality_result"] = normalize_develop_quality_result(raw_quality_result)
         except DevelopQualityError as exc:
-            raise DevelopCheckpointError(str(exc)) from exc
+            raise DevelopCallbackError(str(exc)) from exc
     else:
         inherited_quality_result = extract_develop_quality_result(context.current_handoff.artifacts)
         if inherited_quality_result is not None:
             # Preserve the latest stable quality summary across user-facing
-            # develop checkpoints so resume-active handoffs do not lose it.
+            # develop callbacks so resume-active handoffs do not lose it.
             normalized["develop_quality_result"] = inherited_quality_result
 
     for list_field in ("task_refs", "changed_files", "verification_todo"):
@@ -446,11 +446,11 @@ def _normalize_resume_context(
 
     missing = [field for field in DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS if field not in normalized]
     if missing:
-        raise DevelopCheckpointError(
-            f"develop checkpoint payload.resume_context is missing required fields: {', '.join(missing)}"
+        raise DevelopCallbackError(
+            f"develop callback payload.resume_context is missing required fields: {', '.join(missing)}"
         )
     if not str(normalized.get("working_summary") or "").strip():
-        raise DevelopCheckpointError("develop checkpoint payload.resume_context.working_summary is required")
+        raise DevelopCallbackError("develop callback payload.resume_context.working_summary is required")
 
     resume_after = develop_resume_after(normalized)
     normalized["resume_after"] = resume_after
@@ -464,11 +464,11 @@ def _submit_quality_checkpoint(
     quality_context: Mapping[str, Any],
     quality_result: Mapping[str, Any],
     config: RuntimeConfig,
-) -> DevelopCheckpointSubmission:
+) -> DevelopCallbackSubmission:
     checkpoint_kind = str(raw_payload.get("checkpoint_kind") or "").strip()
-    if checkpoint_kind not in DEVELOP_CHECKPOINT_ALLOWED_KINDS:
-        raise DevelopCheckpointError(
-            "develop quality replan_required requires checkpoint_kind=decision|clarification so runtime can route through develop_checkpoint"
+    if checkpoint_kind not in DEVELOP_CALLBACK_ALLOWED_KINDS:
+        raise DevelopCallbackError(
+            "develop quality replan_required requires checkpoint_kind=decision|clarification so runtime can route through develop_callback"
         )
 
     checkpoint_payload = {
@@ -487,15 +487,15 @@ def _submit_quality_checkpoint(
     checkpoint_payload["quality_result"] = quality_result
     checkpoint_payload.setdefault("summary", quality_context["working_summary"])
     checkpoint_payload.setdefault("request_text", context.current_run.request_excerpt or context.current_plan.summary)
-    return submit_develop_checkpoint(checkpoint_payload, config=config)
+    return submit_develop_callback(checkpoint_payload, config=config)
 
 
-def _develop_checkpoint_route(*, request: CheckpointRequest, current_plan: PlanArtifact) -> RouteDecision:
+def _develop_callback_route(*, request: CheckpointRequest, current_plan: PlanArtifact) -> RouteDecision:
     route_name = "decision_pending" if request.checkpoint_kind == "decision" else "clarification_pending"
     reason = (
-        "Develop checkpoint callback requires user confirmation before host-side implementation can continue"
+        "Develop callback requires user confirmation before host-side implementation can continue"
         if request.checkpoint_kind == "decision"
-        else "Develop checkpoint callback requires missing facts before host-side implementation can continue"
+        else "Develop callback requires missing facts before host-side implementation can continue"
     )
     return RouteDecision(
         route_name=route_name,
@@ -588,7 +588,7 @@ def _record_develop_quality_replay(
     return str(session_dir.relative_to(config.workspace_root))
 
 
-def _develop_checkpoint_run_state(
+def _develop_callback_run_state(
     *,
     context: ActiveDevelopContext,
     request: CheckpointRequest,

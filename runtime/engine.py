@@ -30,8 +30,7 @@ from .decision import (
     response_from_submission,
     stale_decision,
 )
-from .develop_checkpoint import develop_resume_after, is_develop_checkpoint_state
-from .execution_confirm import parse_execution_confirm_response
+from .develop_callback import develop_resume_after, is_develop_callback_state
 from .execution_gate import evaluate_execution_gate
 from .archive_lifecycle import (
     ARCHIVE_STATUS_ALREADY_ARCHIVED,
@@ -43,7 +42,7 @@ from .archive_lifecycle import (
 )
 from .handoff import build_runtime_handoff
 from .kb import bootstrap_kb, ensure_blueprint_index, ensure_blueprint_scaffold
-from .models import ClarificationState, DecisionState, ExecutionGate, KbArtifact, PlanArtifact, PlanProposalState, RecoveredContext, ReplayEvent, RouteDecision, RunState, RuntimeConfig, RuntimeHandoff, RuntimeResult, SkillActivation, SkillMeta
+from .models import ClarificationState, DecisionState, ExecutionGate, KbArtifact, PlanArtifact, RecoveredContext, ReplayEvent, RouteDecision, RunState, RuntimeConfig, RuntimeHandoff, RuntimeResult, SkillActivation, SkillMeta
 from .plan_registry import (
     PlanRegistryError,
     encode_priority_note_event,
@@ -56,12 +55,6 @@ from .plan_scaffold import (
     find_plan_by_request_reference,
     reserve_plan_identity,
     request_explicitly_wants_new_plan,
-)
-from .plan_proposal import (
-    build_plan_proposal_state,
-    confirmed_decision_from_proposal,
-    merge_plan_proposal_request,
-    refresh_plan_proposal_state,
 )
 from .replay import ReplayWriter, build_decision_replay_event
 from .router import Router
@@ -89,22 +82,27 @@ _CURRENT_PLAN_ANCHOR_PATTERNS = (
     re.compile(r"(current|active)\s+plan", re.IGNORECASE),
     re.compile(r"(继续|回到|基于|沿用|挂到|并入|写进|写入).*(plan|方案)", re.IGNORECASE),
 )
-_PLAN_PROPOSAL_RETOPIC_PATTERNS = (
-    re.compile(r"^\s*(?:把)?(?:(?:这个|该|当前)\s*)?方案(?:改成|改为|换成|换为)\s*(?P<target>.+?)\s*$", re.IGNORECASE),
-    re.compile(r"^\s*改成新的方案[:：]?\s*(?P<target>.+?)\s*$", re.IGNORECASE),
-    re.compile(r"^\s*(?:change|switch)\s+(?:(?:this|the|current)\s+)?plan\s+to\s+(?P<target>.+?)\s*$", re.IGNORECASE),
-)
-
 _HOST_FACING_TRUTH_KIND_ENGINE_RUNTIME_HANDOFF = "engine_runtime_handoff"
 _HOST_FACING_TRUTH_KIND_PROMOTION_GLOBAL_EXECUTION = "promotion_global_execution"
 _ABORTABLE_CLARIFICATION_STATUSES = frozenset({"pending", "collecting"})
 _ABORTABLE_DECISION_STATUSES = frozenset({"pending", "collecting", "cancelled", "timed_out"})
+
+# Canonical route families (blueprint design.md §Route Families).
+# Internal consumers should reference families, not enumerate individual route names.
+_CANONICAL_ROUTE_FAMILIES: dict[str, str] = {
+    "plan_only": "plan", "workflow": "plan", "light_iterate": "plan",
+    "quick_fix": "develop", "resume_active": "develop", "exec_plan": "develop",
+    "consult": "consult", "replay": "consult",
+    "archive_lifecycle": "archive",
+    "clarification_pending": "clarification", "clarification_resume": "clarification",
+    "decision_pending": "decision", "decision_resume": "decision",
+}
+_NON_FAMILY_SURFACES = frozenset({"state_conflict", "cancel_active", "summary"})
+
 _ABORTABLE_HANDOFF_ACTIONS = frozenset(
     {
         "answer_questions",
         "confirm_decision",
-        "confirm_plan_package",
-        "confirm_execute",
         "resolve_state_conflict",
     }
 )
@@ -112,16 +110,14 @@ _ABORTABLE_RUN_STAGES = frozenset(
     {
         "clarification_pending",
         "decision_pending",
-        "plan_proposal_pending",
-        "execution_confirm_pending",
     }
 )
 # These routes operate on the single root-scoped execution truth once review
 # state is explicitly promoted out of a session.
-_GLOBAL_EXECUTION_ROUTES = frozenset({"execution_confirm_pending", "resume_active", "exec_plan", "archive_lifecycle"})
+_GLOBAL_EXECUTION_ROUTES = frozenset({"resume_active", "exec_plan", "archive_lifecycle"})
 # Only stable review checkpoints may be promoted into the global execution
-# truth consumed by execution-confirm, resume, and archive lifecycle.
-_PROMOTABLE_REVIEW_STAGES = frozenset({"plan_generated", "ready_for_execution", "execution_confirm_pending", "develop_pending"})
+# truth consumed by resume and archive lifecycle.
+_PROMOTABLE_REVIEW_STAGES = frozenset({"plan_generated", "ready_for_execution", "develop_pending"})
 
 
 @dataclass(frozen=True)
@@ -145,7 +141,6 @@ class _PlanningContext:
 
     current_run: RunState | None = None
     current_plan: PlanArtifact | None = None
-    current_plan_proposal: PlanProposalState | None = None
     current_clarification: ClarificationState | None = None
     current_decision: DecisionState | None = None
     last_route: RouteDecision | None = None
@@ -155,26 +150,12 @@ def _capture_planning_context(state_store: StateStore) -> _PlanningContext:
     return _PlanningContext(
         current_run=state_store.get_current_run(),
         current_plan=state_store.get_current_plan(),
-        current_plan_proposal=state_store.get_current_plan_proposal(),
         current_clarification=state_store.get_current_clarification(),
         current_decision=state_store.get_current_decision(),
         last_route=state_store.get_last_route(),
     )
 
 
-def _extract_plan_proposal_retopic_target(feedback_text: str) -> str | None:
-    normalized = str(feedback_text or "").strip()
-    if not normalized:
-        return None
-    for pattern in _PLAN_PROPOSAL_RETOPIC_PATTERNS:
-        match = pattern.match(normalized)
-        if match is None:
-            continue
-        target = str(match.group("target") or "").strip().strip(":：").strip()
-        target = target.rstrip("。.!！？?").strip()
-        if target:
-            return target
-    return None
 
 
 def _snapshot_has_global_execution_truth(snapshot: ContextResolvedSnapshot | None) -> bool:
@@ -271,9 +252,6 @@ def _handle_state_conflict(
 
 def _clear_abortable_negotiation_state(store: StateStore) -> list[str]:
     notes: list[str] = []
-    if store.get_current_plan_proposal() is not None:
-        store.clear_current_plan_proposal()
-        notes.append(f"Cleared pending plan proposal from {store.scope} scope")
     clarification = store.get_current_clarification()
     if _is_abortable_clarification(clarification):
         store.clear_current_clarification()
@@ -513,9 +491,8 @@ def _persist_execution_gate_checkpoint(
     if execution_store is not state_store:
         # Once execution truth is promoted globally, the review-scoped run and
         # handoff are stale carriers. Keeping them would let snapshot recovery
-        # pick `confirm_execute` from the session side while a global
-        # `confirm_decision` checkpoint already exists, which immediately
-        # fail-closes into a state conflict on the next runtime turn.
+        # pick a checkpoint from the session side while a global checkpoint
+        # already exists, which could fail-close into a state conflict.
         state_store.clear_current_run()
         state_store.clear_current_handoff()
     return (execution_store, notes)
@@ -736,18 +713,6 @@ def run_runtime(
         notes.append(f"Superseded pending decision checkpoint: {stale_state.decision_id}")
         current_decision = None
 
-    # Proposal is now session-only and already resolved by the entry snapshot,
-    # so the engine should not re-open the proposal file as business truth here.
-    current_plan_proposal = recovered.current_plan_proposal
-    if (
-        current_plan_proposal is not None
-        and effective_route.route_name in {"plan_only", "workflow", "light_iterate"}
-        and effective_route.route_name != "plan_proposal_pending"
-    ):
-        review_store.clear_current_plan_proposal()
-        notes.append(f"Superseded pending plan proposal: {current_plan_proposal.checkpoint_id}")
-        current_plan_proposal = None
-
     canceled_store: StateStore | None = None
     preserved_review_after_cancel = False
     if effective_route.route_name == "cancel_active":
@@ -835,15 +800,6 @@ def run_runtime(
             kb_artifact=kb_artifact,
         )
         notes.extend(decision_notes)
-    elif effective_route.route_name == "plan_proposal_pending":
-        effective_route, plan_artifact, proposal_notes, kb_artifact = _handle_plan_proposal_pending(
-            effective_route,
-            state_store=review_store,
-            resolved_proposal=current_plan_proposal,
-            config=config,
-            kb_artifact=kb_artifact,
-        )
-        notes.extend(proposal_notes)
     elif effective_route.route_name == "state_conflict":
         result_store, snapshot, conflict_notes = _handle_state_conflict(
             effective_route,
@@ -859,28 +815,6 @@ def run_runtime(
             snapshot=snapshot,
         )
         notes.extend(conflict_notes)
-    elif effective_route.route_name == "execution_confirm_pending":
-        execution_store, execution_recovered, promotion_notes = _resolve_execution_state_store(
-            effective_route,
-            config=config,
-            review_store=review_store,
-            global_store=global_store,
-            recovered_context=recovered,
-            session_id=session_id,
-        )
-        notes.extend(promotion_notes)
-        effective_route, plan_artifact, execution_confirm_notes = _handle_execution_confirm(
-            effective_route,
-            state_store=execution_store,
-            current_plan=execution_recovered.current_plan,
-            current_run=execution_recovered.current_run,
-            current_clarification=execution_recovered.current_clarification,
-            current_decision=execution_recovered.current_decision,
-            config=config,
-            session_id=session_id,
-        )
-        recovered = execution_recovered
-        notes.extend(execution_confirm_notes)
     elif effective_route.route_name in {"plan_only", "workflow", "light_iterate"}:
         effective_route, plan_artifact, planning_notes, kb_artifact = _advance_planning_route(
             effective_route,
@@ -890,7 +824,6 @@ def run_runtime(
             planning_context=_PlanningContext(
                 current_run=recovered.current_run,
                 current_plan=recovered.current_plan,
-                current_plan_proposal=recovered.current_plan_proposal,
                 current_clarification=recovered.current_clarification,
                 current_decision=recovered.current_decision,
                 last_route=recovered.last_route,
@@ -1314,11 +1247,6 @@ def _pending_required_host_action(snapshot) -> str:
         return "answer_questions"
     if snapshot.current_decision is not None and snapshot.current_decision.status in {"pending", "collecting", "confirmed", "cancelled", "timed_out"}:
         return "confirm_decision"
-    if snapshot.current_plan_proposal is not None:
-        return "confirm_plan_package"
-    current_run = snapshot.execution_active_run or snapshot.current_run
-    if current_run is not None and current_run.stage in {"ready_for_execution", "execution_confirm_pending"}:
-        return "confirm_execute"
     return ""
 
 
@@ -1442,28 +1370,6 @@ def _make_clarification_run_state(
     )
 
 
-def _make_plan_proposal_run_state(
-    decision: RouteDecision,
-    proposal_state,
-) -> RunState:
-    now = iso_now()
-    return RunState(
-        run_id=_make_run_id(proposal_state.request_text or decision.request_text),
-        status="active",
-        stage="plan_proposal_pending",
-        route_name=proposal_state.resume_route or decision.route_name,
-        title=proposal_state.analysis_summary or proposal_state.proposed_path,
-        created_at=proposal_state.created_at or now,
-        updated_at=now,
-        plan_id=proposal_state.reserved_plan_id,
-        plan_path=proposal_state.proposed_path,
-        execution_gate=None,
-        request_excerpt=summarize_request_text(proposal_state.request_text or decision.request_text),
-        request_sha1=stable_request_sha1(proposal_state.request_text or decision.request_text),
-        owner_session_id="",
-        owner_host="",
-        owner_run_id="",
-    )
 
 
 def _make_run_id(request_text: str) -> str:
@@ -1472,9 +1378,6 @@ def _make_run_id(request_text: str) -> str:
     return f"{timestamp}_{digest}"
 
 
-def _make_plan_proposal_id(request_text: str) -> str:
-    digest = sha1(request_text.encode("utf-8")).hexdigest()[:8]
-    return f"plan_proposal_{digest}"
 
 
 def _find_skill(skills: tuple[SkillMeta, ...], skill_id: str) -> SkillMeta | None:
@@ -1485,9 +1388,9 @@ def _find_skill(skills: tuple[SkillMeta, ...], skill_id: str) -> SkillMeta | Non
 
 
 def _phase_for_route(decision: RouteDecision) -> str:
-    if decision.route_name in {"plan_only", "workflow", "light_iterate", "plan_proposal_pending", "clarification_pending", "clarification_resume", "decision_pending", "decision_resume"}:
+    if decision.route_name in {"plan_only", "workflow", "light_iterate", "clarification_pending", "clarification_resume", "decision_pending", "decision_resume"}:
         return "design"
-    if decision.route_name in {"execution_confirm_pending", "resume_active", "exec_plan", "quick_fix"}:
+    if decision.route_name in {"resume_active", "exec_plan", "quick_fix"}:
         return "develop"
     return "analysis"
 
@@ -1527,7 +1430,7 @@ def _activation_target(
         return ("workflow-learning", "复盘学习")
     if decision.route_name == "summary":
         return ("summary", "今日详细摘要")
-    if decision.route_name in {"resume_active", "exec_plan", "execution_confirm_pending", "quick_fix", "archive_lifecycle"}:
+    if decision.route_name in {"resume_active", "exec_plan", "quick_fix", "archive_lifecycle"}:
         return ("develop", "开发实施")
     if decision.route_name in {"clarification_pending", "clarification_resume"}:
         if current_clarification is not None and current_clarification.phase == "develop":
@@ -1537,7 +1440,7 @@ def _activation_target(
         if current_decision is not None and current_decision.phase == "develop":
             return ("develop", "开发实施")
         return ("design", "方案设计")
-    if decision.route_name in {"plan_only", "workflow", "light_iterate", "plan_proposal_pending"}:
+    if decision.route_name in {"plan_only", "workflow", "light_iterate"}:
         return ("design", "方案设计")
     return ("consult", "咨询问答")
 
@@ -1590,7 +1493,7 @@ def _handle_clarification_resume(
             return (_clarification_pending_route(decision, reason="Clarification still requires factual details"), None, notes, kb_artifact)
 
         resumed_request = merge_clarification_request(current_clarification, response.text)
-    if is_develop_checkpoint_state(current_clarification):
+    if is_develop_callback_state(current_clarification):
         return _resume_from_develop_clarification(
             state_store=state_store,
             current_clarification=current_clarification,
@@ -1714,7 +1617,7 @@ def _handle_decision_resume(
         notes.append("Decision checkpoint has not reached a confirmed state yet")
         return (_decision_pending_route(decision, reason="Decision checkpoint is still pending"), None, notes, kb_artifact, None)
 
-    if is_develop_checkpoint_state(current_decision):
+    if is_develop_callback_state(current_decision):
         return _resume_from_develop_decision(
             state_store=state_store,
             current_decision=current_decision,
@@ -1824,159 +1727,6 @@ def _resume_from_develop_clarification(
     )
 
 
-def _handle_plan_proposal_pending(
-    decision: RouteDecision,
-    *,
-    state_store: StateStore,
-    resolved_proposal: PlanProposalState | None,
-    config: RuntimeConfig,
-    kb_artifact: KbArtifact | None,
-) -> tuple[RouteDecision, PlanArtifact | None, list[str], KbArtifact | None]:
-    # Router already classified this branch from a resolved snapshot. The
-    # handler must consume that resolved proposal instead of re-reading the
-    # checkpoint file and risking a different truth than routing saw.
-    proposal_state = resolved_proposal
-    notes: list[str] = []
-    if proposal_state is None:
-        return (
-            _plan_proposal_pending_route(
-                decision,
-                reason="Resolved snapshot did not include a pending plan proposal",
-            ),
-            None,
-            ["Resolved snapshot did not include a pending plan proposal"],
-            kb_artifact,
-        )
-
-    action = decision.active_run_action or "inspect_plan_proposal"
-    if action == "inspect_plan_proposal":
-        state_store.set_current_run(_make_plan_proposal_run_state(decision, proposal_state))
-        notes.append("Plan proposal remains pending")
-        return (
-            _plan_proposal_pending_route(
-                decision,
-                reason="Plan proposal is still waiting for package confirmation",
-                active_run_action="inspect_plan_proposal",
-            ),
-            None,
-            notes,
-            kb_artifact,
-        )
-
-    if action == "confirm_plan_proposal":
-        confirmed_decision = confirmed_decision_from_proposal(proposal_state)
-        created = create_plan_scaffold(
-            proposal_state.request_text,
-            config=config,
-            level=proposal_state.proposed_level,
-            decision_state=confirmed_decision,
-            topic_key=proposal_state.topic_key,
-            plan_id=proposal_state.reserved_plan_id,
-        )
-        state_store.clear_current_plan_proposal()
-        state_store.set_current_plan(created)
-        kb_artifact = _merge_kb_artifacts(kb_artifact, ensure_blueprint_index(config), config=config)
-        notes.extend(
-            _created_plan_notes(
-                created,
-                config=config,
-                base_note=_created_plan_base_note(created.path, "after proposal confirmation"),
-            )
-        )
-        review_route, plan_artifact, gate_notes = _apply_execution_gate_to_plan(
-            _plan_review_route(
-                RouteDecision(
-                    route_name=proposal_state.resume_route or "workflow",
-                    request_text=proposal_state.request_text,
-                    reason="Plan proposal confirmed and materialized",
-                    complexity="complex" if proposal_state.proposed_level != "light" else "medium",
-                    plan_level=proposal_state.proposed_level,
-                    candidate_skill_ids=proposal_state.candidate_skill_ids,
-                    capture_mode=proposal_state.capture_mode,
-                ),
-                reason="Plan proposal confirmed and materialized for review",
-                plan_level=proposal_state.proposed_level,
-            ),
-            plan_artifact=created,
-            state_store=state_store,
-            config=config,
-            decision_context=confirmed_decision,
-        )
-        notes.extend(gate_notes)
-        return (review_route, plan_artifact, notes, kb_artifact)
-
-    if action == "revise_plan_proposal":
-        merged_request = merge_plan_proposal_request(proposal_state, decision.request_text)
-        retopic_target = _extract_plan_proposal_retopic_target(decision.request_text)
-        revision_requests_new_identity = (
-            retopic_target is not None
-            or find_plan_by_request_reference(decision.request_text, config=config) is not None
-            or request_explicitly_wants_new_plan(decision.request_text)
-        )
-        if revision_requests_new_identity:
-            restart_request = retopic_target or decision.request_text
-            state_store.clear_current_plan_proposal()
-            notes.append(f"Exited proposal {proposal_state.checkpoint_id} because revision requires a new proposal identity")
-            resumed_route = RouteDecision(
-                route_name=proposal_state.resume_route or "workflow",
-                request_text=restart_request,
-                reason="Revision feedback requires a new proposal identity, so planning restarted",
-                complexity="complex" if proposal_state.proposed_level != "light" else "medium",
-                plan_level=proposal_state.proposed_level,
-                candidate_skill_ids=proposal_state.candidate_skill_ids,
-                should_recover_context=False,
-                plan_package_policy="confirm",
-                capture_mode=proposal_state.capture_mode,
-            )
-            routed_decision, plan_artifact, planning_notes, kb_artifact = _advance_planning_route(
-                resumed_route,
-                state_store=state_store,
-                config=config,
-                kb_artifact=kb_artifact,
-                confirmed_decision=confirmed_decision_from_proposal(proposal_state),
-                planning_context=_capture_planning_context(state_store),
-            )
-            notes.extend(planning_notes)
-            return (routed_decision, plan_artifact, notes, kb_artifact)
-
-        refreshed = refresh_plan_proposal_state(
-            proposal_state,
-            request_text=merged_request,
-            proposed_level=proposal_state.proposed_level,
-        )
-        state_store.set_current_plan_proposal(refreshed)
-        state_store.set_current_run(_make_plan_proposal_run_state(decision, refreshed))
-        notes.append(f"Refreshed plan proposal {refreshed.checkpoint_id} without drifting path or identity")
-        return (
-            _plan_proposal_pending_route(
-                RouteDecision(
-                    route_name=proposal_state.resume_route or "workflow",
-                    request_text=merged_request,
-                    reason="Plan proposal revised and is waiting for package confirmation",
-                    complexity="complex" if proposal_state.proposed_level != "light" else "medium",
-                    plan_level=proposal_state.proposed_level,
-                    candidate_skill_ids=proposal_state.candidate_skill_ids,
-                    capture_mode=proposal_state.capture_mode,
-                ),
-                reason="Plan proposal revised and is waiting for package confirmation",
-                active_run_action="revise_plan_proposal",
-            ),
-            None,
-            notes,
-            kb_artifact,
-        )
-
-    state_store.set_current_run(_make_plan_proposal_run_state(decision, proposal_state))
-    notes.append(f"Unsupported proposal action fell back to inspect: {action}")
-    return (
-        _plan_proposal_pending_route(
-            decision,
-            reason="Plan proposal is still waiting for package confirmation",
-        ),
-        None,
-        notes,
-        kb_artifact,
-    )
 
 
 def _resume_from_develop_decision(
@@ -2083,272 +1833,6 @@ def _resume_from_active_plan_binding_decision(
     return (planning_route, plan_artifact, notes, kb_artifact, current_decision)
 
 
-def _handle_execution_confirm(
-    decision: RouteDecision,
-    *,
-    state_store: StateStore,
-    current_plan: PlanArtifact | None,
-    current_run: RunState | None,
-    current_clarification: ClarificationState | None,
-    current_decision: DecisionState | None,
-    config: RuntimeConfig,
-    session_id: str | None,
-) -> tuple[RouteDecision, PlanArtifact | None, list[str]]:
-    notes: list[str] = []
-    if current_plan is None or current_run is None:
-        return (
-            _execution_confirm_pending_route(
-                decision,
-                reason="No active plan is available for execution confirmation",
-            ),
-            None,
-            ["No active plan available for execution confirmation"],
-        )
-
-    routed_action = decision.active_run_action
-    if routed_action == "inspect_execution_confirm":
-        response_action = "status"
-        response_message = ""
-    elif routed_action == "confirm_execution":
-        response_action = "confirm"
-        response_message = ""
-    elif routed_action == "revise_execution":
-        response_action = "revise"
-        response_message = ""
-    else:
-        response = parse_execution_confirm_response(decision.request_text)
-        response_action = response.action
-        response_message = response.message
-
-    if response_action == "cancel":
-        state_store.reset_active_flow()
-        return (
-            RouteDecision(
-                route_name="cancel_active",
-                request_text=decision.request_text,
-                reason="Execution confirmation cancelled by user",
-                complexity="simple",
-                should_recover_context=True,
-            ),
-            None,
-            ["Execution confirmation cancelled"],
-        )
-
-    if response_action in {"status", "invalid"}:
-        _set_execution_run_state(
-            state_store,
-            _copy_run_state(
-                current_run,
-                stage="execution_confirm_pending",
-            ),
-            session_id=session_id,
-        )
-        if response_message:
-            notes.append(response_message)
-        notes.append("Execution confirmation is pending")
-        return (
-            _execution_confirm_pending_route(
-                decision,
-                reason="Execution confirmation is still waiting for user input",
-                active_run_action="inspect_execution_confirm",
-            ),
-            current_plan,
-            notes,
-        )
-
-    if response_action == "revise":
-        _set_execution_run_state(
-            state_store,
-            _copy_run_state(
-                current_run,
-                stage="execution_confirm_pending",
-            ),
-            session_id=session_id,
-        )
-        notes.append("Execution confirmation deferred because plan feedback was received")
-        return (
-            _execution_confirm_pending_route(
-                decision,
-                reason="Execution confirmation deferred until the plan feedback is reviewed",
-                active_run_action="revise_execution",
-            ),
-            current_plan,
-            notes,
-        )
-
-    gate_route = _resume_active_route(
-        request_text=current_plan.summary or decision.request_text,
-        candidate_skill_ids=decision.candidate_skill_ids or ("develop",),
-    )
-    gate = evaluate_execution_gate(
-        decision=gate_route,
-        plan_artifact=current_plan,
-        current_clarification=current_clarification,
-        current_decision=_confirmed_decision_context(current_decision=current_decision),
-        config=config,
-    )
-    if gate.gate_status == "decision_required" and gate.blocking_reason != "unresolved_decision":
-        next_run_state = RunState(
-            run_id=current_run.run_id,
-            status="active",
-            stage="decision_pending",
-            route_name=current_run.route_name,
-            title=current_plan.title,
-            created_at=current_run.created_at,
-            updated_at=iso_now(),
-            plan_id=current_plan.plan_id,
-            plan_path=current_plan.path,
-            execution_gate=gate,
-            request_excerpt=current_run.request_excerpt,
-            request_sha1=current_run.request_sha1,
-            owner_session_id=current_run.owner_session_id,
-            owner_host=current_run.owner_host,
-            owner_run_id=current_run.owner_run_id,
-        )
-        gate_decision = _build_route_native_gate_decision_state(
-            gate_route,
-            gate=gate,
-            current_plan=current_plan,
-            current_run=next_run_state,
-            config=config,
-        )
-        if gate_decision is not None:
-            _set_execution_run_state(
-                state_store,
-                next_run_state,
-                session_id=session_id,
-            )
-            state_store.set_current_decision(gate_decision)
-            notes.extend(gate.notes)
-            notes.append(f"Execution gate requested a new decision: {gate_decision.decision_id}")
-            return (
-                _decision_pending_route(
-                    decision,
-                    reason="Execution gate found a blocking risk that still requires confirmation",
-                ),
-                current_plan,
-                notes,
-            )
-
-    if gate.gate_status != "ready":
-        _set_execution_run_state(
-            state_store,
-            _copy_run_state(
-                current_run,
-                stage="plan_generated",
-                execution_gate=gate,
-            ),
-            session_id=session_id,
-        )
-        notes.extend(gate.notes)
-        notes.append("Execution confirmation could not proceed because the execution gate is not ready")
-        return (
-            _execution_confirm_pending_route(
-                decision,
-                reason="Execution gate is no longer ready; review the plan before execution",
-                active_run_action="revise_execution",
-            ),
-            current_plan,
-            notes,
-        )
-
-    _set_execution_run_state(
-        state_store,
-        RunState(
-            run_id=current_run.run_id,
-            status="active",
-            stage="executing",
-            route_name="resume_active",
-            title=current_plan.title,
-            created_at=current_run.created_at,
-            updated_at=iso_now(),
-            plan_id=current_plan.plan_id,
-            plan_path=current_plan.path,
-            execution_gate=gate,
-            request_excerpt=current_run.request_excerpt,
-            request_sha1=current_run.request_sha1,
-            owner_session_id=current_run.owner_session_id,
-            owner_host=current_run.owner_host,
-            owner_run_id=current_run.owner_run_id,
-        ),
-        session_id=session_id,
-    )
-    notes.extend(gate.notes)
-    notes.append("Execution confirmed by user")
-    return (
-        _resume_active_route(
-            request_text=decision.request_text,
-            candidate_skill_ids=decision.candidate_skill_ids or ("develop",),
-        ),
-        current_plan,
-        notes,
-    )
-
-
-def _decision_pending_route(decision: RouteDecision, *, reason: str) -> RouteDecision:
-    return RouteDecision(
-        route_name="decision_pending",
-        request_text=decision.request_text,
-        reason=reason,
-        command=decision.command,
-        complexity=decision.complexity,
-        plan_level=decision.plan_level,
-        candidate_skill_ids=decision.candidate_skill_ids,
-        should_recover_context=True,
-        should_create_plan=False,
-        capture_mode=decision.capture_mode,
-        runtime_skill_id=None,
-        active_run_action="inspect_decision",
-        artifacts=decision.artifacts,
-    )
-
-
-def _plan_proposal_pending_route(
-    decision: RouteDecision,
-    *,
-    reason: str,
-    active_run_action: str = "inspect_plan_proposal",
-) -> RouteDecision:
-    return RouteDecision(
-        route_name="plan_proposal_pending",
-        request_text=decision.request_text,
-        reason=reason,
-        command=decision.command,
-        complexity=decision.complexity,
-        plan_level=decision.plan_level,
-        candidate_skill_ids=decision.candidate_skill_ids or ("design",),
-        should_recover_context=True,
-        plan_package_policy="confirm",
-        should_create_plan=False,
-        capture_mode=decision.capture_mode,
-        runtime_skill_id=None,
-        active_run_action=active_run_action,
-        artifacts=decision.artifacts,
-    )
-
-
-def _execution_confirm_pending_route(
-    decision: RouteDecision,
-    *,
-    reason: str,
-    active_run_action: str = "inspect_execution_confirm",
-) -> RouteDecision:
-    return RouteDecision(
-        route_name="execution_confirm_pending",
-        request_text=decision.request_text,
-        reason=reason,
-        command=decision.command,
-        complexity=decision.complexity,
-        plan_level=decision.plan_level,
-        candidate_skill_ids=decision.candidate_skill_ids or ("develop",),
-        should_recover_context=True,
-        should_create_plan=False,
-        capture_mode=decision.capture_mode,
-        runtime_skill_id=None,
-        active_run_action=active_run_action,
-        artifacts=decision.artifacts,
-    )
-
 
 def _exec_plan_unavailable_route(decision: RouteDecision, *, reason: str) -> RouteDecision:
     return RouteDecision(
@@ -2386,6 +1870,24 @@ def _clarification_pending_route(decision: RouteDecision, *, reason: str) -> Rou
     )
 
 
+def _decision_pending_route(decision: RouteDecision, *, reason: str) -> RouteDecision:
+    return RouteDecision(
+        route_name="decision_pending",
+        request_text=decision.request_text,
+        reason=reason,
+        command=decision.command,
+        complexity=decision.complexity,
+        plan_level=decision.plan_level,
+        candidate_skill_ids=decision.candidate_skill_ids,
+        should_recover_context=True,
+        should_create_plan=False,
+        capture_mode=decision.capture_mode,
+        runtime_skill_id=None,
+        active_run_action="inspect_decision",
+        artifacts=decision.artifacts,
+    )
+
+
 def _plan_review_route(
     decision: RouteDecision,
     *,
@@ -2412,16 +1914,15 @@ def _plan_review_route(
 def _normalized_plan_package_policy(decision: RouteDecision, *, config: RuntimeConfig) -> str:
     """Fail closed for legacy or malformed planning routes that omit the new policy."""
     policy = str(decision.plan_package_policy or "none").strip() or "none"
+    # Wave 3a: "confirm" is no longer a valid fork — treat as "immediate".
+    if policy == "confirm":
+        policy = "immediate"
     if policy != "none":
         return policy
     if decision.route_name == "plan_only":
         return "immediate"
     if decision.route_name in {"workflow", "light_iterate"}:
-        if find_plan_by_request_reference(decision.request_text, config=config) is not None:
-            return "confirm"
-        if request_explicitly_wants_new_plan(decision.request_text):
-            return "immediate"
-        return "confirm"
+        return "immediate"
     return policy
 
 
@@ -2597,7 +2098,6 @@ def _advance_planning_route(
         plan_artifact = selection.plan_artifact
         if plan_artifact is None:
             raise RuntimeError("Plan selection resolved to reuse_existing without an artifact")
-        state_store.clear_current_plan_proposal()
         state_store.set_current_plan(plan_artifact)
         if selection.reason_note:
             notes.append(selection.reason_note)
@@ -2611,48 +2111,12 @@ def _advance_planning_route(
         notes.extend(gate_notes)
         return (routed_decision, plan_artifact, notes, kb_artifact)
 
-    if plan_package_policy == "confirm":
-        topic_key, reserved_plan_id, proposed_path = reserve_plan_identity(
-            decision.request_text,
-            config=config,
-        )
-        proposal_state = build_plan_proposal_state(
-            decision,
-            request_text=decision.request_text,
-            proposed_level=level,
-            checkpoint_id=_make_plan_proposal_id(decision.request_text),
-            reserved_plan_id=reserved_plan_id,
-            topic_key=topic_key,
-            proposed_path=proposed_path,
-            confirmed_decision=confirmed_decision,
-        )
-        state_store.clear_current_plan()
-        state_store.set_current_plan_proposal(proposal_state)
-        state_store.set_current_run(_make_plan_proposal_run_state(decision, proposal_state))
-        if confirmed_decision is not None and confirmed_decision.status == "confirmed" and confirmed_decision.selection is not None:
-            _consume_current_decision(state_store, confirmed_decision)
-            notes.append(f"Decision consumed: {confirmed_decision.decision_id}")
-        staged_note = f"Plan proposal staged at {proposal_state.proposed_path}"
-        if selection.reason_note:
-            staged_note = f"{staged_note} {selection.reason_note}"
-        notes.append(staged_note)
-        return (
-            _plan_proposal_pending_route(
-                decision,
-                reason="Planning converged to a stable proposal and is waiting for package confirmation",
-            ),
-            None,
-            notes,
-            kb_artifact,
-        )
-
     created = create_plan_scaffold(
         decision.request_text,
         config=config,
         level=level,
         decision_state=confirmed_decision,
     )
-    state_store.clear_current_plan_proposal()
     state_store.set_current_plan(created)
     kb_artifact = _merge_kb_artifacts(kb_artifact, ensure_blueprint_index(config), config=config)
     notes.extend(

@@ -2,9 +2,555 @@
 
 All notable changes to Sopify are documented in this file.
 
-This changelog is maintained manually (not auto-generated).
+Format: Summary → Plan Packages → File Details (collapsible).
 
 ## [Unreleased]
+
+## [2026-05-04.201238] - 2026-05-04
+
+### Summary
+
+- Archived 2 plan package(s); Changes across: Docs, Runtime, Scripts, Skills, Tests, Changed.
+
+### Plan Packages
+
+- `20260501_blueprint-truth-cutover` (archived)
+- `20260501_convention_smoke` (archived)
+
+<details>
+<summary>File details</summary>
+
+**Docs** — Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+  - `docs/how-sopify-works.en.md`
+  - `docs/how-sopify-works.md`
+
+**Runtime** — Updated runtime internals:
+  - `runtime/_models/handoff.py`
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/builtin_catalog.generated.json`
+  - `runtime/builtin_catalog.py`
+  - `runtime/builtin_skill_packages/workflow-learning/skill.yaml`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_recovery.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/contracts/decision_tables.schema.json`
+  - `runtime/contracts/decision_tables.yaml`
+  - `runtime/contracts/failure_recovery_table.schema.json`
+  - `runtime/contracts/failure_recovery_table.yaml`
+  - `runtime/contracts/host_message_templates.schema.json`
+  - `runtime/contracts/side_effect_mapping_table.schema.json`
+  - `runtime/contracts/signal_priority_table.schema.json`
+  - `runtime/deterministic_guard.py`
+  - `runtime/develop_callback.py`
+  - `runtime/develop_checkpoint.py`
+  - `runtime/develop_quality.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/execution_confirm.py`
+  - `runtime/execution_gate.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/plan_proposal.py`
+  - `runtime/router.py`
+  - `runtime/state.py`
+  - `runtime/state_invariants.py`
+  - `runtime/vnext_phase_boundary.py`
+
+**Scripts** — Adjusted maintenance scripts:
+  - `scripts/check-fail-close-contract.py`
+  - `scripts/check-prompt-runtime-gate-smoke.py`
+  - `scripts/check-runtime-smoke.sh`
+  - `scripts/develop_callback_runtime.py`
+  - `scripts/develop_checkpoint_runtime.py`
+  - `scripts/release-draft-changelog.py`
+  - `scripts/sync-runtime-assets.sh`
+
+**Skills** — Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+**Tests** — Updated automated coverage:
+  - `tests/fixtures/context_fail_close_contract.yaml`
+  - `tests/fixtures/fail_close_case_matrix.yaml`
+  - `tests/fixtures/sample_invariant_gate_matrix.yaml`
+  - `tests/runtime_test_support.py`
+  - `tests/test_action_intent.py`
+  - `tests/test_context_v1_scope.py`
+  - `tests/test_contract_consistency.py`
+  - `tests/test_installer.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_release_hooks.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_execution_gate.py`
+  - `tests/test_runtime_failure_recovery.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_message_templates.py`
+  - `tests/test_runtime_plan_reuse.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_sample_invariant_gate.py`
+  - `tests/test_runtime_state.py`
+
+**Changed** — Updated project files:
+  - `.githooks/pre-commit`
+  - `installer/bootstrap_workspace.py`
+  - `installer/inspection.py`
+  - `installer/payload.py`
+  - `installer/runtime_bundle.py`
+  - `installer/validate.py`
+
+**Plan package files**:
+  - `.sopify-skills/history/2026-05/20260501_blueprint-truth-cutover/background.md`
+  - `.sopify-skills/history/2026-05/20260501_blueprint-truth-cutover/design.md`
+  - `.sopify-skills/history/2026-05/20260501_blueprint-truth-cutover/tasks.md`
+  - `.sopify-skills/history/2026-05/20260501_convention_smoke/host_b_instructions.md`
+  - `.sopify-skills/history/2026-05/20260501_convention_smoke/plan.md`
+  - `.sopify-skills/history/2026-05/20260501_convention_smoke/receipt.md`
+
+</details>
+
+## [2026-05-04.194714] - 2026-05-04
+
+### Summary
+
+- Changes across: Scripts, Tests.
+
+<details>
+<summary>File details</summary>
+
+**Scripts** — Adjusted maintenance scripts:
+  - `scripts/release-draft-changelog.py`
+
+**Tests** — Updated automated coverage:
+  - `tests/test_release_hooks.py`
+
+</details>
+
+## [2026-05-03.203432] - 2026-05-03
+<!-- Legacy format: entries below this line use the old file-list-only format -->
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+## [2026-05-03.201958] - 2026-05-03
+
+### Docs
+
+- Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/deterministic_guard.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/execution_confirm.py`
+  - `runtime/execution_gate.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/router.py`
+  - `runtime/vnext_phase_boundary.py`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/runtime_test_support.py`
+  - `tests/test_action_intent.py`
+  - `tests/test_context_v1_scope.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_execution_gate.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_message_templates.py`
+  - `tests/test_runtime_router.py`
+
+### Changed
+
+- Updated project files:
+  - `CHANGELOG.md`
+
+## [2026-05-03.195008] - 2026-05-03
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/deterministic_guard.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/execution_confirm.py`
+  - `runtime/execution_gate.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/router.py`
+  - `runtime/vnext_phase_boundary.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/runtime_test_support.py`
+  - `tests/test_action_intent.py`
+  - `tests/test_context_v1_scope.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_execution_gate.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_message_templates.py`
+  - `tests/test_runtime_router.py`
+
+## [2026-05-02.234429] - 2026-05-02
+
+### Docs
+
+- Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/_models/handoff.py`
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_recovery.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/contracts/decision_tables.schema.json`
+  - `runtime/contracts/decision_tables.yaml`
+  - `runtime/contracts/failure_recovery_table.schema.json`
+  - `runtime/contracts/failure_recovery_table.yaml`
+  - `runtime/contracts/host_message_templates.schema.json`
+  - `runtime/contracts/side_effect_mapping_table.schema.json`
+  - `runtime/contracts/signal_priority_table.schema.json`
+  - `runtime/deterministic_guard.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/plan_proposal.py`
+  - `runtime/router.py`
+  - `runtime/state.py`
+  - `runtime/vnext_phase_boundary.py`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-prompt-runtime-gate-smoke.py`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/fixtures/context_fail_close_contract.yaml`
+  - `tests/fixtures/fail_close_case_matrix.yaml`
+  - `tests/fixtures/sample_invariant_gate_matrix.yaml`
+  - `tests/test_action_intent.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_failure_recovery.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_plan_reuse.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_sample_invariant_gate.py`
+  - `tests/test_runtime_state.py`
+
+### Changed
+
+- Updated project files:
+  - `CHANGELOG.md`
+
+## [2026-05-02.234058] - 2026-05-02
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/_models/handoff.py`
+  - `runtime/action_intent.py`
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_materializer.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/context_recovery.py`
+  - `runtime/context_snapshot.py`
+  - `runtime/context_v1_scope.py`
+  - `runtime/contracts/decision_tables.schema.json`
+  - `runtime/contracts/decision_tables.yaml`
+  - `runtime/contracts/failure_recovery_table.schema.json`
+  - `runtime/contracts/failure_recovery_table.yaml`
+  - `runtime/contracts/host_message_templates.schema.json`
+  - `runtime/contracts/side_effect_mapping_table.schema.json`
+  - `runtime/contracts/signal_priority_table.schema.json`
+  - `runtime/deterministic_guard.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/manifest.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/plan_proposal.py`
+  - `runtime/router.py`
+  - `runtime/state.py`
+  - `runtime/vnext_phase_boundary.py`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-prompt-runtime-gate-smoke.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/fixtures/context_fail_close_contract.yaml`
+  - `tests/fixtures/fail_close_case_matrix.yaml`
+  - `tests/fixtures/sample_invariant_gate_matrix.yaml`
+  - `tests/test_action_intent.py`
+  - `tests/test_installer_status_doctor.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_failure_recovery.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_plan_reuse.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_sample_invariant_gate.py`
+  - `tests/test_runtime_state.py`
+
+## [2026-05-02.205827] - 2026-05-02
+
+### Docs
+
+- Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/builtin_catalog.generated.json`
+  - `runtime/builtin_catalog.py`
+  - `runtime/builtin_skill_packages/workflow-learning/skill.yaml`
+  - `runtime/engine.py`
+  - `runtime/handoff.py`
+  - `runtime/output.py`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_state.py`
+
+### Changed
+
+- Updated project files:
+  - `CHANGELOG.md`
+
+## [2026-05-02.205419] - 2026-05-02
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/builtin_catalog.generated.json`
+  - `runtime/builtin_catalog.py`
+  - `runtime/builtin_skill_packages/workflow-learning/skill.yaml`
+  - `runtime/engine.py`
+  - `runtime/handoff.py`
+  - `runtime/output.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_state.py`
+
+## [2026-05-02.150730] - 2026-05-02
+
+### Docs
+
+- Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/develop_callback.py`
+  - `runtime/develop_checkpoint.py`
+  - `runtime/develop_quality.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/manifest.py`
+  - `runtime/state_invariants.py`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-runtime-smoke.sh`
+  - `scripts/develop_callback_runtime.py`
+  - `scripts/develop_checkpoint_runtime.py`
+  - `scripts/sync-runtime-assets.sh`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/runtime_test_support.py`
+  - `tests/test_installer.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_engine.py`
+
+### Changed
+
+- Updated project files:
+  - `.githooks/pre-commit`
+  - `CHANGELOG.md`
+  - `installer/bootstrap_workspace.py`
+  - `installer/payload.py`
+  - `installer/runtime_bundle.py`
+  - `installer/validate.py`
+
+## [2026-05-02.150313] - 2026-05-02
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/develop_callback.py`
+  - `runtime/develop_checkpoint.py`
+  - `runtime/develop_quality.py`
+  - `runtime/engine.py`
+  - `runtime/entry_guard.py`
+  - `runtime/manifest.py`
+  - `runtime/state_invariants.py`
+
+### Scripts
+
+- Adjusted maintenance scripts:
+  - `scripts/check-runtime-smoke.sh`
+  - `scripts/develop_callback_runtime.py`
+  - `scripts/develop_checkpoint_runtime.py`
+  - `scripts/sync-runtime-assets.sh`
+
+### Skills
+
+- Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/runtime_test_support.py`
+  - `tests/test_installer.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_engine.py`
+
+### Changed
+
+- Updated project files:
+  - `.githooks/pre-commit`
+  - `installer/bootstrap_workspace.py`
+  - `installer/payload.py`
+  - `installer/runtime_bundle.py`
+  - `installer/validate.py`
+
+## [2026-05-02.134449] - 2026-05-02
+
+### Runtime
+
+- Updated runtime internals:
+  - `runtime/_models/handoff.py`
+  - `runtime/action_projection.py`
+  - `runtime/deterministic_guard.py`
+  - `runtime/gate.py`
+  - `runtime/handoff.py`
+  - `runtime/output.py`
+
+### Tests
+
+- Updated automated coverage:
+  - `tests/test_context_v1_scope.py`
+  - `tests/test_contract_consistency.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_gate.py`
 
 ## [2026-05-01.141049] - 2026-05-01
 

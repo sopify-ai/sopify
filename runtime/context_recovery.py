@@ -41,7 +41,6 @@ def recover_context(
 
     current_run = snapshot.current_run
     current_plan = snapshot.current_plan
-    current_plan_proposal = snapshot.current_plan_proposal
     current_clarification = snapshot.current_clarification
     current_decision = snapshot.current_decision
     last_route = snapshot.last_route
@@ -51,7 +50,6 @@ def recover_context(
             current_run=current_run,
             current_plan=current_plan,
             current_handoff=snapshot.current_handoff,
-            current_plan_proposal=current_plan_proposal,
             current_clarification=current_clarification,
             current_decision=current_decision,
             last_route=last_route,
@@ -75,7 +73,6 @@ def recover_context(
         current_run=current_run,
         current_plan=current_plan,
         current_handoff=snapshot.current_handoff,
-        current_plan_proposal=current_plan_proposal,
         current_clarification=current_clarification,
         current_decision=current_decision,
         last_route=last_route,

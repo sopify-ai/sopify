@@ -15,47 +15,32 @@ _CHECKPOINT_ACTIONS = frozenset(
     {
         "answer_questions",
         "confirm_decision",
-        "confirm_execute",
-        "confirm_plan_package",
     }
 )
 _CHECKPOINT_REQUEST_KIND_BY_ACTION = {
     "answer_questions": "clarification",
     "confirm_decision": "decision",
-    "confirm_execute": "execution_confirm",
-    "confirm_plan_package": "plan_proposal",
 }
 _PLAN_REVIEW_STAGES = frozenset(
     {
         "plan_generated",
         "ready_for_execution",
-        "execution_confirm_pending",
         "develop_pending",
     }
 )
 _HOST_ACTION_ALLOWED_ACTIONS = {
     "answer_questions": ("answer", "inspect", "cancel"),
     "confirm_decision": ("choose", "status", "cancel"),
-    "confirm_execute": ("confirm", "inspect", "revise", "cancel"),
-    "confirm_plan_package": ("confirm", "inspect", "revise", "cancel", "retopic"),
-    "archive_completed": ("inspect",),
-    "archive_review": ("continue", "inspect", "cancel"),
     "review_or_execute_plan": ("continue", "inspect", "revise", "cancel"),
     "continue_host_consult": ("consult", "block"),
-    "continue_host_develop": ("continue", "checkpoint", "consult", "block"),
-    "continue_host_workflow": ("continue", "inspect", "block"),
+    "continue_host_develop": ("continue", "checkpoint", "consult", "inspect", "block"),
 }
 _HOST_ACTION_EXPECTED_RESPONSE_MODE = {
     "answer_questions": CHECKPOINT_ONLY,
     "confirm_decision": CHECKPOINT_ONLY,
-    "confirm_execute": CHECKPOINT_ONLY,
-    "confirm_plan_package": CHECKPOINT_ONLY,
-    "archive_completed": NORMAL_RUNTIME_FOLLOWUP,
-    "archive_review": NORMAL_RUNTIME_FOLLOWUP,
     "review_or_execute_plan": NORMAL_RUNTIME_FOLLOWUP,
     "continue_host_consult": NORMAL_RUNTIME_FOLLOWUP,
     "continue_host_develop": NORMAL_RUNTIME_FOLLOWUP,
-    "continue_host_workflow": NORMAL_RUNTIME_FOLLOWUP,
 }
 
 
@@ -204,18 +189,6 @@ def evaluate_deterministic_guard(
             allowed_actions=allowed_actions,
         )
 
-    if normalized_action == "archive_review":
-        return _evaluate_archive_review_guard(
-            allowed_response_mode=normalized_mode,
-            required_host_action=normalized_action,
-            current_run=current_run,
-            current_plan=current_plan,
-            plan_id=plan_id,
-            plan_path=plan_path,
-            allowed_actions=allowed_actions,
-            checkpoint_request=checkpoint_request,
-        )
-
     proofs = [f"required_host_action={normalized_action}"]
     run_stage = _run_stage(current_run)
     if run_stage:
@@ -295,42 +268,7 @@ def _evaluate_plan_review_guard(
     )
 
 
-def _evaluate_archive_review_guard(
-    *,
-    allowed_response_mode: str,
-    required_host_action: str,
-    current_run: RunState | None,
-    current_plan: PlanArtifact | None,
-    plan_id: str | None,
-    plan_path: str | None,
-    allowed_actions: tuple[str, ...],
-    checkpoint_request: Mapping[str, Any] | None,
-) -> DeterministicGuardResult:
-    proofs = [f"required_host_action={required_host_action}"]
-    if current_plan is not None:
-        if plan_id and plan_id == current_plan.plan_id:
-            proofs.append("plan_id=current_plan.plan_id")
-        if plan_path and plan_path == current_plan.path:
-            proofs.append("plan_path=current_plan.path")
-        if not plan_id and not plan_path:
-            proofs.append("current_plan_present")
-    run_stage = _run_stage(current_run)
-    if run_stage:
-        proofs.append(f"current_run.stage={run_stage}")
-    if checkpoint_request:
-        proofs.append("checkpoint_request_present")
-    return DeterministicGuardResult(
-        truth_status="stable",
-        resolution_enabled=True,
-        allowed_response_mode=allowed_response_mode,
-        required_host_action=required_host_action,
-        resume_target_kind="workflow_safe_start",
-        checkpoint_kind="",
-        allowed_actions=allowed_actions,
-        reason_code="guard.archive_review.stable.archive_review",
-        proofs=tuple(proofs),
-        notes=(),
-    )
+
 
 
 def _contract_invalid(

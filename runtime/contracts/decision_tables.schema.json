@@ -102,8 +102,6 @@
     ],
     "ignored_required_host_actions": [
       "confirm_decision",
-      "confirm_plan_package",
-      "confirm_execute",
       "answer_questions",
       "review_or_execute_plan"
     ],

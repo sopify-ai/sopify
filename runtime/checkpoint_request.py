@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
 from .clarification import build_scope_clarification_form
-from .execution_confirm import build_execution_summary
 from .models import (
     ClarificationState,
     DecisionCheckpoint,
@@ -20,13 +19,12 @@ from .models import (
     DecisionState,
     ExecutionSummary,
     PlanArtifact,
-    PlanProposalState,
     RouteDecision,
     RuntimeConfig,
 )
 
 CHECKPOINT_REQUEST_SCHEMA_VERSION = "1"
-CHECKPOINT_KINDS = ("clarification", "decision", "execution_confirm", "plan_proposal")
+CHECKPOINT_KINDS = ("clarification", "decision")
 CHECKPOINT_SOURCE_STAGES = ("analyze", "design", "develop", "replay", "consult", "custom")
 CHECKPOINT_REASON_MISSING_BUT_TRADEOFF_DETECTED = "checkpoint_request_missing_but_tradeoff_detected"
 DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS = (
@@ -323,76 +321,6 @@ def checkpoint_request_from_clarification_state(
     )
 
 
-def checkpoint_request_from_execution_confirm(
-    *,
-    config: RuntimeConfig,
-    decision: RouteDecision,
-    current_plan: PlanArtifact,
-) -> CheckpointRequest:
-    """Project the execution-confirm stop into the generic checkpoint schema."""
-    execution_summary = build_execution_summary(plan_artifact=current_plan, config=config)
-    checkpoint_id = f"execution_confirm:{current_plan.plan_id}"
-    question = execution_summary.summary or decision.request_text or current_plan.summary
-    return normalize_checkpoint_request(
-        CheckpointRequest(
-            schema_version=CHECKPOINT_REQUEST_SCHEMA_VERSION,
-            checkpoint_kind="execution_confirm",
-            checkpoint_id=checkpoint_id,
-            source_stage="develop",
-            source_route=decision.route_name,
-            blocking=True,
-            feature_key=current_plan.plan_id,
-            question=question,
-            summary=execution_summary.summary,
-            context_files=(current_plan.path, *current_plan.files),
-            execution_summary=execution_summary,
-            text_fallback_allowed=True,
-            resume_route=decision.route_name,
-            request_text=decision.request_text,
-            requested_plan_level=current_plan.level,
-            plan_package_policy="none",
-            capture_mode=decision.capture_mode,
-            candidate_skill_ids=decision.candidate_skill_ids,
-            created_at=current_plan.created_at,
-            updated_at=current_plan.created_at,
-        )
-    )
-
-
-def checkpoint_request_from_plan_proposal_state(
-    proposal_state: PlanProposalState,
-    *,
-    source_route: Optional[str] = None,
-) -> CheckpointRequest:
-    """Project a pending plan proposal into the generic checkpoint schema."""
-    return normalize_checkpoint_request(
-        CheckpointRequest(
-            schema_version=CHECKPOINT_REQUEST_SCHEMA_VERSION,
-            checkpoint_kind="plan_proposal",
-            checkpoint_id=proposal_state.checkpoint_id,
-            source_stage="design",
-            source_route=source_route or proposal_state.resume_route or "workflow",
-            blocking=True,
-            feature_key=proposal_state.topic_key or proposal_state.reserved_plan_id,
-            question=proposal_state.analysis_summary or proposal_state.request_text,
-            summary=proposal_state.analysis_summary or proposal_state.request_text,
-            context_files=proposal_state.candidate_files,
-            resume_route=proposal_state.resume_route,
-            resume_action="confirm_plan_proposal",
-            request_text=proposal_state.request_text,
-            requested_plan_level=proposal_state.proposed_level,
-            plan_package_policy="confirm",
-            capture_mode=proposal_state.capture_mode,
-            candidate_skill_ids=proposal_state.candidate_skill_ids,
-            confirmed_decision=proposal_state.confirmed_decision or None,
-            proposed_path=proposal_state.proposed_path,
-            reserved_plan_id=proposal_state.reserved_plan_id,
-            estimated_task_count=proposal_state.estimated_task_count,
-            created_at=proposal_state.created_at,
-            updated_at=proposal_state.updated_at,
-        )
-    )
-
 
 def _validate_checkpoint_request(request: CheckpointRequest) -> None:
     if request.schema_version != CHECKPOINT_REQUEST_SCHEMA_VERSION:
@@ -417,10 +345,7 @@ def _validate_checkpoint_request(request: CheckpointRequest) -> None:
         _validate_decision_request(request)
     elif request.checkpoint_kind == "clarification":
         _validate_clarification_request(request)
-    elif request.checkpoint_kind == "plan_proposal":
-        _validate_plan_proposal_request(request)
-    else:
-        _validate_execution_confirm_request(request)
+    # Wave 3b: fail-close on unknown checkpoint kinds — no more execution_confirm fallback.
 
 
 def _validate_decision_request(request: CheckpointRequest) -> None:
@@ -443,19 +368,6 @@ def _validate_clarification_request(request: CheckpointRequest) -> None:
     if not request.missing_facts and not request.questions:
         raise CheckpointRequestError("clarification checkpoint_request requires missing_facts or questions")
 
-
-def _validate_execution_confirm_request(request: CheckpointRequest) -> None:
-    if request.execution_summary is None:
-        raise CheckpointRequestError("execution_confirm checkpoint_request.execution_summary is required")
-
-
-def _validate_plan_proposal_request(request: CheckpointRequest) -> None:
-    if not request.summary.strip():
-        raise CheckpointRequestError("plan_proposal checkpoint_request.summary is required")
-    if not request.proposed_path.strip():
-        raise CheckpointRequestError("plan_proposal checkpoint_request.proposed_path is required")
-    if not request.reserved_plan_id.strip():
-        raise CheckpointRequestError("plan_proposal checkpoint_request.reserved_plan_id is required")
 
 
 def _validate_develop_resume_context(request: CheckpointRequest) -> None:

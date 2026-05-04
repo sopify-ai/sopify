@@ -369,7 +369,7 @@ def _normalize_handoff(handoff: Any) -> dict[str, Any]:
     archive_lifecycle = artifacts.get("archive_lifecycle")
     if isinstance(archive_lifecycle, Mapping):
         payload["archive_lifecycle"] = dict(archive_lifecycle)
-    for key in ("archived_plan_path", "active_plan_path", "history_index_path", "state_cleared"):
+    for key in ("archived_plan_path", "active_plan_path", "history_index_path", "state_cleared", "archive_receipt_status"):
         if key in artifacts:
             payload[key] = artifacts.get(key)
     trigger_evidence: dict[str, Any] = {}
@@ -650,7 +650,6 @@ def _build_state_contract(*, store: StateStore) -> dict[str, Any]:
         "scope": store.scope,
         "state_root": store.relative_path(store.root),
         "current_plan_path": store.relative_path(store.current_plan_path),
-        "current_plan_proposal_path": store.relative_path(store.current_plan_proposal_path),
         "current_run_path": store.relative_path(store.current_run_path),
         "current_handoff_path": store.relative_path(store.current_handoff_path),
         "current_archive_receipt_path": store.relative_path(store.current_archive_receipt_path),
@@ -678,7 +677,7 @@ def _store_for_route(
     global_store = StateStore(config)
     session_store = StateStore(config, session_id=session_id)
 
-    if route_name in {"execution_confirm_pending", "resume_active", "exec_plan", "archive_lifecycle"}:
+    if route_name in {"resume_active", "exec_plan", "archive_lifecycle"}:
         return global_store
 
     runtime_handoff = getattr(runtime_result, "handoff", None)
@@ -700,7 +699,7 @@ def _store_for_route(
 
     if route_name == "state_conflict":
         required_host_action = str(getattr(runtime_handoff, "required_host_action", "") or "").strip()
-        if required_host_action == "continue_host_workflow" and (
+        if required_host_action == "continue_host_develop" and (
             global_store.get_current_handoff() is not None or global_store.get_current_run() is not None
         ):
             return global_store
@@ -749,7 +748,6 @@ def _fallback_state_contract(*, workspace: Path, session_id: str) -> dict[str, A
         "scope": "session",
         "state_root": str(state_root.relative_to(workspace)),
         "current_plan_path": str((state_root / "current_plan.json").relative_to(workspace)),
-        "current_plan_proposal_path": str((state_root / "current_plan_proposal.json").relative_to(workspace)),
         "current_run_path": str((state_root / "current_run.json").relative_to(workspace)),
         "current_handoff_path": str((state_root / "current_handoff.json").relative_to(workspace)),
         "current_clarification_path": str((state_root / "current_clarification.json").relative_to(workspace)),

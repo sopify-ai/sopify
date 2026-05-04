@@ -11,7 +11,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
@@ -22,13 +21,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from runtime.config import load_runtime_config
 from runtime.entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
-from runtime.execution_gate import evaluate_execution_gate
 from runtime.gate import CURRENT_GATE_RECEIPT_FILENAME
-from runtime.models import PlanArtifact, RouteDecision, RunState
-from runtime.plan_scaffold import create_plan_scaffold
-from runtime.state import StateStore, iso_now
 from installer.hosts.codex import CODEX_ADAPTER
 from installer.payload import install_global_payload
 
@@ -125,11 +119,11 @@ def run_smoke(*, temp_root: Path) -> dict[str, Any]:
             request="分析下 .sopify-skills/plan/20260320_kb_layout_v2/tasks.md 的当前任务，并整理 README 职责表边界",
             expected_exit_code=0,
             expected_status="ready",
-            expected_mode="checkpoint_only",
-            expected_action="confirm_plan_package",
+            expected_mode="normal_runtime_followup",
+            expected_action="review_or_execute_plan",
             expected_error_code=None,
-            expected_state_files=("current_handoff.json", "current_plan_proposal.json", CURRENT_GATE_RECEIPT_FILENAME),
-            expected_runtime_route="plan_proposal_pending",
+            expected_state_files=("current_handoff.json", "current_plan.json", CURRENT_GATE_RECEIPT_FILENAME),
+            expected_runtime_route="plan_only",
             expected_entry_guard_reason_code=DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE,
             expected_direct_edit_guard_kind="protected_plan_asset",
         )
@@ -164,23 +158,6 @@ def run_smoke(*, temp_root: Path) -> dict[str, Any]:
             expected_action="confirm_decision",
             expected_error_code=None,
             expected_state_files=("current_decision.json", "current_handoff.json", CURRENT_GATE_RECEIPT_FILENAME),
-        )
-    )
-
-    execution_confirm_workspace = temp_root / "execution-confirm"
-    _prepare_ready_plan_state(execution_confirm_workspace)
-    scenarios.append(
-        _run_gate_scenario(
-            scenario_id="execution_confirm_checkpoint_only",
-            workspace=execution_confirm_workspace,
-            home_root=smoke_home,
-            request="~go exec",
-            expected_exit_code=0,
-            expected_status="ready",
-            expected_mode="checkpoint_only",
-            expected_action="confirm_execute",
-            expected_error_code=None,
-            expected_state_files=("current_handoff.json", "current_plan.json", CURRENT_GATE_RECEIPT_FILENAME),
         )
     )
 
@@ -283,7 +260,7 @@ def _run_gate_scenario(
         if receipt.get("evidence", {}).get("strict_runtime_entry") != payload.get("evidence", {}).get("strict_runtime_entry"):
             failures.append("receipt.evidence.strict_runtime_entry drifted from gate payload")
 
-    if expected_action in {"answer_questions", "confirm_decision", "confirm_plan_package", "confirm_execute"}:
+    if expected_action in {"answer_questions", "confirm_decision"}:
         if payload.get("allowed_response_mode") == "normal_runtime_followup":
             failures.append("pending checkpoint unexpectedly escaped to normal_runtime_followup")
         if not payload.get("handoff", {}).get("pending_fail_closed"):
@@ -358,7 +335,6 @@ def _resolve_expected_state_path(*, workspace: Path, payload: Mapping[str, Any],
         return None
     relative_path = {
         "current_plan.json": state_contract.get("current_plan_path"),
-        "current_plan_proposal.json": state_contract.get("current_plan_proposal_path"),
         "current_run.json": state_contract.get("current_run_path"),
         "current_handoff.json": state_contract.get("current_handoff_path"),
         "current_clarification.json": state_contract.get("current_clarification_path"),
@@ -379,71 +355,6 @@ def _load_gate_handoff(*, workspace: Path, payload: Mapping[str, Any]) -> dict[s
     if handoff_path is None or not handoff_path.exists():
         return {}
     return _load_json(handoff_path)
-
-
-def _rewrite_background_scope(
-    workspace: Path,
-    plan_artifact: PlanArtifact,
-    *,
-    scope_lines: tuple[str, str],
-    risk_lines: tuple[str, str] | None = None,
-) -> None:
-    background_path = workspace / plan_artifact.path / "background.md"
-    text = background_path.read_text(encoding="utf-8")
-    text = text.replace(
-        "- 模块: 待分析\n- 文件: 待分析",
-        f"- 模块: {scope_lines[0]}\n- 文件: {scope_lines[1]}",
-    )
-    if risk_lines is not None:
-        text = re.sub(
-            r"- 风险: .+\n- 缓解: .+",
-            f"- 风险: {risk_lines[0]}\n- 缓解: {risk_lines[1]}",
-            text,
-        )
-    background_path.write_text(text, encoding="utf-8")
-
-
-def _prepare_ready_plan_state(workspace: Path, *, request_text: str = "补 prompt runtime gate smoke") -> None:
-    workspace.mkdir(parents=True, exist_ok=True)
-    config = load_runtime_config(workspace)
-    store = StateStore(config)
-    store.ensure()
-    plan_artifact = create_plan_scaffold(request_text, config=config, level="standard")
-    _rewrite_background_scope(
-        workspace,
-        plan_artifact,
-        scope_lines=("runtime/gate.py, scripts/runtime_gate.py", "runtime/gate.py, scripts/runtime_gate.py, scripts/check-prompt-runtime-gate-smoke.py"),
-        risk_lines=("需要确保执行前确认不会误触发 develop", "统一通过 execution_confirm_pending 与 gate ready 再进入执行"),
-    )
-    gate = evaluate_execution_gate(
-        decision=RouteDecision(
-            route_name="workflow",
-            request_text=request_text,
-            reason="smoke",
-            complexity="complex",
-            plan_level="standard",
-            candidate_skill_ids=("develop",),
-        ),
-        plan_artifact=plan_artifact,
-        current_clarification=None,
-        current_decision=None,
-        config=config,
-    )
-    store.set_current_plan(plan_artifact)
-    store.set_current_run(
-        RunState(
-            run_id="run-ready",
-            status="active",
-            stage="ready_for_execution",
-            route_name="workflow",
-            title=plan_artifact.title,
-            created_at=iso_now(),
-            updated_at=iso_now(),
-            plan_id=plan_artifact.plan_id,
-            plan_path=plan_artifact.path,
-            execution_gate=gate,
-        )
-    )
 
 
 def _write_optional_json(path_value: str | None, payload: dict[str, Any]) -> None:

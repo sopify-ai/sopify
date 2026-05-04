@@ -182,7 +182,7 @@ class StateStoreInvariantTests(unittest.TestCase):
                 schema_version="1",
                 route_name="workflow",
                 run_id="run-1",
-                handoff_kind="workflow",
+                handoff_kind="plan",
                 required_host_action="review_or_execute_plan",
             )
 
@@ -216,7 +216,7 @@ class StateStoreInvariantTests(unittest.TestCase):
                 schema_version="1",
                 route_name="workflow",
                 run_id="run-1",
-                handoff_kind="workflow",
+                handoff_kind="plan",
                 required_host_action="review_or_execute_plan",
             )
 
@@ -235,78 +235,6 @@ class ContextSnapshotTests(unittest.TestCase):
         self.assertEqual(_provenance_status_for_reason("develop_clarification_owner_run_mismatch"), "provenance_mismatch")
         self.assertEqual(_provenance_status_for_reason("decision_orphaned_from_active_run"), "orphaned")
         self.assertEqual(_provenance_status_for_reason("invalid_json"), "invalid_payload")
-
-    def test_collect_pending_items_isolated_unit_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            review_store = StateStore(config, session_id="session-a")
-            global_store = StateStore(config)
-            review_store.ensure()
-            global_store.ensure()
-
-            proposal = PlanProposalState(
-                schema_version="1",
-                checkpoint_id="proposal-1",
-                request_text="继续",
-                analysis_summary="proposal",
-                proposed_level="standard",
-                proposed_path=".sopify-skills/plan/proposal",
-                estimated_task_count=2,
-                candidate_files=(),
-                topic_key="runtime",
-                reserved_plan_id="proposal-1",
-                resume_route="workflow",
-                capture_mode="off",
-                candidate_skill_ids=(),
-            )
-            consumed_clarification = ClarificationState(
-                clarification_id="clarify-1",
-                feature_key="runtime",
-                phase="analyze",
-                status="consumed",
-                summary="summary",
-                questions=("q1",),
-                missing_facts=("scope",),
-                created_at=iso_now(),
-                updated_at=iso_now(),
-            )
-            confirmed_decision = confirm_decision(
-                DecisionState(
-                    schema_version="2",
-                    decision_id="decision-1",
-                    feature_key="runtime",
-                    phase="design",
-                    status="pending",
-                    decision_type="design_choice",
-                    question="继续哪个选项？",
-                    summary="confirmed decision still blocks mutually exclusive pending scopes",
-                    options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
-                    created_at=iso_now(),
-                    updated_at=iso_now(),
-                ),
-                option_id="option_1",
-                source="text",
-                raw_input="1",
-            )
-
-            pending = _collect_pending_items(
-                review_store=review_store,
-                global_store=global_store,
-                review_proposal=proposal,
-                review_clarification=consumed_clarification,
-                review_decision=confirmed_decision,
-                global_clarification=None,
-                global_decision=None,
-            )
-
-            self.assertEqual(
-                pending,
-                [
-                    ("current_plan_proposal", review_store.relative_path(review_store.current_plan_proposal_path)),
-                    ("current_decision", review_store.relative_path(review_store.current_decision_path)),
-                ],
-            )
 
     def test_collect_run_handoff_conflicts_supports_legacy_and_detects_split_brain(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -331,10 +259,9 @@ class ContextSnapshotTests(unittest.TestCase):
                     schema_version="1",
                     route_name="workflow",
                     run_id="run-1",
-                    handoff_kind="workflow",
+                    handoff_kind="plan",
                     required_host_action="review_or_execute_plan",
                 ),
-                current_plan_proposal=None,
                 current_clarification=None,
                 current_decision=None,
             )
@@ -357,10 +284,9 @@ class ContextSnapshotTests(unittest.TestCase):
                     schema_version="1",
                     route_name="workflow",
                     run_id="run-1",
-                    handoff_kind="workflow",
+                    handoff_kind="plan",
                     required_host_action="confirm_decision",
                 ),
-                current_plan_proposal=None,
                 current_clarification=None,
                 current_decision=None,
             )
@@ -396,10 +322,9 @@ class ContextSnapshotTests(unittest.TestCase):
                     schema_version="1",
                     route_name="workflow",
                     run_id="run-1",
-                    handoff_kind="workflow",
-                    required_host_action="confirm_plan_package",
+                    handoff_kind="plan",
+                    required_host_action="answer_questions",
                 ),
-                current_plan_proposal=None,
                 current_clarification=None,
                 current_decision=DecisionState(
                     schema_version="2",
@@ -418,62 +343,8 @@ class ContextSnapshotTests(unittest.TestCase):
 
             self.assertEqual(
                 [detail.code for detail in conflicts],
-                ["run_stage_handoff_mismatch", "proposal_missing_for_pending_handoff"],
+                ["run_stage_handoff_mismatch", "clarification_missing_for_pending_handoff"],
             )
-
-    def test_global_proposal_is_quarantined_from_review_snapshot(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            global_store = StateStore(config)
-            review_store = StateStore(config, session_id="session-a")
-            global_store.ensure()
-            review_store.ensure()
-
-            global_store.set_current_plan_proposal(
-                PlanProposalState(
-                    schema_version="1",
-                    checkpoint_id="proposal-ghost",
-                    request_text="继续",
-                    analysis_summary="ghost proposal",
-                    proposed_level="standard",
-                    proposed_path=".sopify-skills/plan/ghost",
-                    estimated_task_count=1,
-                    candidate_files=(),
-                    topic_key="ghost",
-                    reserved_plan_id="ghost",
-                    resume_route="workflow",
-                    capture_mode="off",
-                    candidate_skill_ids=(),
-                )
-            )
-            review_store.set_current_decision(
-                DecisionState(
-                    schema_version="2",
-                    decision_id="decision-1",
-                    feature_key="runtime",
-                    phase="design",
-                    status="pending",
-                    decision_type="design_choice",
-                    question="继续哪个选项？",
-                    summary="session decision should win",
-                    options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
-                    created_at=iso_now(),
-                    updated_at=iso_now(),
-                )
-            )
-
-            snapshot = resolve_context_snapshot(
-                config=config,
-                review_store=review_store,
-                global_store=global_store,
-            )
-
-            self.assertIsNone(snapshot.current_plan_proposal)
-            self.assertIsNotNone(snapshot.current_decision)
-            self.assertEqual(snapshot.current_decision.decision_id, "decision-1")
-            self.assertEqual(len(snapshot.quarantined_items), 1)
-            self.assertEqual(snapshot.quarantined_items[0].reason, "proposal_session_only_global_fallback_disabled")
 
     def test_missing_phase_decision_is_quarantined(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -672,64 +543,6 @@ class ContextSnapshotTests(unittest.TestCase):
             self.assertEqual(len(snapshot.quarantined_items), 1)
             self.assertEqual(snapshot.quarantined_items[0].reason, "develop_resume_context_required_fields_missing")
 
-    def test_invalid_json_proposal_is_quarantined(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            review_store = StateStore(config, session_id="session-a")
-            global_store = StateStore(config)
-            review_store.ensure()
-            global_store.ensure()
-
-            review_store.current_plan_proposal_path.write_text("{invalid json", encoding="utf-8")
-
-            snapshot = resolve_context_snapshot(
-                config=config,
-                review_store=review_store,
-                global_store=global_store,
-            )
-
-            self.assertIsNone(snapshot.current_plan_proposal)
-            self.assertEqual(len(snapshot.quarantined_items), 1)
-            self.assertEqual(snapshot.quarantined_items[0].reason, "invalid_json")
-
-    def test_incomplete_proposal_is_quarantined_without_blocking_valid_decision(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            review_store = StateStore(config, session_id="session-a")
-            global_store = StateStore(config)
-            review_store.ensure()
-            global_store.ensure()
-            review_store.current_plan_proposal_path.write_text('{\n  "request_text": "继续"\n}\n', encoding="utf-8")
-            review_store.set_current_decision(
-                DecisionState(
-                    schema_version="2",
-                    decision_id="decision-1",
-                    feature_key="runtime",
-                    phase="design",
-                    status="pending",
-                    decision_type="design_choice",
-                    question="继续哪个方案？",
-                    summary="valid decision should still win",
-                    options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
-                    created_at=iso_now(),
-                    updated_at=iso_now(),
-                )
-            )
-
-            snapshot = resolve_context_snapshot(
-                config=config,
-                review_store=review_store,
-                global_store=global_store,
-            )
-
-            self.assertIsNone(snapshot.current_plan_proposal)
-            self.assertIsNotNone(snapshot.current_decision)
-            self.assertFalse(snapshot.is_conflict)
-            self.assertEqual(len(snapshot.quarantined_items), 1)
-            self.assertEqual(snapshot.quarantined_items[0].reason, "proposal_contract_missing")
-
     def test_unsupported_phase_clarification_is_quarantined(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -759,56 +572,6 @@ class ContextSnapshotTests(unittest.TestCase):
             self.assertEqual(len(snapshot.quarantined_items), 1)
             self.assertEqual(snapshot.quarantined_items[0].reason, "phase_unsupported")
 
-    def test_unsupported_phase_decision_is_quarantined_without_blocking_valid_proposal(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config, session_id="session-a")
-            store.ensure()
-            store.set_current_plan_proposal(
-                PlanProposalState(
-                    schema_version="1",
-                    checkpoint_id="proposal-1",
-                    request_text="继续",
-                    analysis_summary="proposal",
-                    proposed_level="standard",
-                    proposed_path=".sopify-skills/plan/proposal",
-                    estimated_task_count=2,
-                    candidate_files=(),
-                    topic_key="runtime",
-                    reserved_plan_id="proposal-1",
-                    resume_route="workflow",
-                    capture_mode="off",
-                    candidate_skill_ids=(),
-                )
-            )
-            store.current_decision_path.write_text(
-                '{\n'
-                '  "schema_version": "2",\n'
-                '  "decision_id": "decision-1",\n'
-                '  "feature_key": "runtime",\n'
-                '  "phase": "legacy_phase",\n'
-                '  "status": "pending",\n'
-                '  "decision_type": "design_choice",\n'
-                '  "question": "继续哪个方案？",\n'
-                '  "summary": "legacy phase should not block proposal",\n'
-                '  "options": [{"option_id": "option_1", "title": "option 1", "summary": "summary"}]\n'
-                '}\n',
-                encoding="utf-8",
-            )
-
-            snapshot = resolve_context_snapshot(
-                config=config,
-                review_store=store,
-                global_store=store,
-            )
-
-            self.assertIsNotNone(snapshot.current_plan_proposal)
-            self.assertIsNone(snapshot.current_decision)
-            self.assertFalse(snapshot.is_conflict)
-            self.assertEqual(len(snapshot.quarantined_items), 1)
-            self.assertEqual(snapshot.quarantined_items[0].reason, "phase_unsupported")
-
     def test_resolution_id_mismatch_enters_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -833,7 +596,7 @@ class ContextSnapshotTests(unittest.TestCase):
                     schema_version="1",
                     route_name="workflow",
                     run_id="run-1",
-                    handoff_kind="workflow",
+                    handoff_kind="plan",
                     required_host_action="review_or_execute_plan",
                     resolution_id="resolution-b",
                 )
@@ -872,7 +635,7 @@ class ContextSnapshotTests(unittest.TestCase):
                     schema_version="1",
                     route_name="workflow",
                     run_id="run-1",
-                    handoff_kind="workflow",
+                    handoff_kind="plan",
                     required_host_action="review_or_execute_plan",
                 )
             )
@@ -1076,55 +839,6 @@ class ContextSnapshotTests(unittest.TestCase):
             self.assertEqual(len(snapshot.quarantined_items), 1)
             self.assertEqual(snapshot.quarantined_items[0].reason, "develop_resume_context_required_fields_missing")
 
-    def test_multiple_pending_checkpoints_enter_conflict(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config, session_id="session-a")
-            store.ensure()
-
-            store.set_current_plan_proposal(
-                PlanProposalState(
-                    schema_version="1",
-                    checkpoint_id="proposal-1",
-                    request_text="继续",
-                    analysis_summary="proposal",
-                    proposed_level="standard",
-                    proposed_path=".sopify-skills/plan/proposal",
-                    estimated_task_count=2,
-                    candidate_files=(),
-                    topic_key="runtime",
-                    reserved_plan_id="proposal-1",
-                    resume_route="workflow",
-                    capture_mode="off",
-                    candidate_skill_ids=(),
-                )
-            )
-            store.set_current_decision(
-                DecisionState(
-                    schema_version="2",
-                    decision_id="decision-1",
-                    feature_key="runtime",
-                    phase="design",
-                    status="pending",
-                    decision_type="design_choice",
-                    question="继续哪个选项？",
-                    summary="pending decision",
-                    options=(DecisionOption(option_id="option_1", title="option 1", summary="summary"),),
-                    created_at=iso_now(),
-                    updated_at=iso_now(),
-                )
-            )
-
-            snapshot = resolve_context_snapshot(
-                config=config,
-                review_store=store,
-                global_store=StateStore(config),
-            )
-
-            self.assertTrue(snapshot.is_conflict)
-            self.assertEqual(snapshot.conflict_code, "multiple_pending_checkpoints")
-
     def test_run_stage_handoff_mismatch_enters_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -1148,8 +862,8 @@ class ContextSnapshotTests(unittest.TestCase):
                     schema_version="1",
                     route_name="workflow",
                     run_id="run-1",
-                    handoff_kind="workflow",
-                    required_host_action="confirm_plan_package",
+                    handoff_kind="plan",
+                    required_host_action="review_or_execute_plan",
                 )
             )
             store.set_current_decision(
@@ -1238,52 +952,3 @@ class ContextSnapshotTests(unittest.TestCase):
             self.assertIsNotNone(snapshot.current_clarification)
             self.assertIsNotNone(snapshot.current_decision)
             self.assertEqual(snapshot.current_decision.status, "confirmed")
-
-    def test_ready_for_execution_detects_residual_review_checkpoint_conflict(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config)
-            store.ensure()
-
-            plan_artifact = create_plan_scaffold("补 runtime 状态机 hotfix", config=config, level="standard")
-            store.set_current_plan(plan_artifact)
-            store.set_current_run(
-                RunState(
-                    run_id="run-1",
-                    status="active",
-                    stage="ready_for_execution",
-                    route_name="workflow",
-                    title=plan_artifact.title,
-                    created_at=iso_now(),
-                    updated_at=iso_now(),
-                    plan_id=plan_artifact.plan_id,
-                    plan_path=plan_artifact.path,
-                )
-            )
-            store.set_current_plan_proposal(
-                PlanProposalState(
-                    schema_version="1",
-                    checkpoint_id="proposal-1",
-                    request_text="继续",
-                    analysis_summary="proposal",
-                    proposed_level="standard",
-                    proposed_path=".sopify-skills/plan/proposal",
-                    estimated_task_count=2,
-                    candidate_files=(),
-                    topic_key="runtime",
-                    reserved_plan_id="proposal-1",
-                    resume_route="workflow",
-                    capture_mode="off",
-                    candidate_skill_ids=(),
-                )
-            )
-
-            snapshot = resolve_context_snapshot(
-                config=config,
-                review_store=store,
-                global_store=store,
-            )
-
-            self.assertTrue(snapshot.is_conflict)
-            self.assertEqual(snapshot.conflict_code, "execution_confirm_review_checkpoint_conflict")

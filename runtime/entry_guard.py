@@ -8,18 +8,16 @@ DEFAULT_RUNTIME_ENTRY = "scripts/sopify_runtime.py"
 PLAN_ONLY_HELPER_ENTRY = "scripts/go_plan_runtime.py"
 CLARIFICATION_BRIDGE_ENTRY = "scripts/clarification_bridge_runtime.py"
 DECISION_BRIDGE_ENTRY = "scripts/decision_bridge_runtime.py"
-DEVELOP_CHECKPOINT_ENTRY = "scripts/develop_checkpoint_runtime.py"
+DEVELOP_CALLBACK_ENTRY = "scripts/develop_callback_runtime.py"
 
 ENTRY_GUARD_SCHEMA_VERSION = "1"
-ENTRY_GUARD_PENDING_ACTIONS = ("answer_questions", "confirm_decision", "confirm_plan_package", "confirm_execute", "resolve_state_conflict")
+ENTRY_GUARD_PENDING_ACTIONS = ("answer_questions", "confirm_decision", "resolve_state_conflict")
 ENTRY_GUARD_BYPASS_BLOCKED_COMMANDS = ("~go exec",)
-ENTRY_GUARD_DEVELOP_CALLBACK_REASON_CODE = "develop_checkpoint_callback_required"
+ENTRY_GUARD_DEVELOP_CALLBACK_REASON_CODE = "develop_callback_required"
 DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE = "direct_edit_blocked_runtime_required"
 ENTRY_GUARD_REASON_CODES = {
     "answer_questions": "entry_guard_clarification_pending",
     "confirm_decision": "entry_guard_decision_pending",
-    "confirm_plan_package": "entry_guard_plan_proposal_pending",
-    "confirm_execute": "entry_guard_execution_confirm_pending",
     "resolve_state_conflict": "entry_guard_state_conflict",
 }
 
@@ -47,10 +45,10 @@ def build_entry_guard_contract(*, required_host_action: str) -> dict[str, Any]:
         "pending_checkpoint_fail_closed": pending_fail_closed,
         "reason_code": reason_code,
         "bypass_blocked_commands": list(ENTRY_GUARD_BYPASS_BLOCKED_COMMANDS) if pending_fail_closed else [],
-        "develop_checkpoint_callback": {
+        "develop_callback": {
             "required_host_action": "continue_host_develop",
             "required_on_user_branch": True,
-            "entry": DEVELOP_CHECKPOINT_ENTRY,
+            "entry": DEVELOP_CALLBACK_ENTRY,
             "reason_code": ENTRY_GUARD_DEVELOP_CALLBACK_REASON_CODE,
         },
     }

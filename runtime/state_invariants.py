@@ -10,7 +10,7 @@ from .models import RunState, RuntimeHandoff
 HOST_FACING_TRUTH_WRITE_KINDS = (
     "engine_runtime_handoff",
     "promotion_global_execution",
-    "develop_checkpoint_callback",
+    "develop_callback",
 )
 ALLOWED_PHASES_BY_STATE_KIND = {
     "current_clarification": frozenset({"analyze", "develop"}),

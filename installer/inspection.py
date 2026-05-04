@@ -67,7 +67,6 @@ INGRESS_PROOF_STALE_AFTER = timedelta(hours=24)
 _STATE_CONFLICT_EXPLANATIONS = {
     "multiple_pending_checkpoints": "Multiple review checkpoints are simultaneously active and need manual cleanup.",
     "pending_checkpoint_handoff_mismatch": "The active handoff points to one pending checkpoint type, but the persisted state contains another.",
-    "execution_confirm_review_checkpoint_conflict": "Execution confirmation is contaminated by residual review-checkpoint state.",
     "run_stage_handoff_mismatch": "The persisted run stage and handoff action disagree about the current checkpoint.",
     "resolution_id_mismatch": "current_run and current_handoff were written by different resolution batches.",
     "resolution_id_mixed_presence": "current_run and current_handoff disagree on whether resolution tracking is present.",

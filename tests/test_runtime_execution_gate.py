@@ -59,7 +59,7 @@ class ExecutionGateTests(unittest.TestCase):
             self.assertEqual(gate.gate_status, "ready")
             self.assertEqual(gate.blocking_reason, "none")
             self.assertEqual(gate.plan_completion, "complete")
-            self.assertEqual(gate.next_required_action, "confirm_execute")
+            self.assertEqual(gate.next_required_action, "continue_host_develop")
 
     def test_execution_gate_rejects_plan_without_knowledge_sync_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

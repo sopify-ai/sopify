@@ -224,7 +224,7 @@ class PayloadInstallTests(unittest.TestCase):
             payload_manifest = json.loads((payload_root / "payload-manifest.json").read_text(encoding="utf-8"))
             bundle_root = payload_root / "bundles" / payload_manifest["active_version"]
             self.assertTrue((bundle_root / "scripts" / "clarification_bridge_runtime.py").exists())
-            self.assertTrue((bundle_root / "scripts" / "develop_checkpoint_runtime.py").exists())
+            self.assertTrue((bundle_root / "scripts" / "develop_callback_runtime.py").exists())
             self.assertTrue((bundle_root / "scripts" / "decision_bridge_runtime.py").exists())
             self.assertTrue((bundle_root / "scripts" / "preferences_preload_runtime.py").exists())
             self.assertTrue((bundle_root / "scripts" / "runtime_gate.py").exists())
@@ -234,7 +234,7 @@ class PayloadInstallTests(unittest.TestCase):
                 payload_manifest["minimum_workspace_manifest"]["required_capabilities"]["planning_mode_orchestrator"]
             )
             self.assertTrue(
-                payload_manifest["minimum_workspace_manifest"]["required_capabilities"]["develop_checkpoint_callback"]
+                payload_manifest["minimum_workspace_manifest"]["required_capabilities"]["develop_callback"]
             )
             self.assertTrue(payload_manifest["minimum_workspace_manifest"]["required_capabilities"]["preferences_preload"])
             self.assertTrue(payload_manifest["minimum_workspace_manifest"]["required_capabilities"]["runtime_gate"])
@@ -1285,11 +1285,11 @@ class HostPromptContractTests(unittest.TestCase):
             self.assertIn("这一类返回属于 pre-runtime checkpoint", prompt)
             self.assertIn("`allowed_response_mode` 应为 `checkpoint_only`", prompt)
             self.assertIn("`~go init` 不得绕过这一步", prompt)
-            self.assertIn("scripts/develop_checkpoint_runtime.py", prompt)
+            self.assertIn("scripts/develop_callback_runtime.py", prompt)
             self.assertIn("resume_context", prompt)
             self.assertIn("不得自由追问", prompt)
             self.assertIn("不得手写 `current_decision.json / current_handoff.json`", prompt)
-            self.assertIn("scripts/develop_checkpoint_runtime.py submit --payload-json ...", prompt)
+            self.assertIn("scripts/develop_callback_runtime.py submit --payload-json ...", prompt)
             self.assertIn("即使用户显式输入 `~go exec`", prompt)
             self.assertIn("必须继续遵守对应 checkpoint 的机器契约", prompt)
 
@@ -1338,11 +1338,11 @@ class HostPromptContractTests(unittest.TestCase):
             self.assertIn("This outcome is a pre-runtime checkpoint", prompt)
             self.assertIn("`allowed_response_mode` must be `checkpoint_only`", prompt)
             self.assertIn("must not bypass this step", prompt)
-            self.assertIn("scripts/develop_checkpoint_runtime.py", prompt)
+            self.assertIn("scripts/develop_callback_runtime.py", prompt)
             self.assertIn("resume_context", prompt)
             self.assertIn("must not ask a free-form question", prompt)
             self.assertIn("hand-write `current_decision.json / current_handoff.json`", prompt)
-            self.assertIn("scripts/develop_checkpoint_runtime.py submit --payload-json ...", prompt)
+            self.assertIn("scripts/develop_callback_runtime.py submit --payload-json ...", prompt)
             self.assertIn("Even when the user explicitly types `~go exec`", prompt)
             self.assertIn("must still honor the machine contract", prompt)
 

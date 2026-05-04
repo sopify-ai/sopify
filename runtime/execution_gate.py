@@ -139,7 +139,7 @@ def evaluate_execution_gate(
         gate_status="ready",
         blocking_reason="none",
         plan_completion="complete",
-        next_required_action="confirm_execute",
+        next_required_action="continue_host_develop",
         notes=(_text(config.language, "gate_ready"),),
     )
 

@@ -63,18 +63,13 @@ flowchart TD
     F --> F1["Show options + recommendation"]
     F1 --> F2["User confirms"]
     F2 --> D
-    E -->|No| G["Pre-execution confirmation"]
-    G --> H["confirm_execute"]
-    H --> H1["Show tasks / risk / mitigation"]
-    H1 --> H2["User replies continue / next / start"]
-    H2 --> I["Implementation"]
+    E -->|No| I["Implementation"]
 ```
 
 Checkpoint rules:
 
 - `answer_questions` collects missing facts before a formal plan is materialized
 - `confirm_decision` resolves design branches before resuming the default runtime entry
-- `confirm_execute` sits between design and implementation; it is not an internal implementation checkpoint
 
 ## Directory Structure and Layers
 

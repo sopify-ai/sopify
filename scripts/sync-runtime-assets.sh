@@ -56,7 +56,7 @@ required_paths=(
   "$SCRIPTS_SRC/runtime_gate.py"
   "$SCRIPTS_SRC/go_plan_runtime.py"
   "$SCRIPTS_SRC/clarification_bridge_runtime.py"
-  "$SCRIPTS_SRC/develop_checkpoint_runtime.py"
+  "$SCRIPTS_SRC/develop_callback_runtime.py"
   "$SCRIPTS_SRC/decision_bridge_runtime.py"
   "$SCRIPTS_SRC/plan_registry_runtime.py"
   "$SCRIPTS_SRC/preferences_preload_runtime.py"
@@ -82,7 +82,7 @@ rsync -a --delete --prune-empty-dirs \
   --include='runtime_gate.py' \
   --include='go_plan_runtime.py' \
   --include='clarification_bridge_runtime.py' \
-  --include='develop_checkpoint_runtime.py' \
+  --include='develop_callback_runtime.py' \
   --include='decision_bridge_runtime.py' \
   --include='plan_registry_runtime.py' \
   --include='preferences_preload_runtime.py' \
@@ -109,7 +109,7 @@ chmod +x \
   "$BUNDLE_DIR/scripts/runtime_gate.py" \
   "$BUNDLE_DIR/scripts/go_plan_runtime.py" \
   "$BUNDLE_DIR/scripts/clarification_bridge_runtime.py" \
-  "$BUNDLE_DIR/scripts/develop_checkpoint_runtime.py" \
+  "$BUNDLE_DIR/scripts/develop_callback_runtime.py" \
   "$BUNDLE_DIR/scripts/decision_bridge_runtime.py" \
   "$BUNDLE_DIR/scripts/plan_registry_runtime.py" \
   "$BUNDLE_DIR/scripts/preferences_preload_runtime.py" \

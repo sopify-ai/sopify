@@ -26,7 +26,7 @@ _REQUIRED_BUNDLE_CAPABILITIES = {
     "writes_handoff_file": True,
     "clarification_bridge": True,
     "decision_bridge": True,
-    "develop_checkpoint_callback": True,
+    "develop_callback": True,
     "develop_resume_context": True,
     "planning_mode_orchestrator": True,
     "preferences_preload": True,

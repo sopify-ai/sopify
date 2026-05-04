@@ -90,7 +90,7 @@ HANDOFF_FILE="$WORK_DIR/.sopify-skills/state/current_handoff.json"
 GATE_RECEIPT_FILE="$WORK_DIR/.sopify-skills/state/current_gate_receipt.json"
 CLARIFICATION_BRIDGE_ENTRY="$BUNDLE_ROOT/scripts/clarification_bridge_runtime.py"
 DECISION_BRIDGE_ENTRY="$BUNDLE_ROOT/scripts/decision_bridge_runtime.py"
-DEVELOP_CHECKPOINT_ENTRY="$BUNDLE_ROOT/scripts/develop_checkpoint_runtime.py"
+DEVELOP_CALLBACK_ENTRY="$BUNDLE_ROOT/scripts/develop_callback_runtime.py"
 REPLAY_DIR="$WORK_DIR/.sopify-skills/replay/sessions"
 PROJECT_FILE="$WORK_DIR/.sopify-skills/project.md"
 BLUEPRINT_INDEX="$WORK_DIR/.sopify-skills/blueprint/README.md"
@@ -137,8 +137,8 @@ if [[ ! -f "$DECISION_BRIDGE_ENTRY" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$DEVELOP_CHECKPOINT_ENTRY" ]]; then
-  echo "Smoke check failed: missing develop checkpoint helper: $DEVELOP_CHECKPOINT_ENTRY" >&2
+if [[ ! -f "$DEVELOP_CALLBACK_ENTRY" ]]; then
+  echo "Smoke check failed: missing develop callback helper: $DEVELOP_CALLBACK_ENTRY" >&2
   exit 1
 fi
 

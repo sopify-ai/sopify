@@ -92,7 +92,7 @@ is_release_relevant_file() {
     runtime/*|installer/*|Codex/Skills/*|Claude/Skills/*|README.md|README.zh-CN.md|CHANGELOG.md)
       return 0
       ;;
-    scripts/sopify_runtime.py|scripts/go_plan_runtime.py|scripts/model_compare_runtime.py|scripts/clarification_bridge_runtime.py|scripts/decision_bridge_runtime.py|scripts/develop_checkpoint_runtime.py|scripts/sync-runtime-assets.sh|scripts/check-runtime-smoke.sh|scripts/release-sync.sh|scripts/release-preflight.sh|scripts/sync-skills.sh|scripts/check-skills-sync.sh|scripts/check-version-consistency.sh)
+    scripts/sopify_runtime.py|scripts/go_plan_runtime.py|scripts/model_compare_runtime.py|scripts/clarification_bridge_runtime.py|scripts/decision_bridge_runtime.py|scripts/develop_callback_runtime.py|scripts/sync-runtime-assets.sh|scripts/check-runtime-smoke.sh|scripts/release-sync.sh|scripts/release-preflight.sh|scripts/sync-skills.sh|scripts/check-skills-sync.sh|scripts/check-version-consistency.sh)
       return 0
       ;;
     *)

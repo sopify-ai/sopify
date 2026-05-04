@@ -8,7 +8,6 @@ import sys
 from .clarification import CURRENT_CLARIFICATION_RELATIVE_PATH
 from .decision import CURRENT_DECISION_RELATIVE_PATH
 from .handoff import CURRENT_HANDOFF_RELATIVE_PATH
-from .plan_proposal import CURRENT_PLAN_PROPOSAL_RELATIVE_PATH
 from .models import RuntimeResult
 from .plan_registry import extract_priority_note_event
 
@@ -16,8 +15,6 @@ _PHASE_LABELS = {
     "zh-CN": {
         "clarification_pending": "需求分析",
         "clarification_resume": "需求分析",
-        "plan_proposal_pending": "方案设计",
-        "execution_confirm_pending": "开发实施",
         "plan_only": "方案设计",
         "workflow": "方案设计",
         "light_iterate": "轻量迭代",
@@ -37,8 +34,6 @@ _PHASE_LABELS = {
     "en-US": {
         "clarification_pending": "Requirements Analysis",
         "clarification_resume": "Requirements Analysis",
-        "plan_proposal_pending": "Solution Design",
-        "execution_confirm_pending": "Development",
         "plan_only": "Solution Design",
         "workflow": "Solution Design",
         "light_iterate": "Light Iteration",
@@ -86,13 +81,10 @@ _LABELS = {
         "none": "无",
         "cleared": "已清理当前活跃流程",
         "clarification_handoff": "已进入澄清等待，当前请求仍缺进入规划所需的事实信息",
-        "plan_proposal_handoff": "已生成待确认的方案包 proposal，当前应先确认是否物化 plan 文件",
-        "execution_confirm_handoff": "已进入执行前确认，当前应先由用户确认是否开始落代码",
         "workflow_handoff": "已生成方案骨架，后续开发仍需宿主继续",
         "light_handoff": "已生成 light 方案，后续改动仍需宿主继续",
         "quick_fix_handoff": "已准备进入快速修复，请在宿主会话中继续完成代码修改",
         "consult_handoff": "已进入咨询问答，请在宿主会话中继续回答",
-        "replay_handoff": "已识别 replay 路由，当前仍需 workflow-learning 专用链路",
         "resume_handoff": "已恢复当前流程，当前 repo-local runtime 未执行 develop bridge",
         "exec_handoff": "已进入 ~go exec 高级恢复入口，当前仅用于检查或恢复已有 plan，不作为普通开发主链路",
         "archive_success": "已完成方案归档",
@@ -104,31 +96,21 @@ _LABELS = {
         "gate_decision_status": "plan 已生成，但仍有阻塞性风险需要继续拍板",
         "next_retry": "检查输入、配置或运行时状态后重试",
         "next_answer_questions": "回复补充信息继续规划，或输入 取消 终止本轮设计",
-        "next_confirm_plan_package": "回复 继续 / next 确认生成方案包，回复 status 查看摘要，或直接回复修订意见",
-        "next_confirm_execute": "回复 继续 / next / 开始 确认执行，或直接回复修改意见",
         "next_plan": "在宿主会话中继续评审或执行方案，或直接回复修改意见",
         "next_workflow": "在宿主会话中继续执行后续阶段，或显式使用 ~go plan 只规划",
-        "next_light_iterate": "在宿主会话中继续执行轻量迭代，或回复修改意见",
         "next_resume": "在宿主会话中继续 develop 阶段",
         "next_exec": "仅在已有活动 plan 或恢复态时使用 ~go exec；普通开发流继续按宿主会话推进",
         "next_cancel": "如需继续，重新发起 ~go plan 或 ~go",
         "next_archive_success": "请验证 blueprint 索引与 history 归档结果",
         "next_archive_retry": "补齐 blueprint 更新或切换到 metadata-managed plan 后重试",
         "next_summary": "可再次运行 ~summary 刷新，或继续当前开发流",
-        "next_replay": "继续使用 workflow-learning 回放链路",
         "next_quick_fix": "在宿主会话中继续执行快速修复",
         "next_consult": "在宿主会话中继续问答，或改成明确变更请求",
         "next_decision": "回复 1/2（或 ~decide choose <option_id>）确认方案，或输入 取消 终止本轮设计",
         "handoff_review_or_execute_plan": "已写入 plan handoff，宿主可继续评审方案或执行",
-        "handoff_archive_review": "已写入 archive handoff，宿主应先检查归档结果再决定下一步",
-        "handoff_continue_host_workflow": "已写入 workflow handoff，后续阶段需宿主继续",
         "handoff_answer_questions": "已写入 clarification handoff，宿主应先补齐缺失事实信息",
-        "handoff_confirm_plan_package": "已写入 plan-proposal handoff，宿主应先确认是否生成方案包",
-        "handoff_confirm_execute": "已写入 execution-confirm handoff，宿主应先征求用户执行确认",
         "handoff_continue_host_develop": "已写入 develop handoff，后续开发需宿主继续",
-        "handoff_continue_host_quick_fix": "已准备进入快速修复，请在宿主会话中继续完成代码修改",
         "handoff_confirm_decision": "已写入 decision handoff，宿主应先确认当前设计分叉",
-        "handoff_host_replay_bridge_required": "已写入 replay handoff，当前仍需 workflow-learning 专用链路",
         "handoff_continue_host_consult": "已进入咨询问答，请在宿主会话中继续回答",
         "handoff_resolve_state_conflict": "已检测到运行态冲突，当前需先放弃当前协商再继续",
         "state_conflict_detected": "检测到运行态冲突",
@@ -164,13 +146,10 @@ _LABELS = {
         "none": "none",
         "cleared": "active flow cleared",
         "clarification_handoff": "Clarification is pending because the current request still lacks the minimum facts needed for planning",
-        "plan_proposal_handoff": "A plan-package proposal is pending; confirm package materialization before creating plan files",
-        "execution_confirm_handoff": "Execution confirmation is pending; user confirmation is still required before implementation starts",
         "workflow_handoff": "Plan scaffold generated; downstream development still needs the host flow",
         "light_handoff": "Light plan generated; downstream changes still need the host flow",
         "quick_fix_handoff": "Ready for quick fix; continue the code change in the host session",
         "consult_handoff": "Consult mode is ready; continue the answer in the host session",
-        "replay_handoff": "replay route recognized; workflow-learning still needs its dedicated bridge",
         "resume_handoff": "Active flow restored; the repo-local runtime has not executed the develop bridge",
         "exec_handoff": "~go exec entered the advanced recovery entry; it is only used to inspect or recover an existing plan, not as the default implementation path",
         "archive_success": "The plan has been archived",
@@ -182,31 +161,21 @@ _LABELS = {
         "gate_decision_status": "The plan was generated, but a blocking risk still needs a decision",
         "next_retry": "Check the input, config, or runtime state and retry",
         "next_answer_questions": "Reply with the missing facts to continue planning, or type cancel to stop this round",
-        "next_confirm_plan_package": "Reply with continue / next to create the plan package, status to inspect it, or send feedback to revise it",
-        "next_confirm_execute": "Reply with continue / next / start to confirm execution, or send feedback to revise the plan",
         "next_plan": "Continue plan review or execution in the host session, or reply with feedback",
         "next_workflow": "Continue the downstream stages in the host session, or use ~go plan for planning only",
-        "next_light_iterate": "Continue the light iteration in the host session, or reply with feedback",
         "next_resume": "Continue the develop stage in the host session",
         "next_exec": "Use ~go exec only when an active plan or recovery state already exists; otherwise continue through the host flow",
         "next_cancel": "Start a new ~go plan or ~go flow when ready",
         "next_archive_success": "Review the blueprint index refresh and the history archive",
         "next_archive_retry": "Update the blueprint or switch to a metadata-managed plan and retry",
         "next_summary": "Run ~summary again to refresh, or continue the active development flow",
-        "next_replay": "Use the workflow-learning replay flow",
         "next_quick_fix": "Continue the quick-fix flow in the host session",
         "next_consult": "Continue the discussion in the host session, or restate it as a change request",
         "next_decision": "Reply with 1/2 (or `~decide choose <option_id>`) to confirm, or type cancel to abort this design round",
         "handoff_review_or_execute_plan": "plan handoff written; the host can review the plan or execute it",
-        "handoff_archive_review": "archive handoff written; the host should inspect the archive result before continuing",
-        "handoff_continue_host_workflow": "workflow handoff written; downstream stages still need the host flow",
         "handoff_answer_questions": "clarification handoff written; the host should gather the missing factual details first",
-        "handoff_confirm_plan_package": "plan-proposal handoff written; the host should confirm package materialization first",
-        "handoff_confirm_execute": "execution-confirm handoff written; the host should ask for user confirmation first",
         "handoff_continue_host_develop": "develop handoff written; downstream implementation still needs the host flow",
-        "handoff_continue_host_quick_fix": "Ready for quick fix; continue the code change in the host session",
         "handoff_confirm_decision": "decision handoff written; the host should confirm the current design split first",
-        "handoff_host_replay_bridge_required": "replay handoff written; workflow-learning still needs its dedicated bridge",
         "handoff_continue_host_consult": "Consult mode is ready; continue the answer in the host session",
         "handoff_resolve_state_conflict": "A runtime state conflict was detected; abandon the current negotiation before continuing",
         "state_conflict_detected": "A runtime state conflict was detected",
@@ -322,16 +291,6 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
         _append_entry_guard_reason_line(lines, result=result, language=language)
         return lines
 
-    if route_name == "plan_proposal_pending" and result.recovered_context.current_plan_proposal is not None:
-        proposal = result.recovered_context.current_plan_proposal
-        lines = [
-            f"{labels['plan']}: {proposal.proposed_path or labels['missing']}",
-            f"{labels['summary']}: {proposal.analysis_summary or labels['missing']}",
-            f"{labels['task_count']}: {proposal.estimated_task_count}",
-        ]
-        _append_entry_guard_reason_line(lines, result=result, language=language)
-        return lines
-
     if route_name == "decision_pending" and result.recovered_context.current_decision is not None:
         current_decision = result.recovered_context.current_decision
         recommended = current_decision.recommended_option_id or labels["missing"]
@@ -343,19 +302,6 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
             f"{labels['question']}: {current_decision.question}",
             f"{labels['options']}: {option_text or labels['missing']}",
             f"{labels['status']}: {_decision_pending_status(language, recommended)}",
-        ]
-        _append_entry_guard_reason_line(lines, result=result, language=language)
-        return lines
-
-    if route_name == "execution_confirm_pending":
-        summary = _execution_summary(result)
-        lines = [
-            f"{labels['plan']}: {summary.get('plan_path') or labels['missing']}",
-            f"{labels['summary']}: {summary.get('summary') or labels['missing']}",
-            f"{labels['task_count']}: {summary.get('task_count') if summary else 0}",
-            f"{labels['risk_level']}: {summary.get('risk_level') or labels['missing']}",
-            f"{labels['risk']}: {summary.get('key_risk') or labels['missing']}",
-            f"{labels['mitigation']}: {summary.get('mitigation') or labels['missing']}",
         ]
         _append_entry_guard_reason_line(lines, result=result, language=language)
         return lines
@@ -460,9 +406,6 @@ def _collect_changes(result: RuntimeResult) -> list[str]:
     if result.recovered_context.current_clarification is not None and CURRENT_CLARIFICATION_RELATIVE_PATH not in seen:
         seen.add(CURRENT_CLARIFICATION_RELATIVE_PATH)
         ordered.append(CURRENT_CLARIFICATION_RELATIVE_PATH)
-    if result.recovered_context.current_plan_proposal is not None and CURRENT_PLAN_PROPOSAL_RELATIVE_PATH not in seen:
-        seen.add(CURRENT_PLAN_PROPOSAL_RELATIVE_PATH)
-        ordered.append(CURRENT_PLAN_PROPOSAL_RELATIVE_PATH)
     if result.recovered_context.current_decision is not None and CURRENT_DECISION_RELATIVE_PATH not in seen:
         seen.add(CURRENT_DECISION_RELATIVE_PATH)
         ordered.append(CURRENT_DECISION_RELATIVE_PATH)
@@ -480,8 +423,6 @@ def _next_hint(result: RuntimeResult, language: str) -> str:
         return labels["next_archive_success"] if result.plan_artifact is not None else labels["next_archive_retry"]
     if result.route.route_name == "clarification_pending":
         return labels["next_answer_questions"]
-    if result.route.route_name == "plan_proposal_pending":
-        return labels["next_confirm_plan_package"]
     if result.route.route_name == "decision_pending":
         return labels["next_decision"]
     if result.route.route_name == "state_conflict":
@@ -501,7 +442,7 @@ def _status_symbol(result: RuntimeResult) -> str:
         return "✓" if result.plan_artifact is not None else "!"
     if route_name == "archive_lifecycle":
         return "✓" if result.plan_artifact is not None else "!"
-    if route_name in {"clarification_pending", "plan_proposal_pending", "execution_confirm_pending"}:
+    if route_name in {"clarification_pending"}:
         return "?"
     if route_name == "decision_pending":
         return "?"
@@ -545,18 +486,12 @@ def _status_message(result: RuntimeResult, language: str) -> str:
         return labels["light_handoff"]
     if route_name == "clarification_pending":
         return labels["clarification_handoff"]
-    if route_name == "plan_proposal_pending":
-        return labels["plan_proposal_handoff"]
-    if route_name == "execution_confirm_pending":
-        return labels["execution_confirm_handoff"]
     if route_name == "quick_fix":
         return labels["quick_fix_handoff"]
-    if route_name == "consult":
+    if route_name in {"consult", "replay"}:
         return labels["consult_handoff"]
     if route_name == "summary":
         return labels["next_summary"]
-    if route_name == "replay":
-        return labels["replay_handoff"]
     if route_name == "decision_pending":
         return labels["decision_pending_handoff"]
     if route_name == "resume_active":
@@ -582,48 +517,38 @@ def _handoff_next_hint(result: RuntimeResult, language: str) -> str:
     required_host_action = str(handoff.required_host_action or "").strip()
     if required_host_action == "review_or_execute_plan":
         return labels["next_plan"]
-    if required_host_action == "archive_review":
-        return labels["next_archive_retry"]
-    if required_host_action == "archive_completed":
-        return labels["next_archive_success"]
-    if required_host_action == "continue_host_workflow":
-        return labels["next_workflow"]
+    if required_host_action == "continue_host_consult":
+        if handoff.handoff_kind == "archive":
+            receipt_status = str((handoff.artifacts or {}).get("archive_receipt_status", "")).strip()
+            if receipt_status == "completed":
+                return labels["next_archive_success"]
+            return labels["next_archive_retry"]
+        return labels["next_consult"]
     if required_host_action == "answer_questions":
         return labels["next_answer_questions"]
     if required_host_action == "resolve_state_conflict":
         return labels["next_state_conflict"]
-    if required_host_action == "confirm_plan_package":
-        return labels["next_confirm_plan_package"]
-    if required_host_action == "confirm_execute":
-        return labels["next_confirm_execute"]
     if required_host_action == "continue_host_develop":
-        return labels["next_resume"] if result.route.route_name == "resume_active" else labels["next_exec"]
-    if required_host_action == "continue_host_quick_fix":
-        return labels["next_quick_fix"]
+        if result.route.route_name == "resume_active":
+            return labels["next_resume"]
+        if result.route.route_name == "exec_plan":
+            return labels["next_exec"]
+        if result.route.route_name == "quick_fix":
+            return labels["next_quick_fix"]
+        return labels["next_workflow"]
     if required_host_action == "confirm_decision":
         return labels["next_decision"]
-    if required_host_action == "host_replay_bridge_required":
-        return labels["next_replay"]
-    if required_host_action == "continue_host_consult":
-        return labels["next_consult"]
+    # Fallback: match by canonical handoff_kind (family)
     if handoff.handoff_kind == "plan":
         return labels["next_plan"]
-    if handoff.handoff_kind == "workflow":
-        return labels["next_workflow"]
-    if handoff.handoff_kind == "light_iterate":
-        return labels["next_light_iterate"]
     if handoff.handoff_kind == "clarification":
         return labels["next_answer_questions"]
-    if handoff.handoff_kind == "execution_confirm":
-        return labels["next_confirm_execute"]
     if handoff.handoff_kind == "develop":
+        if result.route.route_name == "quick_fix":
+            return labels["next_quick_fix"]
         return labels["next_resume"] if result.route.route_name == "resume_active" else labels["next_exec"]
-    if handoff.handoff_kind == "quick_fix":
-        return labels["next_quick_fix"]
     if handoff.handoff_kind == "decision":
         return labels["next_decision"]
-    if handoff.handoff_kind == "replay":
-        return labels["next_replay"]
     if handoff.handoff_kind == "consult":
         return labels["next_consult"]
     return labels["next_retry"]

@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
-"""Auto-draft root CHANGELOG [Unreleased] notes from staged release-relevant files."""
+"""Auto-draft root CHANGELOG [Unreleased] notes from staged release-relevant files.
+
+Output structure (per release entry):
+  1. Summary   — 1-3 sentence user-visible impact
+  2. Plan pkgs — grouped by plan_id / feature_key / lifecycle_state
+  3. Details   — file list in <details> collapsible block
+"""
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 from pathlib import Path
 
 
 UNRELEASED_HEADER = "## [Unreleased]"
+
 SECTION_DEFINITIONS = (
     ("Docs", "Refined public documentation"),
     ("Runtime", "Updated runtime internals"),
@@ -17,6 +25,22 @@ SECTION_DEFINITIONS = (
     ("Skills", "Synced prompt-layer skills"),
     ("Tests", "Updated automated coverage"),
     ("Changed", "Updated project files"),
+)
+
+# .sopify-skills/ paths that ARE eligible for changelog (plan package attribution)
+_SOPIFY_WHITELIST_PREFIXES = (
+    ".sopify-skills/plan/",
+    ".sopify-skills/history/",
+)
+
+# Paths to always exclude from changelog (noise)
+_ALWAYS_EXCLUDE = {
+    "CHANGELOG.md",
+}
+
+# Pattern to extract plan_id from whitelisted .sopify-skills/ paths
+_PLAN_ID_RE = re.compile(
+    r"^\.sopify-skills/(?:plan|history/\d{4}-\d{2})/(\d{8}_[^/]+)/"
 )
 
 
@@ -91,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     if not changed_files:
         changed_files = working_tree_files(root)
 
-    result = draft_changelog(changelog_path, changed_files)
+    result = draft_changelog(changelog_path, changed_files, root)
     print(result)
     return 0
 
@@ -147,7 +171,7 @@ def working_tree_files(root: Path) -> list[str]:
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
 
 
-def draft_changelog(changelog_path: Path, changed_files: list[str]) -> str:
+def draft_changelog(changelog_path: Path, changed_files: list[str], root: Path) -> str:
     if not changelog_path.is_file():
         raise SystemExit(f"Missing changelog: {changelog_path}")
 
@@ -165,7 +189,7 @@ def draft_changelog(changelog_path: Path, changed_files: list[str]) -> str:
     if not eligible_files:
         return "No release-note-eligible changed files found. Skipped auto-draft."
 
-    draft = render_draft(eligible_files)
+    draft = render_draft(eligible_files, root)
     updated = text[:start] + "\n\n" + draft + "\n" + text[end:]
     changelog_path.write_text(updated, encoding="utf-8")
     return f"Auto-drafted CHANGELOG [Unreleased] from {len(eligible_files)} changed files."
@@ -194,22 +218,33 @@ def dedupe_paths(paths: list[str]) -> list[str]:
     return result
 
 
-def render_draft(changed_files: list[str]) -> str:
-    grouped: dict[str, list[str]] = {title: [] for title, _ in SECTION_DEFINITIONS}
-    for path in changed_files:
-        grouped[classify_path(path)].append(path)
-
-    blocks = [
-        render_section(title, summary, grouped[title])
-        for title, summary in SECTION_DEFINITIONS
-        if grouped[title]
-    ]
-    return "\n\n".join(blocks)
-
-
 def include_in_changelog(path: str) -> bool:
     normalized = path.strip().replace("\\", "/")
-    return not normalized.startswith(".sopify-skills/")
+    if normalized in _ALWAYS_EXCLUDE:
+        return False
+    if normalized.startswith(".sopify-skills/"):
+        # Only plan package paths (matching YYYYMMDD_slug pattern) are eligible
+        return bool(_PLAN_ID_RE.match(normalized))
+    return True
+
+
+def _detect_plan_lifecycle(plan_id: str, path: str, root: Path) -> str:
+    """Detect lifecycle state of a plan package: archived / active / unknown."""
+    if "/history/" in path:
+        return "archived"
+    plan_dir = root / ".sopify-skills" / "plan" / plan_id
+    if plan_dir.is_dir():
+        for candidate in ("tasks.md", "plan.md"):
+            meta_file = plan_dir / candidate
+            if meta_file.is_file():
+                try:
+                    content = meta_file.read_text(encoding="utf-8")[:500]
+                    if "lifecycle_state: archived" in content or "plan_status: completed" in content:
+                        return "archived"
+                except OSError:
+                    pass
+        return "active"
+    return "unknown"
 
 
 def classify_path(path: str) -> str:
@@ -227,10 +262,79 @@ def classify_path(path: str) -> str:
     return "Changed"
 
 
-def render_section(title: str, summary: str, paths: list[str]) -> str:
-    lines = [f"### {title}", "", f"- {summary}:"]
-    lines.extend(f"  - `{path}`" for path in paths)
-    return "\n".join(lines)
+def _extract_plan_packages(files: list[str], root: Path) -> dict[str, dict]:
+    """Extract plan package info from whitelisted .sopify-skills/ paths."""
+    packages: dict[str, dict] = {}
+    for path in files:
+        m = _PLAN_ID_RE.match(path)
+        if m:
+            plan_id = m.group(1)
+            if plan_id not in packages:
+                lifecycle = _detect_plan_lifecycle(plan_id, path, root)
+                packages[plan_id] = {"lifecycle": lifecycle, "files": []}
+            packages[plan_id]["files"].append(path)
+    return packages
+
+
+def render_draft(changed_files: list[str], root: Path) -> str:
+    plan_packages = _extract_plan_packages(changed_files, root)
+
+    non_plan_files = [
+        f for f in changed_files
+        if not f.startswith(".sopify-skills/")
+    ]
+
+    grouped: dict[str, list[str]] = {title: [] for title, _ in SECTION_DEFINITIONS}
+    for path in non_plan_files:
+        grouped[classify_path(path)].append(path)
+
+    blocks: list[str] = []
+
+    # Layer 1: Summary placeholder
+    summary_parts: list[str] = []
+    if plan_packages:
+        archived = [pid for pid, info in plan_packages.items() if info["lifecycle"] == "archived"]
+        active = [pid for pid, info in plan_packages.items() if info["lifecycle"] == "active"]
+        if archived:
+            summary_parts.append(f"Archived {len(archived)} plan package(s)")
+        if active:
+            summary_parts.append(f"Updated {len(active)} active plan package(s)")
+    non_empty_sections = [title for title, _ in SECTION_DEFINITIONS if grouped[title]]
+    if non_empty_sections:
+        summary_parts.append(f"Changes across: {', '.join(non_empty_sections)}")
+    if summary_parts:
+        blocks.append("### Summary\n\n- " + "; ".join(summary_parts) + ".")
+
+    # Layer 2: Plan packages
+    if plan_packages:
+        pkg_lines = ["### Plan Packages", ""]
+        for plan_id in sorted(plan_packages):
+            info = plan_packages[plan_id]
+            pkg_lines.append(f"- `{plan_id}` ({info['lifecycle']})")
+        blocks.append("\n".join(pkg_lines))
+
+    # Layer 3: File details in collapsible block
+    detail_lines: list[str] = []
+    for title, summary in SECTION_DEFINITIONS:
+        if grouped[title]:
+            detail_lines.append(f"**{title}** — {summary}:")
+            detail_lines.extend(f"  - `{path}`" for path in grouped[title])
+            detail_lines.append("")
+    if plan_packages:
+        detail_lines.append("**Plan package files**:")
+        for plan_id in sorted(plan_packages):
+            for f in plan_packages[plan_id]["files"]:
+                detail_lines.append(f"  - `{f}`")
+        detail_lines.append("")
+
+    if detail_lines:
+        blocks.append(
+            "<details>\n<summary>File details</summary>\n\n"
+            + "\n".join(detail_lines)
+            + "\n</details>"
+        )
+
+    return "\n\n".join(blocks)
 
 
 if __name__ == "__main__":
