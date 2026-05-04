@@ -200,9 +200,9 @@ Sopify 把上述三类输入统一收敛为：
 | `history` | 归档事实：outcome + key_decisions + verification_evidence |
 | `blueprint` | 长期知识：只有稳定结论（via knowledge_sync） |
 
-## 7. Subject Identity & Review Wire Contract — *升格候选 (normative target)*
+## 7. Subject Identity & Review Wire Contract
 
-> **升格状态**：本节中 Subject Identity 的通用字段与核心语义（subject_type / subject_ref / revision_digest / 取证优先级）从 informative/draft 升格为 normative target。execute_existing_plan 场景绑定仍为 draft（见下方 UNSTABLE 标注），不在本次升格范围内。`tasks.md` P1 定义完整升格路线。Review Wire Contract 部分仍为 informative/draft，待 P1 完成后联动升格。
+> **升格状态**：本节中 Subject Identity 的通用字段与核心语义（subject_type / subject_ref / revision_digest / 取证优先级）为 **normative**（其中 `subject_type` 仅 `"plan"` 为 normative，其余值域保留 draft）。execute_existing_plan 场景的 Subject Binding 为 **normative**（P1 升格）。Review Wire Contract 部分仍为 informative/draft，待后续里程碑联动升格。
 >
 > 本节定义跨宿主协作中"操作的是谁"的最小 machine contract（wire level）。适用于 review、execute_existing_plan、revise、archive 等所有需要绑定主体的场景。收敛策略性规则（轮数上限、severity 判定、冲突解决）归 `design.md` Default Workflow 策略。
 
@@ -212,9 +212,9 @@ Sopify 把上述三类输入统一收敛为：
 
 | 字段 | 说明 |
 |------|------|
-| `subject_type` | 被操作对象类型（`plan` / `code` / `architecture`） |
-| `subject_ref` | 对象定位（如 `plan/20260501_dark_mode/plan.md`） |
-| `revision_digest` | 版本标识（git SHA 或内容 hash），保证操作绑定到确定性快照 |
+| `subject_type` | 被操作对象类型（`plan` 为 normative；`code` / `architecture` 保留 draft） |
+| `subject_ref` | 对象定位：workspace-relative 路径（如 `.sopify-skills/plan/20260501_dark_mode`） |
+| `revision_digest` | 版本标识：目标对象的确定性快照标识（SHA-256 hex digest），保证操作绑定到确定性快照 |
 
 **主体取证优先级**（当 subject 未显式给出时的解析链路）：
 
@@ -224,31 +224,41 @@ Sopify 把上述三类输入统一收敛为：
 4. `stable_handoff_evidence` — 上轮 handoff 中稳定的主体引用
 5. `current_plan_anchor` — 全局 current_plan 作为兜底
 
-**Validator 消费边界**：validator 基于 subject identity 做 admission / authorization 判定。subject 不明确时 validator 应拒绝而非猜测。
+**Validator 消费边界**：validator 基于 subject identity 做 admission / authorization 判定。subject 不明确时 validator MUST 拒绝而非猜测。
 
-**Runtime 消费边界**：runtime 作为参考实现消费 protocol 定义的 subject identity contract，不自行定义主体解析语义。
+**Runtime 消费边界**：runtime 作为参考实现消费 protocol 定义的 subject identity contract，MUST NOT 自行定义主体解析语义。
 
-### execute_existing_plan 场景的 Subject Binding — *draft*
+### execute_existing_plan 场景的 Subject Binding — *normative*
 
-> ⚠️ **UNSTABLE** — illustrative draft for P1 planning only; do not implement against these fields/rules until P1 acceptance.
->
-> 本小节是 execute_existing_plan 场景的主体绑定草案。完整规范化依赖 `tasks.md` P1 + P1.5。
+execute_existing_plan 是 subject identity 最关键的消费场景。宿主 MUST 在 ActionProposal 中通过 `plan_subject` 字段块携带以下信息：
 
-execute_existing_plan 是 subject identity 最关键的消费场景。宿主必须在 ActionProposal 中携带：
-
-| 字段 | 说明 |
-|------|------|
-| `subject_ref` | 目标 plan 路径（如 `plan/20260501_dark_mode/plan.md`） |
-| `revision_digest` | plan 内容的确定性快照标识 |
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `subject_ref` | string | MUST | 目标 plan 的 workspace-relative 方案目录路径（如 `.sopify-skills/plan/20260501_dark_mode`） |
+| `revision_digest` | string | MUST | 该目录下 `plan.md` 文件内容的 SHA-256 hex digest |
 
 **可携带规则**：
-- 跨 session 接力时，新 session 必须通过 handoff 或 plan 文件重新建立 subject binding，不隐式继承前 session 的绑定
+
+- 跨 session 接力时，新 session MUST 通过 handoff 或 plan 文件重新建立 subject binding，MUST NOT 隐式继承前 session 的绑定
 - plan 内容变更（revision_digest 不匹配）后，已有 ExecutionAuthorizationReceipt 自动失效
-- validator 在 admission 阶段校验 subject_ref 存在性 + revision_digest 一致性
+- Validator 在 admission 阶段 MUST 校验 `subject_ref` 存在性 + `revision_digest` 一致性
+- 缺少 `plan_subject`、`subject_ref` 指向不存在的 plan、或 `revision_digest` 与文件实际内容不匹配时，Validator MUST 返回 DECISION_REJECT（不降级 consult）
 
-### Review Subject Identity
+> **Legacy mapping 注释**（informative）：
+>
+> 现役 machine truth 中，plan 主体的表达形式与上述 canonical subject binding 存在映射关系：
+>
+> | 现役路径 | canonical 映射 |
+> |---------|--------------|
+> | `current_plan.path`（state.py） | → `plan_subject.subject_ref`（workspace-relative 目录路径） |
+> | `~go exec` 隐含的 plan 指向 | → 应显式携带 `plan_subject`，当前未携带 |
+> | `review_or_execute_plan`（action_projection） | legacy composite，计划 P3a 收口（见 `design.md` sunset 表） |
+>
+> 以上映射为 informative 注释，不构成规范性要求。现役路径的 canonical 化属于 P3a contract-aligned cleanup 范围。
 
-审查是 subject identity 的一个消费场景。每次审查必须绑定被审查对象，字段复用上述 Subject Identity 定义。
+### Review Subject Identity — *informative/draft*
+
+审查是 subject identity 的一个消费场景。每次审查必须绑定被审查对象，字段复用上述 Subject Identity 定义。本小节仍为 informative/draft，待后续里程碑联动升格。
 
 ### Review Record Shape
 
