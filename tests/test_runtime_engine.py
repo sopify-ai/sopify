@@ -23,6 +23,16 @@ def _archive_current_plan_action() -> ActionProposal:
     )
 
 
+def _propose_plan_action() -> ActionProposal:
+    """Create an ActionProposal that authorizes plan materialization."""
+    return ActionProposal(
+        "propose_plan",
+        "write_plan_package",
+        "high",
+        evidence=("test: authorized plan creation",),
+    )
+
+
 def _archive_plan_id_proposal(plan_id: str) -> ActionProposal:
     return ActionProposal(
         "archive_plan",
@@ -72,12 +82,14 @@ class EngineIntegrationTests(unittest.TestCase):
                 workspace_root=workspace,
                 session_id="session-a",
                 user_home=workspace / "home",
+                action_proposal=_propose_plan_action(),
             )
             run_runtime(
                 "实现 runtime gate receipt compaction",
                 workspace_root=workspace,
                 session_id="session-b",
                 user_home=workspace / "home",
+                action_proposal=_propose_plan_action(),
             )
 
             config = load_runtime_config(workspace)
@@ -308,7 +320,7 @@ class EngineIntegrationTests(unittest.TestCase):
                     request_text=f"分析下 {plan_artifact.plan_id} 是否可以执行",
                     reason="test",
                     complexity="medium",
-                    plan_package_policy="confirm",
+                    plan_package_policy="authorized_only",
                     capture_mode="summary",
                 ),
                 state_store=session_b_store,
@@ -827,7 +839,7 @@ class EngineIntegrationTests(unittest.TestCase):
                     request_text=f"分析下 {plan_artifact.plan_id} 是否可以执行",
                     reason="test",
                     complexity="medium",
-                    plan_package_policy="confirm",
+                    plan_package_policy="authorized_only",
                     capture_mode="summary",
                 ),
                 state_store=store,
@@ -873,7 +885,7 @@ class EngineIntegrationTests(unittest.TestCase):
                     request_text=f"分析下 {plan_artifact.plan_id} 是否可以执行",
                     reason="test",
                     complexity="medium",
-                    plan_package_policy="confirm",
+                    plan_package_policy="authorized_only",
                     capture_mode="summary",
                 ),
                 state_store=store,
@@ -1680,7 +1692,7 @@ class EngineIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
 
-            first = run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home")
+            first = run_runtime("实现 runtime plugin bridge", workspace_root=workspace, user_home=workspace / "home", action_proposal=_propose_plan_action())
             self.assertIsNotNone(first.plan_artifact)
             self.assertEqual(first.plan_artifact.level, "full")
 
@@ -2605,7 +2617,7 @@ class EngineIntegrationTests(unittest.TestCase):
                     "--workspace-root",
                     str(workspace),
                     "--no-color",
-                    "重构数据库层",
+                    "~go plan 重构数据库层",
                 ],
                 capture_output=True,
                 text=True,
@@ -3078,7 +3090,6 @@ class EngineIntegrationTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(allowed.returncode, 0, msg=allowed.stderr)
-            self.assertIn(".sopify-skills/plan/", allowed.stdout)
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
 
     def test_repo_local_runtime_entry_blocks_finalize_alias_without_override(self) -> None:

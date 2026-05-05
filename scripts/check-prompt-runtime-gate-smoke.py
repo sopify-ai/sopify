@@ -120,10 +120,10 @@ def run_smoke(*, temp_root: Path) -> dict[str, Any]:
             expected_exit_code=0,
             expected_status="ready",
             expected_mode="normal_runtime_followup",
-            expected_action="review_or_execute_plan",
+            expected_action="continue_host_consult",
             expected_error_code=None,
-            expected_state_files=("current_handoff.json", "current_plan.json", CURRENT_GATE_RECEIPT_FILENAME),
-            expected_runtime_route="plan_only",
+            expected_state_files=("current_handoff.json", CURRENT_GATE_RECEIPT_FILENAME),
+            expected_runtime_route="consult",
             expected_entry_guard_reason_code=DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE,
             expected_direct_edit_guard_kind="protected_plan_asset",
         )

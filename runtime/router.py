@@ -55,8 +55,6 @@ _CONTINUE_KEYWORDS = {"继续", "下一步", "继续执行", "继续吧", "go on
 _CANCEL_KEYWORDS = {"取消", "强制取消", "停止", "终止", "算了", "放弃", "abort", "cancel", "stop", "force cancel"}
 _ARCHITECTURE_KEYWORDS = ("架构", "系统", "runtime", "workflow", "engine", "adapter", "plugin", "新功能", "重构", "refactor")
 _ACTION_KEYWORDS = (
-    "补",
-    "修",
     "修复",
     "实现",
     "添加",
@@ -755,10 +753,10 @@ def _has_process_semantic_intent(text: str) -> bool:
 
 def _plan_package_policy_for_route(route_name: str, request_text: str, *, config: RuntimeConfig) -> str:
     if route_name == "plan_only":
-        return "immediate"
+        return "authorized_only"
     if route_name not in {"workflow", "light_iterate"}:
         return "none"
-    return "immediate"
+    return "authorized_only"
 
 
 def _request_explicitly_materializes_plan(request_text: str, *, config: RuntimeConfig) -> bool:

@@ -1123,7 +1123,8 @@ class IntegrationRegressionTests(unittest.TestCase):
             self.assertIsNotNone(result.route.route_name)
 
     def test_regression_feature_request_without_proposal_uses_router(self) -> None:
-        """'加一个缓存功能' without proposal → Router classifies (not consult)."""
+        """'加一个缓存功能' without proposal → Router classifies, but plan
+        materialization is blocked without authorization (P1.5 auth boundary)."""
         with tempfile.TemporaryDirectory() as td:
             workspace = Path(td)
             result = run_runtime(
@@ -1131,13 +1132,15 @@ class IntegrationRegressionTests(unittest.TestCase):
                 workspace_root=workspace,
                 user_home=workspace / "home",
             )
-            # Without a proposal, Router classifies this as a development task
-            # (light_iterate / go_plan / etc.) — NOT consult.
-            self.assertNotEqual(result.route.route_name, "consult")
+            # Without a proposal, Router classifies as a development task,
+            # but the engine blocks plan materialization → consult.
+            self.assertEqual(result.route.route_name, "consult")
+            self.assertIn("Plan materialization not authorized", result.route.reason)
             self.assertNotIn("action_proposal_validator", result.route.reason)
 
     def test_regression_feature_request_with_high_confidence_uses_router(self) -> None:
-        """'加一个缓存功能' + modify_files/high → authorize → Router classifies."""
+        """'加一个缓存功能' + modify_files/high → authorize, but write_files
+        does not authorize plan materialization → still blocked."""
         with tempfile.TemporaryDirectory() as td:
             workspace = Path(td)
             proposal = ActionProposal(
@@ -1150,8 +1153,9 @@ class IntegrationRegressionTests(unittest.TestCase):
                 user_home=workspace / "home",
                 action_proposal=proposal,
             )
-            # High-confidence authorize → route_override=None → Router runs
-            self.assertNotEqual(result.route.route_name, "consult")
+            # write_files ≠ write_plan_package → plan materialization blocked
+            self.assertEqual(result.route.route_name, "consult")
+            self.assertIn("Plan materialization not authorized", result.route.reason)
             self.assertNotIn("action_proposal_validator", result.route.reason)
 
     def test_regression_feature_request_with_low_confidence_downgrades(self) -> None:

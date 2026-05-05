@@ -30,6 +30,35 @@ class RouterTests(unittest.TestCase):
 
             self.assertNotEqual(route.route_name, "consult")
 
+    def test_analysis_with_confirm_wait_routes_to_consult(self) -> None:
+        """P1.5-C regression: '批判看下...等我确認' should not auto-create plan.
+        Router may classify as light_iterate, but the engine authorization
+        boundary downgrades to consult when no ActionProposal is present."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            result = run_runtime(
+                "批判看下哪些必须修，等我确认",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            self.assertEqual(result.route.route_name, "consult")
+            self.assertIn("Plan materialization not authorized", result.route.reason)
+
+    def test_explicit_fix_request_does_not_route_to_consult(self) -> None:
+        """P1.5-C regression: '修复这个 bug' should NOT be consult."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+            router = Router(config, state_store=store)
+            skills = SkillRegistry(config, user_home=workspace / "home").discover()
+
+            route = router.classify("修复这个 bug", skills=skills)
+
+            self.assertNotEqual(route.route_name, "consult")
+
     def test_question_mark_edit_request_does_not_route_to_consult(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -141,8 +170,8 @@ class RouterTests(unittest.TestCase):
             route = router.classify("design 阶段现在怎么收口？", skills=skills)
 
             self.assertEqual(route.route_name, "workflow")
-            self.assertEqual(route.plan_package_policy, "immediate")
-            self.assertTrue(route.should_create_plan)
+            self.assertEqual(route.plan_package_policy, "authorized_only")
+            self.assertFalse(route.should_create_plan)
             self.assertEqual(
                 route.artifacts.get("entry_guard_reason_code"),
                 DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE,
@@ -160,8 +189,8 @@ class RouterTests(unittest.TestCase):
             route = router.classify("~go 不要新建新的 plan 包，直接在当前 plan 上细化 tasks", skills=skills)
 
             self.assertEqual(route.route_name, "workflow")
-            self.assertEqual(route.plan_package_policy, "immediate")
-            self.assertTrue(route.should_create_plan)
+            self.assertEqual(route.plan_package_policy, "authorized_only")
+            self.assertFalse(route.should_create_plan)
 
     def test_consult_guard_falls_back_when_tradeoff_or_long_term_split_detected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

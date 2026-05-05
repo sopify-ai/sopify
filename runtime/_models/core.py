@@ -10,7 +10,7 @@ DECISION_CONDITION_OPERATORS = ("equals", "not_equals", "in", "not_in")
 DECISION_FIELD_TYPES = ("select", "multi_select", "confirm", "input", "textarea")
 DECISION_SUBMISSION_STATUSES = ("empty", "draft", "collecting", "submitted", "confirmed", "cancelled", "timed_out")
 DECISION_STATE_STATUSES = ("pending", "collecting", "confirmed", "consumed", "cancelled", "timed_out", "stale")
-PLAN_PACKAGE_POLICIES = ("none", "confirm", "immediate")
+PLAN_PACKAGE_POLICIES = ("none", "immediate", "authorized_only")
 
 
 @dataclass(frozen=True)

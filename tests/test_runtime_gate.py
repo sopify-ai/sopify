@@ -1811,6 +1811,7 @@ class RuntimeGateTests(unittest.TestCase):
                 "实现 runtime plugin bridge",
                 workspace_root=workspace,
                 user_home=workspace / "home",
+                action_proposal_json='{"action_type": "propose_plan", "side_effect": "write_plan_package", "confidence": "high", "evidence": ["test: authorized plan creation"]}',
             )
             session_id = first["session_id"]
             self.assertEqual(first["status"], "ready")

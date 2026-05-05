@@ -61,6 +61,7 @@ from .action_intent import (
     ActionProposal,
     ActionValidator,
     ValidationContext,
+    DECISION_AUTHORIZE,
     DECISION_REJECT,
 )
 from .skill_registry import SkillRegistry
@@ -631,6 +632,7 @@ def run_runtime(
     # authoritative route_override (e.g. "consult"), construct a synthetic
     # RouteDecision and skip Router classification entirely.
     proposal_override_route: RouteDecision | None = None
+    plan_materialization_authorized = False
     if action_proposal is not None:
         validator = ActionValidator()
         _run = snapshot.current_run
@@ -667,6 +669,12 @@ def run_runtime(
                 active_run_action="archive" if validation_decision.route_override == "archive_lifecycle" else None,
                 artifacts=validation_decision.artifacts,
             )
+        # P1.5: derive plan materialization authorization from Validator result.
+        if (
+            validation_decision.decision == DECISION_AUTHORIZE
+            and action_proposal.side_effect == "write_plan_package"
+        ):
+            plan_materialization_authorized = True
 
     if proposal_override_route is not None:
         classified_route = proposal_override_route
@@ -838,6 +846,7 @@ def run_runtime(
                 current_decision=recovered.current_decision,
                 last_route=recovered.last_route,
             ),
+            plan_materialization_authorized=plan_materialization_authorized,
         )
         notes.extend(planning_notes)
     elif effective_route.route_name in {"resume_active", "exec_plan"}:
@@ -1525,6 +1534,7 @@ def _handle_clarification_resume(
             current_plan=current_plan,
             current_decision=current_decision,
         ),
+        plan_materialization_authorized=True,
     )
     notes.extend(planning_notes)
     return (planning_route, plan_artifact, notes, kb_artifact)
@@ -1651,6 +1661,7 @@ def _handle_decision_resume(
             current_plan=current_plan,
             current_decision=current_decision,
         ),
+        plan_materialization_authorized=True,
     )
     notes.extend(planning_notes)
     return (planning_route, plan_artifact, notes, kb_artifact, confirmed_decision)
@@ -1819,6 +1830,7 @@ def _resume_from_active_plan_binding_decision(
         planning_context=_PlanningContext(
             current_plan=current_plan,
         ),
+        plan_materialization_authorized=True,
     )
     notes.extend(planning_notes)
     return (planning_route, plan_artifact, notes, kb_artifact, current_decision)
@@ -1903,17 +1915,8 @@ def _plan_review_route(
 
 
 def _normalized_plan_package_policy(decision: RouteDecision, *, config: RuntimeConfig) -> str:
-    """Fail closed for legacy or malformed planning routes that omit the new policy."""
+    """Fail closed: unknown or missing policy → none. No implicit immediate."""
     policy = str(decision.plan_package_policy or "none").strip() or "none"
-    # Wave 3a: "confirm" is no longer a valid fork — treat as "immediate".
-    if policy == "confirm":
-        policy = "immediate"
-    if policy != "none":
-        return policy
-    if decision.route_name == "plan_only":
-        return "immediate"
-    if decision.route_name in {"workflow", "light_iterate"}:
-        return "immediate"
     return policy
 
 
@@ -1963,6 +1966,7 @@ def _advance_planning_route(
     kb_artifact: KbArtifact | None,
     confirmed_decision: DecisionState | None = None,
     planning_context: _PlanningContext | None = None,
+    plan_materialization_authorized: bool = False,
 ) -> tuple[RouteDecision, PlanArtifact | None, list[str], KbArtifact | None]:
     notes: list[str] = []
     context = planning_context or _capture_planning_context(state_store)
@@ -2101,6 +2105,30 @@ def _advance_planning_route(
         )
         notes.extend(gate_notes)
         return (routed_decision, plan_artifact, notes, kb_artifact)
+
+    # Authorization boundary: authorized_only blocks plan materialization
+    # unless the Validator explicitly authorized write_plan_package.
+    # When blocked, downgrade to consult so handoff reflects reality.
+    if plan_package_policy == "authorized_only" and not plan_materialization_authorized:
+        notes.append("Plan materialization blocked: policy is authorized_only but no authorization present")
+        # Preserve guard artifacts (e.g. direct_edit_guard_kind) from the
+        # original decision so the gate contract still surfaces them.
+        blocked_artifacts: dict[str, Any] = {}
+        orig_artifacts = decision.artifacts or {}
+        for key in ("entry_guard_reason_code", "direct_edit_guard_kind", "direct_edit_guard_trigger"):
+            val = orig_artifacts.get(key)
+            if val:
+                blocked_artifacts[key] = val
+        blocked_decision = RouteDecision(
+            route_name="consult",
+            request_text=decision.request_text,
+            reason=f"Plan materialization not authorized (original route: {decision.route_name})",
+            complexity=decision.complexity,
+            should_recover_context=False,
+            plan_package_policy="none",
+            artifacts=blocked_artifacts or {},
+        )
+        return (blocked_decision, None, notes, kb_artifact)
 
     created = create_plan_scaffold(
         decision.request_text,
