@@ -66,7 +66,7 @@
 | 3. 在 plan/ 下创建方案包 | tmp_path 创建 + 目录结构验证 | 必选 |
 | 4. plan.md 必需字段 | 正则/文本搜索 title + scope + approach + tasks 区块 | 必选 |
 | 5. 归档 + receipt.md | history/YYYY-MM/ 结构 + receipt.md 存在 | 必选 |
-| 6. blueprint 回写 | 标记 `pytest.mark.skip`（Convention 下界中是推荐不是必选） | 推荐 |
+| 6. blueprint 回写 | Phase 1 不断言（Convention 下界中是推荐不是必选） | 推荐 |
 
 **D7: 不做字段 schema 深度解析**
 
@@ -108,7 +108,7 @@ runtime/_models/summary.py (473 行, 16 classes)
 
 **D10: output.py 中 `_render_daily_summary_output` 函数删除**
 
-该函数（`output.py:689`，约 30 行）仅在 daily_summary route 结果渲染时调用。删除后 output.py 其他功能不受影响。调用入口 `output.py:212` 的分支也一并清理。
+不只删除 `_render_daily_summary_output`。`output.py` 中与 `summary` route 绑定的 phase label、`next_summary`、`_collect_changes`、`_next_hint`、`_status_symbol`、`_status_message` 等分支都需要同步清理，避免 route 删除后留下只读渲染残面。
 
 **D11: 测试清理范围**
 
@@ -117,15 +117,21 @@ runtime/_models/summary.py (473 行, 16 classes)
 | `tests/test_runtime_summary.py` (175 行) | 整文件删除 |
 | `tests/runtime_test_support.py:47` | 删除 `render_daily_summary_markdown` import |
 | `tests/test_runtime_engine.py:2338` | 删除 mock patch 行及关联上下文 |
+| `tests/test_runtime_router.py:124,131-132` | 删除 `~summary` 分类断言 |
+| `tests/test_runtime_gate.py:1947-1959,2380-2390` | 删除 `~summary` route 集成断言 |
+
+说明：`installer.outcome_contract.render_outcome_summary`、`ClarificationState.summary`、`DecisionOption.summary` 等与 `daily_summary` route 无关的引用不在本次删除范围内。
 
 **D12: engine.py 调用点处理**
 
-`engine.py:1009` 的 `build_daily_summary` 调用需要处理。策略：
+`engine.py` 不只是一处调用点。需要同步删除：
 
-- 如果 daily_summary 调用在独立分支内（只在 daily_summary route 命中时执行），直接删除整个分支
-- 如果穿插在主链路中，替换为 no-op 或跳过逻辑
+- `summary` route 的 `last_route` 豁免分支
+- `build_daily_summary` 调用分支
+- `summary` route 的 handoff 保留分支
+- `summary` route 的 phase / skill 映射分支
 
-具体处理在 T3-B 实现时根据代码结构决定。
+`router.py` 也需同步删除 `~summary` 命令匹配、`summary` route 支持、以及 capture/decision 相关分支。`runtime/__init__.py` 和 `runtime/models.py` 的 public export / re-export 需一起收口，保证删除后不存在公开 facade 残留。
 
 ---
 
@@ -135,17 +141,20 @@ runtime/_models/summary.py (473 行, 16 classes)
 |------|------|---------|------|
 | 1 | README.md | 编辑 | Convention Mode 段落 |
 | 1 | README.zh-CN.md | 编辑 | 中文同步 |
-| 2 | tests/protocol/__init__.py | 新建 | 空 |
 | 2 | tests/protocol/test_convention_compliance.py | 新建 | 6 条合规断言 |
 | 3 | runtime/daily_summary.py | 删除 | 1,133 行 |
-| 3 | runtime/engine.py | 编辑 | 删除 import + 调用点 |
-| 3 | runtime/output.py | 编辑 | 删除 _render_daily_summary_output |
+| 3 | runtime/router.py | 编辑 | 删除 `~summary` route 入口与相关分支 |
+| 3 | runtime/engine.py | 编辑 | 删除 summary route 分支 |
+| 3 | runtime/output.py | 编辑 | 删除 summary route 全部专属分支 |
+| 3 | runtime/__init__.py | 编辑 | 删除 `DailySummaryArtifact` public export |
 | 3 | runtime/_models/summary.py | 编辑/删除 | 视消费方验证结果 |
 | 3 | runtime/models.py | 编辑 | 清理 re-export |
 | 3 | tests/test_runtime_summary.py | 删除 | 175 行 |
 | 3 | tests/runtime_test_support.py | 编辑 | 删除 import |
 | 3 | tests/test_runtime_engine.py | 编辑 | 删除 mock 行 |
-| 4 | .sopify-skills/blueprint/README.md | 编辑 | 焦点更新 |
+| 3 | tests/test_runtime_router.py | 编辑 | 删除 `~summary` 断言 |
+| 3 | tests/test_runtime_gate.py | 编辑 | 删除 `~summary` route 集成断言 |
+| 4 | .sopify-skills/blueprint/README.md | 确认 | 焦点区块由 renderer 托管，不手工覆写 |
 | 4 | .sopify-skills/blueprint/tasks.md | 编辑 | 状态更新 |
 
 不新增 runtime 模块、不新增 CLI 面、不改 protocol.md。
@@ -162,11 +171,11 @@ runtime/_models/summary.py (473 行, 16 classes)
 
 ### 切片 2
 5. `pytest tests/protocol/` 可独立运行并全部通过
-6. 断言覆盖 protocol.md §5 前 5 条（第 6 条 skip）
+6. 断言覆盖 protocol.md §5 前 5 条（第 6 条不纳入 Phase 1）
 7. 不 import 任何 `runtime.*` 模块
 
 ### 切片 3
-8. `grep -rn "daily_summary" --include="*.py"` 无残留引用
+8. `summary` surface 相关精确 pattern 组无残留：`~summary`、`route_name.*summary`、`daily_summary`、`DailySummary`、`_render_daily_summary`、`next_summary`
 9. 全量 `pytest` 通过
 10. runtime 行数减少 ≥1,100 行
 

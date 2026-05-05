@@ -1932,33 +1932,6 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertTrue(result["evidence"]["current_request_produced_handoff"])
             self.assertTrue(Path(result["receipt_path"]).exists())
 
-    def test_gate_marks_reused_prior_handoff_observability(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-
-            first = enter_runtime_gate(
-                "~go plan 补 runtime gate 骨架",
-                workspace_root=workspace,
-                user_home=workspace / "home",
-            )
-            self.assertEqual(first["status"], "ready")
-            session_id = first["session_id"]
-
-            result = enter_runtime_gate(
-                "~summary",
-                workspace_root=workspace,
-                session_id=session_id,
-                user_home=workspace / "home",
-            )
-
-            self.assertEqual(result["status"], "ready")
-            self.assertEqual(result["runtime"]["route_name"], "summary")
-            self.assertEqual(result["evidence"]["handoff_source_kind"], "reused_prior_state")
-            self.assertFalse(result["evidence"]["current_request_produced_handoff"])
-            self.assertFalse(result["evidence"]["persisted_handoff_matches_current_request"])
-            self.assertEqual(result["observability"]["runtime_route_name"], "summary")
-            self.assertIn("补 runtime gate 骨架", result["observability"]["persisted_handoff"]["request_excerpt"])
-
     def test_gate_reports_previous_receipt_diagnostics(self) -> None:
         scenarios = (
             ("request_sha1_mismatch", "旧请求", "clarification_pending", False, True),
@@ -2362,39 +2335,6 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertFalse(result["gate_passed"])
             self.assertEqual(result["error_code"], "handoff_normalize_failed")
             self.assertEqual(result["evidence"]["handoff_source_kind"], "current_request_not_persisted")
-
-    def test_gate_prioritizes_strict_runtime_entry_before_source_kind(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            config = load_runtime_config(workspace)
-            store = StateStore(config, session_id="session-test")
-            store.set_current_handoff(
-                _make_runtime_handoff(
-                    run_id="run-persisted",
-                    route_name="workflow",
-                    strict_runtime_entry=False,
-                )
-            )
-
-            with patch(
-                "runtime.gate.run_runtime",
-                return_value=_make_runtime_result(
-                    request_text="~summary",
-                    route_name="summary",
-                    handoff=None,
-                ),
-            ):
-                result = enter_runtime_gate(
-                    "~summary",
-                    workspace_root=workspace,
-                    session_id="session-test",
-                    user_home=workspace / "home",
-                )
-
-            self.assertEqual(result["status"], "error")
-            self.assertFalse(result["gate_passed"])
-            self.assertEqual(result["error_code"], "strict_runtime_entry_missing")
-            self.assertEqual(result["evidence"]["handoff_source_kind"], "reused_prior_state")
 
     def test_runtime_gate_cli_prints_compact_json_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

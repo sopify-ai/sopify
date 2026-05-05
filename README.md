@@ -8,7 +8,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![Version](https://img.shields.io/badge/version-2026--05--04.221930-orange.svg)](#version-history)
+[![Version](https://img.shields.io/badge/version-2026--05--05.200849-orange.svg)](#version-history)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 English · [简体中文](./README.zh-CN.md) · [Quick Start](#quick-start) · [Configuration](#configuration) · [Contributors](./CONTRIBUTORS.md)
@@ -109,6 +109,18 @@ python3 scripts/sopify_doctor.py --format text
 - `will bootstrap on first project trigger`: the host install is ready and the project-local runtime has not been prepared yet
 - `workspace outcome: stub_selected [continue]`: the workspace runtime entry is healthy
 - Payload or bundle corruption errors (for example `global_bundle_missing`, `global_bundle_incompatible`, or `global_index_corrupted`): repair the install and retry
+
+### Convention Mode (No Runtime)
+
+If you only need the project protocol without installing the runtime, you can work in Convention mode directly:
+
+1. **Read** `.sopify-skills/blueprint/` to understand the project context
+2. **Write** a plan in `.sopify-skills/plan/YYYYMMDD_feature/plan.md` (must include title / scope / approach + inline tasks)
+3. **Archive** to `.sopify-skills/history/YYYY-MM/` and generate `receipt.md`
+
+See [protocol.md §4 — Lifecycle Examples](./.sopify-skills/blueprint/protocol.md#4-典型生命周期样例) for the full Convention flow (Example A), and [protocol.md §5 — Compliance Checklist](./.sopify-skills/blueprint/protocol.md#5-协议合规检查清单) for self-check items.
+
+Any host that follows these three steps is Convention-compliant — no runtime, no installer, no CLI required.
 
 ### Choose an Entry by Task Size
 

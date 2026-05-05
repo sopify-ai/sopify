@@ -6,6 +6,96 @@ Format: Summary → Plan Packages → File Details (collapsible).
 
 ## [Unreleased]
 
+## [2026-05-05.200849] - 2026-05-05
+
+### Summary
+
+- Updated 1 active plan package(s); Changes across: Docs, Runtime, Skills, Tests.
+
+### Plan Packages
+
+- `20260505_consult-plan-actionproposal-validator-determinis` (unknown)
+- `20260505_p15_advance_slices` (active)
+
+<details>
+<summary>File details</summary>
+
+**Docs** — Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+**Runtime** — Updated runtime internals:
+  - `runtime/__init__.py`
+  - `runtime/_models/summary.py`
+  - `runtime/daily_summary.py`
+  - `runtime/engine.py`
+  - `runtime/models.py`
+  - `runtime/output.py`
+  - `runtime/router.py`
+
+**Skills** — Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+**Tests** — Updated automated coverage:
+  - `tests/protocol/test_convention_compliance.py`
+  - `tests/runtime_test_support.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_summary.py`
+
+**Plan package files**:
+  - `.sopify-skills/plan/20260505_consult-plan-actionproposal-validator-determinis/background.md`
+  - `.sopify-skills/plan/20260505_consult-plan-actionproposal-validator-determinis/design.md`
+  - `.sopify-skills/plan/20260505_consult-plan-actionproposal-validator-determinis/tasks.md`
+  - `.sopify-skills/plan/20260505_p15_advance_slices/design.md`
+  - `.sopify-skills/plan/20260505_p15_advance_slices/tasks.md`
+
+</details>
+
+## [2026-05-05.195823] - 2026-05-05
+
+### Summary
+
+- Updated 1 active plan package(s); Changes across: Docs, Runtime, Tests.
+
+### Plan Packages
+
+- `20260505_p15_advance_slices` (active)
+
+<details>
+<summary>File details</summary>
+
+**Docs** — Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+**Runtime** — Updated runtime internals:
+  - `runtime/__init__.py`
+  - `runtime/_models/summary.py`
+  - `runtime/daily_summary.py`
+  - `runtime/engine.py`
+  - `runtime/models.py`
+  - `runtime/output.py`
+  - `runtime/router.py`
+
+**Tests** — Updated automated coverage:
+  - `tests/protocol/test_convention_compliance.py`
+  - `tests/runtime_test_support.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_summary.py`
+
+**Plan package files**:
+  - `.sopify-skills/plan/20260505_p15_advance_slices/design.md`
+  - `.sopify-skills/plan/20260505_p15_advance_slices/tasks.md`
+
+</details>
+
 ## [2026-05-04.221930] - 2026-05-04
 
 ### Summary

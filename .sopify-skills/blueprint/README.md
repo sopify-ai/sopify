@@ -14,7 +14,6 @@
 
 <!-- sopify:auto:focus:start -->
 - 当前活动 plan：暂无。
-- 当前焦点：P1.5 先行切片（Convention 入口 + Compliance Phase 1）与 P1.5→P2 Verifier 桥接，见 `tasks.md`。
 - history 归档：已可用；最近归档为 `../history/2026-05/20260504_subject_identity_binding`。
 <!-- sopify:auto:focus:end -->
 

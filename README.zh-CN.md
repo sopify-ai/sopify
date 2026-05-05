@@ -8,7 +8,7 @@
 
 [![许可证](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![文档](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![版本](https://img.shields.io/badge/version-2026--05--04.221930-orange.svg)](#版本历史)
+[![版本](https://img.shields.io/badge/version-2026--05--05.200849-orange.svg)](#版本历史)
 [![欢迎PR](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING_CN.md)
 
 [English](./README.md) · 简体中文 · [快速开始](#快速开始) · [配置说明](#配置说明) · [贡献者](./CONTRIBUTORS.md)
@@ -109,6 +109,18 @@ python3 scripts/sopify_doctor.py --format text
 - `will bootstrap on first project trigger`：宿主安装已就绪，项目侧 runtime 还未准备，这是正常状态
 - `workspace outcome: stub_selected [continue]`：workspace runtime 入口健康
 - 如果 doctor 报出 payload 或 bundle 损坏类错误（例如 `global_bundle_missing`、`global_bundle_incompatible`、`global_index_corrupted`），先修复安装，再重试
+
+### Convention 模式（无需 Runtime）
+
+如果只需要项目协议，不需要安装 runtime，可以直接使用 Convention 模式：
+
+1. **阅读** `.sopify-skills/blueprint/` 理解项目上下文
+2. **创建** `.sopify-skills/plan/YYYYMMDD_feature/plan.md`（需包含 title / scope / approach + 内联 tasks）
+3. **归档** 到 `.sopify-skills/history/YYYY-MM/` 并生成 `receipt.md`
+
+完整 Convention 流程见 [protocol.md §4 — 典型生命周期样例](./.sopify-skills/blueprint/protocol.md#4-典型生命周期样例)（样例 A），合规自检见 [protocol.md §5 — 协议合规检查清单](./.sopify-skills/blueprint/protocol.md#5-协议合规检查清单)。
+
+任何宿主只要遵循以上三步即为 Convention 合规——无需 runtime、无需安装器、无需 CLI。
 
 ### 根据任务规模选入口
 

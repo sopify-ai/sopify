@@ -15,7 +15,6 @@ from .clarification import build_clarification_state, has_submitted_clarificatio
 from .config import load_runtime_config
 from .context_snapshot import ContextResolvedSnapshot, resolve_context_snapshot
 from .context_recovery import recover_context
-from .daily_summary import build_daily_summary
 from .decision import (
     ACTIVE_PLAN_ATTACH_OPTION_ID,
     ACTIVE_PLAN_BINDING_DECISION_TYPE,
@@ -957,7 +956,7 @@ def run_runtime(
                     notes.append("Active run resumed")
         recovered = execution_recovered
 
-    if effective_route.route_name != "summary" and not _is_zero_write_conflict_inspect(effective_route):
+    if not _is_zero_write_conflict_inspect(effective_route):
         review_store.set_last_route(effective_route)
 
     # Resolve once after all route-side mutations, then let store selection,
@@ -1003,20 +1002,6 @@ def run_runtime(
         current_clarification=resolved_result_context.current_clarification,
         current_decision=resolved_result_context.current_decision,
     )
-
-    if effective_route.route_name == "summary" and activation is not None:
-        # Keep `~summary` read-only so users can inspect the day without disturbing an active handoff.
-        summary_result = build_daily_summary(
-            config=config,
-            state_store=result_store,
-            activation=activation,
-        )
-        skill_result = {
-            "summary": summary_result.artifact.to_dict(),
-            "summary_markdown": summary_result.markdown,
-        }
-        generated_files = summary_result.generated_files
-        notes.extend(summary_result.notes)
 
     if effective_route.capture_mode != "off":
         writer = ReplayWriter(config)
@@ -1064,9 +1049,6 @@ def run_runtime(
         replay_session_dir = str(session_dir.relative_to(config.workspace_root))
 
     if effective_route.route_name == "cancel_active":
-        handoff = None
-    elif effective_route.route_name == "summary":
-        # Preserve the current handoff on disk; `~summary` should not consume or overwrite active flow state.
         handoff = None
     else:
         current_run = resolved_result_context.current_run
@@ -1439,8 +1421,6 @@ def _activation_target(
 ) -> tuple[str, str]:
     if decision.runtime_skill_id == "workflow-learning" or decision.route_name == "replay":
         return ("workflow-learning", "复盘学习")
-    if decision.route_name == "summary":
-        return ("summary", "今日详细摘要")
     if decision.route_name in {"resume_active", "exec_plan", "quick_fix", "archive_lifecycle"}:
         return ("develop", "开发实施")
     if decision.route_name in {"clarification_pending", "clarification_resume"}:

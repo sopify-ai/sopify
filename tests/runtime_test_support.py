@@ -44,7 +44,6 @@ from runtime.decision_bridge import (
 )
 from runtime.decision_policy import match_decision_policy
 from runtime.decision_templates import CUSTOM_OPTION_ID, PRIMARY_OPTION_FIELD_ID, build_strategy_pick_template
-from runtime.daily_summary import render_daily_summary_markdown
 from runtime.engine import run_runtime
 from runtime.entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
 from runtime.execution_gate import evaluate_execution_gate
@@ -78,7 +77,6 @@ from runtime.state import StateStore, iso_now, local_day_now
 from runtime.state_invariants import HOST_FACING_TRUTH_WRITE_KINDS, InvariantViolationError
 from runtime.models import (
     ClarificationState,
-    DailySummaryArtifact,
     DecisionCheckpoint,
     DecisionCondition,
     DecisionField,
@@ -97,21 +95,6 @@ from runtime.models import (
     RuntimeHandoff,
     RunState,
     SkillMeta,
-    SummaryCodeChangeFact,
-    SummaryDecisionFact,
-    SummaryFacts,
-    SummaryGitCommitRef,
-    SummaryGitRefs,
-    SummaryGoalFact,
-    SummaryIssueFact,
-    SummaryLessonFact,
-    SummaryNextStepFact,
-    SummaryQualityChecks,
-    SummaryReplaySessionRef,
-    SummaryScope,
-    SummarySourceRefFile,
-    SummarySourceRefs,
-    SummarySourceWindow,
 )
 
 DEFAULT_RUNTIME_WORKFLOW_TEST_FILE = "tests/test_runtime_engine.py"

@@ -2,7 +2,6 @@
 
 from .engine import run_runtime
 from .models import (
-    DailySummaryArtifact,
     PlanArtifact,
     RecoveredContext,
     ReplayEvent,
@@ -17,7 +16,6 @@ from .output import render_runtime_error, render_runtime_output
 from .preferences import PreferencesPreloadResult, preload_preferences, preload_preferences_for_workspace, resolve_preferences_path
 
 __all__ = [
-    "DailySummaryArtifact",
     "PlanArtifact",
     "PreferencesPreloadResult",
     "RecoveredContext",

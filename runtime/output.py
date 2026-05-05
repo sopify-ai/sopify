@@ -25,7 +25,6 @@ _PHASE_LABELS = {
         "archive_lifecycle": "命令完成",
         "decision_pending": "方案设计",
         "decision_resume": "方案设计",
-        "summary": "今日详细摘要",
         "replay": "咨询问答",
         "consult": "咨询问答",
         "state_conflict": "状态冲突",
@@ -44,7 +43,6 @@ _PHASE_LABELS = {
         "archive_lifecycle": "Command Complete",
         "decision_pending": "Solution Design",
         "decision_resume": "Solution Design",
-        "summary": "Daily Summary",
         "replay": "Q&A",
         "consult": "Q&A",
         "state_conflict": "State Conflict",
@@ -103,7 +101,6 @@ _LABELS = {
         "next_cancel": "如需继续，重新发起 ~go plan 或 ~go",
         "next_archive_success": "请验证 blueprint 索引与 history 归档结果",
         "next_archive_retry": "补齐 blueprint 更新或切换到 metadata-managed plan 后重试",
-        "next_summary": "可再次运行 ~summary 刷新，或继续当前开发流",
         "next_quick_fix": "在宿主会话中继续执行快速修复",
         "next_consult": "在宿主会话中继续问答，或改成明确变更请求",
         "next_decision": "回复 1/2（或 ~decide choose <option_id>）确认方案，或输入 取消 终止本轮设计",
@@ -168,7 +165,6 @@ _LABELS = {
         "next_cancel": "Start a new ~go plan or ~go flow when ready",
         "next_archive_success": "Review the blueprint index refresh and the history archive",
         "next_archive_retry": "Update the blueprint or switch to a metadata-managed plan and retry",
-        "next_summary": "Run ~summary again to refresh, or continue the active development flow",
         "next_quick_fix": "Continue the quick-fix flow in the host session",
         "next_consult": "Continue the discussion in the host session, or restate it as a change request",
         "next_decision": "Reply with 1/2 (or `~decide choose <option_id>`) to confirm, or type cancel to abort this design round",
@@ -208,8 +204,6 @@ def render_runtime_output(
     phase = _phase_label(result, locale)
     status = _status_symbol(result)
     title = _colorize(f"[{brand}] {phase} {status}", title_color=title_color, use_color=use_color)
-    if result.route.route_name == "summary":
-        return _render_daily_summary_output(result, title=title, language=locale)
     changes = _collect_changes(result)
     body = _core_lines(result, locale)
     next_hint = _next_hint(result, locale)
@@ -323,11 +317,6 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
         _append_entry_guard_reason_line(lines, result=result, language=language)
         return lines
 
-    if route_name == "summary":
-        if language == "en-US":
-            return [f"{labels['summary']}: generated the detailed recap for today and the current workspace"]
-        return [f"{labels['summary']}: 已生成今天、当前工作区的详细复盘摘要"]
-
     if route_name == "archive_lifecycle":
         if result.plan_artifact is not None:
             return [
@@ -383,8 +372,6 @@ def _core_lines(result: RuntimeResult, language: str) -> list[str]:
 
 
 def _collect_changes(result: RuntimeResult) -> list[str]:
-    if result.route.route_name == "summary":
-        return list(result.generated_files)
     seen: set[str] = set()
     ordered: list[str] = []
     for path in result.kb_artifact.files if result.kb_artifact is not None else ():
@@ -427,8 +414,6 @@ def _next_hint(result: RuntimeResult, language: str) -> str:
         return labels["next_decision"]
     if result.route.route_name == "state_conflict":
         return labels["next_state_conflict"]
-    if result.route.route_name == "summary":
-        return labels["next_summary"]
     if result.route.route_name == "exec_plan":
         return labels["next_exec"]
     if result.route.route_name == "cancel_active":
@@ -452,8 +437,6 @@ def _status_symbol(result: RuntimeResult) -> str:
         return "!"
     if route_name == "cancel_active":
         return "✓"
-    if route_name == "summary":
-        return "✓" if result.skill_result else "!"
     if route_name in {"workflow", "light_iterate", "quick_fix", "consult", "replay", "resume_active", "exec_plan"}:
         return "!"
     if result.notes:
@@ -490,8 +473,6 @@ def _status_message(result: RuntimeResult, language: str) -> str:
         return labels["quick_fix_handoff"]
     if route_name in {"consult", "replay"}:
         return labels["consult_handoff"]
-    if route_name == "summary":
-        return labels["next_summary"]
     if route_name == "decision_pending":
         return labels["decision_pending_handoff"]
     if route_name == "resume_active":
@@ -684,27 +665,6 @@ def _quarantined_items(result: RuntimeResult) -> list[dict[str, object]]:
 
 def _normalize_language(language: str) -> str:
     return "en-US" if language == "en-US" else "zh-CN"
-
-
-def _render_daily_summary_output(result: RuntimeResult, *, title: str, language: str) -> str:
-    labels = _LABELS[language]
-    changes = _collect_changes(result)
-    payload = result.skill_result or {}
-    markdown = str(payload.get("summary_markdown") or "").rstrip()
-    next_hint = _next_hint(result, language)
-
-    lines = [title, ""]
-    if markdown:
-        lines.extend(markdown.splitlines())
-    else:
-        lines.append(f"{labels['summary']}: {labels['missing']}")
-    lines.extend(["", "---", f"Changes: {len(changes)} files"])
-    if changes:
-        lines.extend(f"  - {path}" for path in changes)
-    else:
-        lines.append(f"  - {labels['none']}")
-    lines.extend(["", f"Next: {next_hint}"])
-    return "\n".join(lines)
 
 
 def _colorize(text: str, *, title_color: str, use_color: bool | None) -> str:

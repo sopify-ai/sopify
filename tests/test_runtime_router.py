@@ -121,15 +121,12 @@ class RouterTests(unittest.TestCase):
             resume_route = router.classify("继续", skills=skills)
             cancel_route = router.classify("取消", skills=skills)
             replay_route = router.classify("回放最近一次实现", skills=skills)
-            summary_route = router.classify("~summary", skills=skills)
             consult_route = router.classify("这个方案为什么要这样拆？", skills=skills)
 
             self.assertEqual(resume_route.route_name, "resume_active")
             self.assertTrue(resume_route.should_recover_context)
             self.assertEqual(cancel_route.route_name, "cancel_active")
             self.assertEqual(replay_route.route_name, "replay")
-            self.assertEqual(summary_route.route_name, "summary")
-            self.assertEqual(summary_route.capture_mode, "off")
             self.assertEqual(consult_route.route_name, "consult")
 
     def test_consult_guard_for_process_semantics_forces_runtime_first(self) -> None:
