@@ -73,6 +73,7 @@ _ROUTE_HANDOFF_KIND = {
     "decision_resume": "decision",
     # non-family surface
     "state_conflict": "state_conflict",
+    "proposal_rejected": "reject",
 }
 
 _STATE_CONFLICT_ABORT_RESUME_ACTIONS = {
@@ -236,6 +237,8 @@ def _required_host_action(
             if resume_action:
                 return resume_action
         return "continue_host_develop"
+    if route_name == "proposal_rejected":
+        return "continue_host_consult"
     if route_name == "consult" or route_name == "replay":
         return "continue_host_consult"
     return "continue_host_develop"
@@ -276,6 +279,9 @@ def _collect_handoff_artifacts(
     consult_override_reason_code = str(decision.artifacts.get("consult_override_reason_code") or "").strip()
     if consult_override_reason_code:
         artifacts["consult_override_reason_code"] = consult_override_reason_code
+    reject_reason_code = str(decision.artifacts.get("reject_reason_code") or "").strip()
+    if reject_reason_code:
+        artifacts["reject_reason_code"] = reject_reason_code
     state_conflict_payload = decision.artifacts.get("state_conflict")
     if required_host_action == "resolve_state_conflict" and isinstance(state_conflict_payload, Mapping):
         artifacts["state_conflict"] = dict(state_conflict_payload)

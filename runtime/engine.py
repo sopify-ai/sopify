@@ -100,7 +100,7 @@ _CANONICAL_ROUTE_FAMILIES: dict[str, str] = {
     "clarification_pending": "clarification", "clarification_resume": "clarification",
     "decision_pending": "decision", "decision_resume": "decision",
 }
-_NON_FAMILY_SURFACES = frozenset({"state_conflict", "cancel_active", "summary"})
+_NON_FAMILY_SURFACES = frozenset({"state_conflict", "cancel_active", "summary", "proposal_rejected"})
 
 _ABORTABLE_HANDOFF_ACTIONS = frozenset(
     {
@@ -658,15 +658,16 @@ def run_runtime(
         )
         validation_decision = validator.validate(action_proposal, ctx)
         if validation_decision.decision == DECISION_REJECT:
-            # P1: validator explicitly rejected — block execution.
+            # P1.5-A: validator explicitly rejected — independent reject surface.
             # No state mutation on reject: stale receipt stays until an explicit
             # re-authorization path (e.g. new planning flow) replaces it.
             proposal_override_route = RouteDecision(
-                route_name="consult",
+                route_name="proposal_rejected",
                 request_text=user_input,
                 reason=f"action_proposal_rejected: {validation_decision.reason_code}",
                 complexity="simple",
                 should_recover_context=False,
+                artifacts={"reject_reason_code": validation_decision.reason_code},
             )
         elif validation_decision.route_override:
             proposal_override_route = RouteDecision(
