@@ -6,6 +6,21 @@ Format: Summary → Plan Packages → File Details (collapsible).
 
 ## [Unreleased]
 
+## [2026-05-06.181908] - 2026-05-06
+
+### Summary
+
+- Changes across: Docs.
+
+<details>
+<summary>File details</summary>
+
+**Docs** — Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+</details>
+
 ## [2026-05-06.143421] - 2026-05-06
 
 ### Summary

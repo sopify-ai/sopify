@@ -3118,3 +3118,263 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(payload["required_entry"], "scripts/runtime_gate.py")
             self.assertEqual(payload["trigger_evidence"]["direct_edit_guard_kind"], "side_effecting_command_alias")
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
+
+
+# ---------------------------------------------------------------------------
+# P1.5 debt: ExecutionAuthorizationReceipt engine/handoff integration (T5-C)
+# ---------------------------------------------------------------------------
+
+
+class ReceiptEngineHandoffIntegrationTests(unittest.TestCase):
+    """P1.5-B debt — run-level proof that receipt flows through engine → state → handoff."""
+
+    def _authorized_exec_result(self, workspace: Path, plan_artifact: PlanArtifact):
+        """Run execute_existing_plan with valid plan_subject and return result."""
+        import hashlib
+        from runtime.action_intent import PlanSubjectProposal
+
+        plan_md = workspace / plan_artifact.path / "plan.md"
+        if not plan_md.exists():
+            plan_md.write_text("# Test Plan\nGenerated for receipt integration test.\n", encoding="utf-8")
+        digest = hashlib.sha256(plan_md.read_bytes()).hexdigest()
+        plan_subject = PlanSubjectProposal(
+            subject_ref=plan_artifact.path,
+            revision_digest=digest,
+        )
+        proposal = ActionProposal(
+            "execute_existing_plan", "write_files", "high",
+            evidence=("test: authorized execution",),
+            plan_subject=plan_subject,
+        )
+        return run_runtime(
+            "继续",
+            workspace_root=workspace,
+            user_home=workspace / "home",
+            action_proposal=proposal,
+        )
+
+    def test_receipt_persisted_in_run_state(self) -> None:
+        """Authorized execute_existing_plan → receipt persisted in RunState."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            _config, _store, plan_artifact = _prepare_ready_plan_state(workspace)
+
+            result = self._authorized_exec_result(workspace, plan_artifact)
+
+            self.assertNotIn("action_proposal_rejected", result.route.reason)
+            config = load_runtime_config(workspace)
+            run = StateStore(config).get_current_run()
+            self.assertIsNotNone(run, "current_run must exist after authorized execution")
+            self.assertIsNotNone(
+                run.execution_authorization_receipt,
+                "receipt must be persisted in RunState",
+            )
+            receipt = run.execution_authorization_receipt
+            self.assertEqual(receipt["plan_path"], plan_artifact.path)
+
+    def test_receipt_exposed_in_handoff_artifacts(self) -> None:
+        """Authorized execute_existing_plan → handoff artifacts include receipt."""
+        import hashlib
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            _config, _store, plan_artifact = _prepare_ready_plan_state(workspace)
+
+            plan_md = workspace / plan_artifact.path / "plan.md"
+            if not plan_md.exists():
+                plan_md.write_text("# Test Plan\nGenerated for receipt integration test.\n", encoding="utf-8")
+            digest = hashlib.sha256(plan_md.read_bytes()).hexdigest()
+
+            result = self._authorized_exec_result(workspace, plan_artifact)
+
+            self.assertIsNotNone(result.handoff, "handoff must be emitted")
+            self.assertIn(
+                "execution_authorization_receipt",
+                result.handoff.artifacts,
+                "receipt must appear in handoff artifacts",
+            )
+            receipt = result.handoff.artifacts["execution_authorization_receipt"]
+            self.assertEqual(receipt["plan_path"], plan_artifact.path)
+            self.assertEqual(receipt["plan_revision_digest"], digest)
+            self.assertIn("authorization_source", receipt)
+            self.assertEqual(receipt["authorization_source"]["kind"], "request_hash")
+
+    def test_receipt_8_normative_fields_present(self) -> None:
+        """Receipt in handoff must contain all 8 normative fields."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            _config, _store, plan_artifact = _prepare_ready_plan_state(workspace)
+
+            result = self._authorized_exec_result(workspace, plan_artifact)
+
+            self.assertIsNotNone(result.handoff)
+            receipt = result.handoff.artifacts.get("execution_authorization_receipt")
+            self.assertIsNotNone(receipt, "receipt must be in handoff")
+            for field in (
+                "plan_id", "plan_path", "plan_revision_digest", "gate_status",
+                "action_proposal_id", "authorization_source", "fingerprint", "authorized_at",
+            ):
+                self.assertIn(field, receipt, f"normative field '{field}' must be present")
+                self.assertTrue(receipt[field], f"normative field '{field}' must not be empty")
+
+    # -- T5-C item 3: negative paths must NOT produce receipt ----------------
+
+    def test_consult_readonly_no_receipt(self) -> None:
+        """consult_readonly path must NOT create a receipt."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            result = run_runtime(
+                "你好",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            self.assertIn(result.route.route_name, ("consult", "consult_readonly"))
+            config = load_runtime_config(workspace)
+            run = StateStore(config).get_current_run()
+            if run is not None:
+                self.assertIsNone(
+                    run.execution_authorization_receipt,
+                    "consult_readonly must not produce a receipt",
+                )
+
+    def test_propose_plan_no_receipt(self) -> None:
+        """propose_plan path must NOT create a receipt."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            result = run_runtime(
+                "帮我做一个方案",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=_propose_plan_action(),
+            )
+            config = load_runtime_config(workspace)
+            run = StateStore(config).get_current_run()
+            if run is not None:
+                self.assertIsNone(
+                    run.execution_authorization_receipt,
+                    "propose_plan must not produce a receipt",
+                )
+
+    # -- T5-C item 4: resume carry-forward receipt ---------------------------
+
+    def test_resume_carry_forward_receipt_preserved(self) -> None:
+        """Resume without new ActionProposal → receipt from previous run preserved."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            _config, _store, plan_artifact = _prepare_ready_plan_state(workspace)
+
+            # Run 1: authorized execution → receipt created
+            result1 = self._authorized_exec_result(workspace, plan_artifact)
+            self.assertNotIn("action_proposal_rejected", result1.route.reason)
+
+            config = load_runtime_config(workspace)
+            run1 = StateStore(config).get_current_run()
+            self.assertIsNotNone(run1)
+            self.assertIsNotNone(
+                run1.execution_authorization_receipt,
+                "receipt must exist after Run 1",
+            )
+            receipt1 = run1.execution_authorization_receipt
+
+            # Run 2: resume without ActionProposal → receipt should carry forward
+            result2 = run_runtime(
+                "继续",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+
+            config2 = load_runtime_config(workspace)
+            run2 = StateStore(config2).get_current_run()
+            self.assertIsNotNone(run2)
+            self.assertIsNotNone(
+                run2.execution_authorization_receipt,
+                "receipt must be preserved on resume without new ActionProposal",
+            )
+            self.assertEqual(
+                run2.execution_authorization_receipt.get("fingerprint"),
+                receipt1.get("fingerprint"),
+                "carried-forward receipt must have same fingerprint",
+            )
+
+
+# ---------------------------------------------------------------------------
+# P1.5 debt: Stale receipt cross-run integration (A follow-up)
+# ---------------------------------------------------------------------------
+
+
+class StaleReceiptCrossRunIntegrationTests(unittest.TestCase):
+    """P1.5-A debt — run-level proof that plan mutation triggers stale receipt → reject."""
+
+    def test_stale_receipt_triggers_proposal_rejected(self) -> None:
+        """Run 1 authorizes → mutate plan.md → Run 2 hits stale receipt → proposal_rejected."""
+        import hashlib
+        from runtime.action_intent import PlanSubjectProposal
+
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            _config, _store, plan_artifact = _prepare_ready_plan_state(workspace)
+
+            plan_md = workspace / plan_artifact.path / "plan.md"
+            if not plan_md.exists():
+                plan_md.write_text("# Test Plan\nGenerated for receipt integration test.\n", encoding="utf-8")
+            digest1 = hashlib.sha256(plan_md.read_bytes()).hexdigest()
+
+            # Run 1: authorize with correct digest → receipt created
+            plan_subject1 = PlanSubjectProposal(
+                subject_ref=plan_artifact.path,
+                revision_digest=digest1,
+            )
+            proposal1 = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("test: first authorization",),
+                plan_subject=plan_subject1,
+            )
+            result1 = run_runtime(
+                "继续",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=proposal1,
+            )
+            self.assertNotIn("action_proposal_rejected", result1.route.reason)
+
+            # Verify receipt persisted after Run 1
+            config = load_runtime_config(workspace)
+            run_after_1 = StateStore(config).get_current_run()
+            self.assertIsNotNone(run_after_1)
+            self.assertIsNotNone(
+                run_after_1.execution_authorization_receipt,
+                "receipt must be persisted after Run 1",
+            )
+
+            # Mutate plan.md externally (simulating external edit)
+            plan_md.write_text(
+                plan_md.read_text(encoding="utf-8") + "\n## Mutated section\n",
+                encoding="utf-8",
+            )
+            digest2 = hashlib.sha256(plan_md.read_bytes()).hexdigest()
+            self.assertNotEqual(digest1, digest2, "digest must change after mutation")
+
+            # Run 2: submit with NEW correct digest → stale receipt detected → reject
+            plan_subject2 = PlanSubjectProposal(
+                subject_ref=plan_artifact.path,
+                revision_digest=digest2,
+            )
+            proposal2 = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("test: second authorization attempt",),
+                plan_subject=plan_subject2,
+            )
+            result2 = run_runtime(
+                "继续执行",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=proposal2,
+            )
+
+            # Stale receipt → proposal_rejected surface
+            self.assertEqual(result2.route.route_name, "proposal_rejected")
+            self.assertIn("stale_receipt", result2.route.reason)
+
+            # Handoff must be reject, not consult
+            self.assertIsNotNone(result2.handoff, "reject must emit handoff")
+            self.assertEqual(result2.handoff.handoff_kind, "reject")
+            self.assertNotEqual(result2.handoff.handoff_kind, "consult")

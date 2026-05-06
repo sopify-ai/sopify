@@ -84,9 +84,8 @@
 - [x] T6-A: 更新 blueprint/tasks.md P1.5-A 状态
   - 验收: A 标记完成
 
-## 已知测试债（Follow-up）
+## 已完成补充测试（原 Follow-up）
 
-- [ ] stale receipt run-level integration test（不阻塞 P1.5-A 主提交）
-  - 真正的 stale-receipt reject 需要跨 run 的 state 持久化：第一次 run 生成 receipt → 修改 plan → 第二次 run 传新 digest 通过 admission → `_check_stale_receipt()` 发现旧 receipt digest 不匹配 → reject
-  - 当前 unit 层 stale receipt 检测已有测试覆盖（`_check_stale_receipt` 单元测试）
-  - run-level integration proof 归 T5-C follow-up，不混入 P1.5-A
+- [x] stale receipt run-level integration test（plan/p15-final 交付）
+  - 跨 run 集成证明：run1 authorize → mutate plan → run2 proposal_rejected + handoff_kind="reject" ✅
+  - unit 层 `_check_stale_receipt` 测试已有覆盖（不变）

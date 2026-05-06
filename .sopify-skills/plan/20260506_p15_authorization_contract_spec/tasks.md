@@ -110,11 +110,10 @@
 - [x] T6-A: 更新 `blueprint/tasks.md` P1.5-B 状态
   - 验收: B 标记完成，D 前置条件已满足
 
-## 已知测试债（Follow-up）
+## 已完成补充测试（原 Follow-up）
 
-- [ ] T5-C 端到端集成测试（不阻塞主提交）
-  - run_runtime() 级别断言：execute_existing_plan + DECISION_AUTHORIZE → RunState.execution_authorization_receipt 非空 + handoff artifacts 包含 receipt
-  - consult_readonly / propose_plan → 无 receipt
-  - resume carry-forward：无新 ActionProposal → receipt 保留
-  - 性质：coverage completeness，不是 contract correctness
-  - 建议：作为紧后方案包单独落地，不混入 P1.5-B 主交付
+- [x] T5-C 端到端集成测试（plan/p15-final 交付）
+  - run_runtime() 级别断言：execute_existing_plan + DECISION_AUTHORIZE → RunState.execution_authorization_receipt 非空 + handoff artifacts 包含 receipt ✅
+  - consult / propose_plan → 无 receipt ✅
+  - resume carry-forward：无新 ActionProposal → receipt 保留 ✅
+  - stale receipt cross-run → proposal_rejected + handoff_kind="reject" ✅

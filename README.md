@@ -4,11 +4,11 @@
 
 <img src="./assets/logo.svg" width="120" alt="Sopify Logo" />
 
-**A recoverable, reviewable, cross-session AI coding workflow**
+**Resumable, traceable AI coding — decisions and history stay with the project**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![Version](https://img.shields.io/badge/version-2026--05--06.143421-orange.svg)](#version-history)
+[![Version](https://img.shields.io/badge/version-2026--05--06.181908-orange.svg)](#version-history)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 English · [简体中文](./README.zh-CN.md) · [Quick Start](#quick-start) · [Configuration](#configuration) · [Contributors](./CONTRIBUTORS.md)
@@ -21,32 +21,41 @@ English · [简体中文](./README.zh-CN.md) · [Quick Start](#quick-start) · [
 
 As repositories grow, AI-assisted development runs into a hidden problem: decision context stays trapped in chat history, each new session re-derives the project state, and the user's mental model, the AI's understanding, and the codebase start to drift apart.
 
-Sopify uses machine-readable protocols to make critical steps visible: when facts are missing, it stops and asks for them; when a branch needs a decision, it waits for confirmation; when work is interrupted, it resumes from current state instead of improvising. The basic process record is generated automatically, but the long-term compounding value still depends on consistently closing out work and maintaining project knowledge.
+Sopify uses project-level conventions to make critical steps visible: when facts are missing, it stops and asks for them; when a branch needs a decision, it waits for confirmation; when work is interrupted, it resumes from current state instead of improvising. The basic process record is generated automatically, but the long-term compounding value still depends on consistently closing out work and maintaining project knowledge.
 
 ### What You'll Actually Notice
 
-- The AI does not silently make key decisions; it pauses when facts are missing or a path needs your confirmation.
-- After an interruption, work resumes from the last stopping point instead of starting over.
-- Plans, history, and blueprint become reusable project assets instead of disposable chat logs.
-- Simple changes are not slowed down by the full process; complex work adds the necessary structure when needed.
+- After an interruption, work resumes from the last stopping point — even when you switch to a different AI host or model.
+- Complex changes can be independently reviewed in an isolated pass before execution.
+- When a plan changes after execution was authorized, the AI cannot silently proceed — it re-confirms with you first.
+- Plans, decisions, and review outcomes accumulate as reusable project assets, not disposable chat history.
+- The AI pauses when facts are missing or a path needs your confirmation; simple tasks stay lightweight.
 
 ### What Kinds of Projects Benefit Most
 
 - Multi-stage work that keeps moving in the same repository instead of one-off edits
 - You're willing to manage progress with plan / blueprint artifacts and close out each stage
 
-## What You Get After Install
+### What Your AI Host Doesn't Solve
 
-- Your host is ready to run Sopify after install.
-- The first time you trigger Sopify in a project, it prepares the local `.sopify-runtime/`.
-- `status` shows the current host / workspace state.
-- `doctor` shows deeper installation and runtime diagnostics and repair guidance.
-
-This guide focuses on install visibility, verification, and stable first use; repository cleanup flows are intentionally out of scope here.
+| Gap | Sopify's answer |
+|-----|-----------------|
+| State is trapped in a single host's chat session | Portable project state — switch hosts mid-task |
+| No independent quality gate | An isolated, independent review pass before execution |
+| Decisions are invisible and non-auditable | Plan changes force re-confirmation — the AI cannot silently proceed |
+| Each session's learning is disposable | Plans, decisions, and reviews persist as reusable project assets |
 
 ## Quick Start
 
-### Installation
+Two ways to start, depending on your repo:
+
+### Already using Sopify? Try it directly
+
+If your repo has `.sopify-skills/`, open any AI host (Claude, Cursor, Codex…) and ask it to continue an unfinished task — it picks up from the last stopping point, not from scratch. That's the protocol working, no runtime needed.
+
+Full Convention walkthrough: [protocol.md §4](./.sopify-skills/blueprint/protocol.md#4-典型生命周期样例)
+
+### First time? Install first
 
 ```bash
 # Recommended: official stable one-liner
@@ -80,7 +89,7 @@ Install targets:
 - `claude:zh-CN`
 - `claude:en-US`
 
-Host availability matrix:
+The protocol (Convention mode) works with any host. Verified runtime integrations today:
 
 | Host | Install target | Availability | Validation coverage | Notes |
 |------|----------------|--------------|---------------------|-------|
@@ -99,6 +108,13 @@ Installer behavior:
 - Sopify prepares `.sopify-runtime/` the first time you trigger it in a project workspace
 - `--workspace` is an advanced prewarm path for maintainers, CI, or explicit repository setup
 
+### How Your Workflow Changes After Install
+
+- Use `~go` when you want Sopify to manage the full task workflow for you.
+- Interrupt anytime — come back (even in a different tool) and resume from where you left off.
+- Complex changes can get an independent review before execution starts.
+- Run `status` to see current progress, `doctor` to troubleshoot.
+
 ### Verify Your Install
 
 ```bash
@@ -109,18 +125,6 @@ python3 scripts/sopify_doctor.py --format text
 - `will bootstrap on first project trigger`: the host install is ready and the project-local runtime has not been prepared yet
 - `workspace outcome: stub_selected [continue]`: the workspace runtime entry is healthy
 - Payload or bundle corruption errors (for example `global_bundle_missing`, `global_bundle_incompatible`, or `global_index_corrupted`): repair the install and retry
-
-### Convention Mode (No Runtime)
-
-If you only need the project protocol without installing the runtime, you can work in Convention mode directly:
-
-1. **Read** `.sopify-skills/blueprint/` to understand the project context
-2. **Write** a plan in `.sopify-skills/plan/YYYYMMDD_feature/plan.md` (must include title / scope / approach + inline tasks)
-3. **Archive** to `.sopify-skills/history/YYYY-MM/` and generate `receipt.md`
-
-See [protocol.md §4 — Lifecycle Examples](./.sopify-skills/blueprint/protocol.md#4-典型生命周期样例) for the full Convention flow (Example A), and [protocol.md §5 — Compliance Checklist](./.sopify-skills/blueprint/protocol.md#5-协议合规检查清单) for self-check items.
-
-Any host that follows these three steps is Convention-compliant — no runtime, no installer, no CLI required.
 
 ### Choose an Entry by Task Size
 

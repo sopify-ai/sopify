@@ -4,11 +4,11 @@
 
 <img src="./assets/logo.svg" width="120" alt="Sopify Logo" />
 
-**可恢复、可复盘、可沉淀的 AI 编程工作流**
+**可恢复、可追溯的 AI 编程 — 决策和历史跟着项目走**
 
 [![许可证](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![文档](https://img.shields.io/badge/docs-CC%20BY%204.0-green.svg)](./LICENSE-docs)
-[![版本](https://img.shields.io/badge/version-2026--05--06.143421-orange.svg)](#版本历史)
+[![版本](https://img.shields.io/badge/version-2026--05--06.181908-orange.svg)](#版本历史)
 [![欢迎PR](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING_CN.md)
 
 [English](./README.md) · 简体中文 · [快速开始](#快速开始) · [配置说明](#配置说明) · [贡献者](./CONTRIBUTORS.md)
@@ -21,32 +21,41 @@
 
 随着仓库增长，AI 辅助开发会遇到一个隐性问题：决策依据散落在对话里，每次新 session 都要重新理解上下文，用户认知、AI 理解和代码现状会逐渐偏离。
 
-Sopify 用机器可读协议把关键节点变成可见流程：缺事实时停下来补事实，需要拍板时等待你确认，中断后从当前状态恢复，而不是让 AI 自行拍板。基础过程记录会自动产生，长期复利则取决于是否持续做阶段收口和维护知识资产。
+Sopify 用项目级约定把关键节点变成可见流程：缺事实时停下来补事实，需要拍板时等待你确认，中断后从当前状态恢复，而不是让 AI 自行拍板。基础过程记录会自动产生，长期复利则取决于是否持续做阶段收口和维护知识资产。
 
 ### 你会实际感受到什么
 
-- 关键节点不会由 AI 自行拍板，缺事实或需要选路时会停下来等你确认
-- 中断后可以从上次停点恢复，不必重新把背景再讲一遍
-- 方案、历史和蓝图会沉淀为项目资产，而不只是一次性聊天记录
-- 简单改动不会被完整流程拖慢，复杂任务再补上必要管理
+- 中断后从上次停点恢复，即使切换到不同的 AI 宿主或模型也能精确接力
+- 复杂变更可在执行前经过隔离的独立审查
+- 方案在授权后被修改时，AI 不能静默继续 — 必须重新向你确认
+- 方案、决策和审查结论会沉淀为可复用的项目资产，而不是一次性聊天记录
+- 缺事实或需要选路时停下来等你确认；简单任务自动简化
 
 ### 在哪类项目里最有价值
 
 - 在同一仓库中持续推进多阶段工作，而不是一次性改动
 - 愿意用 plan / blueprint 管理进展，并在阶段完成后持续做收口
 
-## 安装后你会得到什么
+### 你的 AI 宿主解决不了什么？
 
-- 安装后，你的宿主已可运行 Sopify。
-- 首次在项目仓库里触发 Sopify 时，才会准备本地 `.sopify-runtime/`。
-- `status` 用来看当前 host / workspace 状态。
-- `doctor` 用来看更深的安装与运行时诊断及修复建议。
-
-本文只聚焦安装可见性、自检与首次使用路径，不展开仓库清理流程。
+| 差距 | Sopify 的回答 |
+|------|--------------|
+| 状态锁定在单一宿主的聊天 session 中 | 可携带的项目状态 — 任务进行中随时切换宿主 |
+| 缺少独立质量闸门 | 可在执行前增加隔离的独立审查 |
+| 决策不可见、不可审计 | 方案变更后必须重新确认 — AI 不能静默继续 |
+| 每个 session 的学习都是一次性的 | 方案、决策、审查结论沉淀为可复用的项目资产 |
 
 ## 快速开始
 
-### 安装
+根据你的仓库状态，有两种开始方式：
+
+### 已启用 Sopify？直接体验
+
+如果仓库里已有 `.sopify-skills/`，打开任意 AI 宿主（Claude、Cursor、Codex……），让它继续一个未完成的任务。它会从上次停点恢复，而不是从头开始。这就是协议在工作，无需 runtime。
+
+完整 Convention 演练：[protocol.md §4](./.sopify-skills/blueprint/protocol.md#4-典型生命周期样例)
+
+### 首次使用？先安装
 
 ```bash
 # 推荐：稳定版一行安装
@@ -80,7 +89,7 @@ python3 scripts/install_sopify.py --target claude:zh-CN --workspace /path/to/pro
 - `claude:zh-CN`
 - `claude:en-US`
 
-当前宿主可用性矩阵：
+协议层（Convention 模式）适用于任何宿主。当前已验证的 runtime 集成：
 
 | 宿主 | 安装 target | 可用性 | 验证范围 | 说明 |
 |------|-------------|--------|----------|------|
@@ -99,6 +108,13 @@ python3 scripts/install_sopify.py --target claude:zh-CN --workspace /path/to/pro
 - 首次在项目仓库里触发 Sopify 时，才会准备 `.sopify-runtime/`
 - `--workspace` 适用于维护者、CI 或显式预热仓库的高级路径
 
+### 安装后你的工作流会怎么变化
+
+- 当你希望 Sopify 帮你管理完整任务流程时，用 `~go` 开始。
+- 随时中断 — 回来时（哪怕换了工具）从上次停点继续。
+- 复杂变更可以在执行前经过独立审查。
+- 用 `status` 查看当前进度，用 `doctor` 排查问题。
+
 ### 安装后怎么确认正常
 
 ```bash
@@ -109,18 +125,6 @@ python3 scripts/sopify_doctor.py --format text
 - `will bootstrap on first project trigger`：宿主安装已就绪，项目侧 runtime 还未准备，这是正常状态
 - `workspace outcome: stub_selected [continue]`：workspace runtime 入口健康
 - 如果 doctor 报出 payload 或 bundle 损坏类错误（例如 `global_bundle_missing`、`global_bundle_incompatible`、`global_index_corrupted`），先修复安装，再重试
-
-### Convention 模式（无需 Runtime）
-
-如果只需要项目协议，不需要安装 runtime，可以直接使用 Convention 模式：
-
-1. **阅读** `.sopify-skills/blueprint/` 理解项目上下文
-2. **创建** `.sopify-skills/plan/YYYYMMDD_feature/plan.md`（需包含 title / scope / approach + 内联 tasks）
-3. **归档** 到 `.sopify-skills/history/YYYY-MM/` 并生成 `receipt.md`
-
-完整 Convention 流程见 [protocol.md §4 — 典型生命周期样例](./.sopify-skills/blueprint/protocol.md#4-典型生命周期样例)（样例 A），合规自检见 [protocol.md §5 — 协议合规检查清单](./.sopify-skills/blueprint/protocol.md#5-协议合规检查清单)。
-
-任何宿主只要遵循以上三步即为 Convention 合规——无需 runtime、无需安装器、无需 CLI。
 
 ### 根据任务规模选入口
 
