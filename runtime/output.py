@@ -27,6 +27,7 @@ _PHASE_LABELS = {
         "decision_resume": "方案设计",
         "replay": "咨询问答",
         "consult": "咨询问答",
+        "proposal_rejected": "操作被拒绝",
         "state_conflict": "状态冲突",
         "default": "命令完成",
     },
@@ -45,6 +46,7 @@ _PHASE_LABELS = {
         "decision_resume": "Solution Design",
         "replay": "Q&A",
         "consult": "Q&A",
+        "proposal_rejected": "Action Rejected",
         "state_conflict": "State Conflict",
         "default": "Command Complete",
     },
@@ -109,6 +111,8 @@ _LABELS = {
         "handoff_continue_host_develop": "已写入 develop handoff，后续开发需宿主继续",
         "handoff_confirm_decision": "已写入 decision handoff，宿主应先确认当前设计分叉",
         "handoff_continue_host_consult": "已进入咨询问答，请在宿主会话中继续回答",
+        "reject_status": "操作被拒绝，请查看原因",
+        "next_reject": "操作被拒绝，请查看原因后重新提交",
         "handoff_resolve_state_conflict": "已检测到运行态冲突，当前需先放弃当前协商再继续",
         "state_conflict_detected": "检测到运行态冲突",
         "state_conflict_cleared": "已放弃当前协商并恢复到稳定主线",
@@ -173,6 +177,8 @@ _LABELS = {
         "handoff_continue_host_develop": "develop handoff written; downstream implementation still needs the host flow",
         "handoff_confirm_decision": "decision handoff written; the host should confirm the current design split first",
         "handoff_continue_host_consult": "Consult mode is ready; continue the answer in the host session",
+        "reject_status": "Action rejected; review the reason",
+        "next_reject": "Action rejected; review the reason and resubmit",
         "handoff_resolve_state_conflict": "A runtime state conflict was detected; abandon the current negotiation before continuing",
         "state_conflict_detected": "A runtime state conflict was detected",
         "state_conflict_cleared": "The current negotiation was abandoned and the stable mainline was restored",
@@ -437,6 +443,8 @@ def _status_symbol(result: RuntimeResult) -> str:
         return "!"
     if route_name == "cancel_active":
         return "✓"
+    if route_name == "proposal_rejected":
+        return "!"
     if route_name in {"workflow", "light_iterate", "quick_fix", "consult", "replay", "resume_active", "exec_plan"}:
         return "!"
     if result.notes:
@@ -451,6 +459,8 @@ def _status_message(result: RuntimeResult, language: str) -> str:
         if result.route.active_run_action == "abort_conflict":
             return labels["state_conflict_remaining"] if _state_conflict_payload(result) else labels["state_conflict_cleared"]
         return labels["handoff_resolve_state_conflict"]
+    if route_name == "proposal_rejected":
+        return labels["reject_status"]
     if result.handoff is not None:
         key = f"handoff_{result.handoff.required_host_action}"
         if key in labels:
@@ -499,6 +509,8 @@ def _handoff_next_hint(result: RuntimeResult, language: str) -> str:
     if required_host_action == "review_or_execute_plan":
         return labels["next_plan"]
     if required_host_action == "continue_host_consult":
+        if handoff.handoff_kind == "reject":
+            return labels["next_reject"]
         if handoff.handoff_kind == "archive":
             receipt_status = str((handoff.artifacts or {}).get("archive_receipt_status", "")).strip()
             if receipt_status == "completed":

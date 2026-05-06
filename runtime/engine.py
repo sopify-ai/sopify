@@ -60,9 +60,11 @@ from .router import Router
 from .action_intent import (
     ActionProposal,
     ActionValidator,
+    ExecutionAuthorizationReceipt,
     ValidationContext,
     DECISION_AUTHORIZE,
     DECISION_REJECT,
+    generate_proposal_id,
 )
 from .skill_registry import SkillRegistry
 from .skill_runner import SkillExecutionError, run_runtime_skill
@@ -98,7 +100,7 @@ _CANONICAL_ROUTE_FAMILIES: dict[str, str] = {
     "clarification_pending": "clarification", "clarification_resume": "clarification",
     "decision_pending": "decision", "decision_resume": "decision",
 }
-_NON_FAMILY_SURFACES = frozenset({"state_conflict", "cancel_active", "summary"})
+_NON_FAMILY_SURFACES = frozenset({"state_conflict", "cancel_active", "summary", "proposal_rejected"})
 
 _ABORTABLE_HANDOFF_ACTIONS = frozenset(
     {
@@ -325,6 +327,7 @@ def _normalize_run_after_abort(current_run: RunState) -> RunState:
         plan_id=current_run.plan_id,
         plan_path=current_run.plan_path,
         execution_gate=current_run.execution_gate,
+        execution_authorization_receipt=current_run.execution_authorization_receipt,
         request_excerpt=current_run.request_excerpt,
         request_sha1=current_run.request_sha1,
         owner_session_id=current_run.owner_session_id,
@@ -512,6 +515,7 @@ def _with_global_run_ownership(run_state: RunState, *, session_id: str | None) -
         plan_id=run_state.plan_id,
         plan_path=run_state.plan_path,
         execution_gate=run_state.execution_gate,
+        execution_authorization_receipt=run_state.execution_authorization_receipt,
         request_excerpt=run_state.request_excerpt,
         request_sha1=run_state.request_sha1,
         owner_session_id=owner_session_id,
@@ -633,6 +637,8 @@ def run_runtime(
     # RouteDecision and skip Router classification entirely.
     proposal_override_route: RouteDecision | None = None
     plan_materialization_authorized = False
+    execution_auth_receipt: ExecutionAuthorizationReceipt | None = None
+    _receipt_ingredients: dict[str, str] | None = None
     if action_proposal is not None:
         validator = ActionValidator()
         _run = snapshot.current_run
@@ -647,16 +653,21 @@ def run_runtime(
             current_plan_path=getattr(active_plan_for_validator, "path", "") or "" if active_plan_for_validator else "",
             state_conflict=snapshot.is_conflict,
             workspace_root=str(config.workspace_root) if config is not None else None,
+            existing_receipt=getattr(_run, "execution_authorization_receipt", None) if _run else None,
+            current_gate_status=getattr(getattr(_run, "execution_gate", None), "gate_status", None) if _run else None,
         )
         validation_decision = validator.validate(action_proposal, ctx)
         if validation_decision.decision == DECISION_REJECT:
-            # P1: validator explicitly rejected — block execution.
+            # P1.5-A: validator explicitly rejected — independent reject surface.
+            # No state mutation on reject: stale receipt stays until an explicit
+            # re-authorization path (e.g. new planning flow) replaces it.
             proposal_override_route = RouteDecision(
-                route_name="consult",
+                route_name="proposal_rejected",
                 request_text=user_input,
                 reason=f"action_proposal_rejected: {validation_decision.reason_code}",
                 complexity="simple",
                 should_recover_context=False,
+                artifacts={"reject_reason_code": validation_decision.reason_code},
             )
         elif validation_decision.route_override:
             proposal_override_route = RouteDecision(
@@ -675,6 +686,28 @@ def run_runtime(
             and action_proposal.side_effect == "write_plan_package"
         ):
             plan_materialization_authorized = True
+        # P1.5-B: capture receipt ingredients for execute_existing_plan.
+        # Actual receipt creation is deferred to after evaluate_execution_gate()
+        # so that gate_status reflects the final truth of THIS turn.
+        if (
+            validation_decision.decision == DECISION_AUTHORIZE
+            and action_proposal.action_type == "execute_existing_plan"
+            and action_proposal.plan_subject is not None
+        ):
+            _plan_subject = action_proposal.plan_subject
+            _proposal_id = generate_proposal_id(
+                action_type=action_proposal.action_type,
+                side_effect=action_proposal.side_effect,
+                subject_ref=_plan_subject.subject_ref,
+                revision_digest=_plan_subject.revision_digest,
+                request_hash=stable_request_sha1(user_input),
+            )
+            _receipt_ingredients = {
+                "plan_path": _plan_subject.subject_ref,
+                "revision_digest": _plan_subject.revision_digest,
+                "proposal_id": _proposal_id,
+                "request_sha1": stable_request_sha1(user_input),
+            }
 
     if proposal_override_route is not None:
         classified_route = proposal_override_route
@@ -890,6 +923,22 @@ def run_runtime(
                     ),
                     config=config,
                 )
+                # P1.5-B: generate receipt AFTER gate eval so gate_status is final truth.
+                if _receipt_ingredients is not None:
+                    execution_auth_receipt = ExecutionAuthorizationReceipt.create(
+                        plan_path=_receipt_ingredients["plan_path"],
+                        plan_revision_digest=_receipt_ingredients["revision_digest"],
+                        gate_status=gate.gate_status,
+                        action_proposal_id=_receipt_ingredients["proposal_id"],
+                        request_sha1=_receipt_ingredients["request_sha1"],
+                    )
+                # Resolve receipt dict: new receipt wins; otherwise carry forward.
+                _prev_run = execution_recovered.current_run
+                _receipt_dict = (
+                    execution_auth_receipt.to_dict()
+                    if execution_auth_receipt is not None
+                    else (_prev_run.execution_authorization_receipt if _prev_run is not None else None)
+                )
                 if gate.gate_status == "decision_required" and gate.blocking_reason != "unresolved_decision":
                     current_run = execution_recovered.current_run
                     next_run_state = RunState(
@@ -903,6 +952,7 @@ def run_runtime(
                         plan_id=current_plan.plan_id,
                         plan_path=current_plan.path,
                         execution_gate=gate,
+                        execution_authorization_receipt=_receipt_dict,
                         request_excerpt=summarize_request_text(effective_route.request_text),
                         request_sha1=stable_request_sha1(effective_route.request_text),
                     )
@@ -936,6 +986,7 @@ def run_runtime(
                             current_plan,
                             stage="plan_generated",
                             execution_gate=gate,
+                            execution_authorization_receipt=_receipt_dict,
                         ),
                         session_id=session_id,
                     )
@@ -956,6 +1007,7 @@ def run_runtime(
                             plan_id=current_plan.plan_id,
                             plan_path=current_plan.path,
                             execution_gate=gate,
+                            execution_authorization_receipt=_receipt_dict,
                             request_excerpt=current_run.request_excerpt if current_run is not None else summarize_request_text(effective_route.request_text),
                             request_sha1=current_run.request_sha1 if current_run is not None else stable_request_sha1(effective_route.request_text),
                         ),
@@ -1304,6 +1356,7 @@ def _make_run_state(
     *,
     stage: str = "plan_generated",
     execution_gate: ExecutionGate | None = None,
+    execution_authorization_receipt: Mapping[str, Any] | None = None,
 ) -> RunState:
     now = iso_now()
     return RunState(
@@ -1317,6 +1370,7 @@ def _make_run_state(
         plan_id=plan_artifact.plan_id,
         plan_path=plan_artifact.path,
         execution_gate=execution_gate,
+        execution_authorization_receipt=execution_authorization_receipt,
         request_excerpt=summarize_request_text(decision.request_text),
         request_sha1=stable_request_sha1(decision.request_text),
         owner_session_id="",
@@ -1950,6 +2004,7 @@ def _copy_run_state(
         plan_id=current_run.plan_id,
         plan_path=current_run.plan_path,
         execution_gate=next_execution_gate,
+        execution_authorization_receipt=current_run.execution_authorization_receipt,
         request_excerpt=current_run.request_excerpt,
         request_sha1=current_run.request_sha1,
         owner_session_id=current_run.owner_session_id,

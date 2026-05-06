@@ -6,6 +6,158 @@ Format: Summary → Plan Packages → File Details (collapsible).
 
 ## [Unreleased]
 
+## [2026-05-06.143421] - 2026-05-06
+
+### Summary
+
+- Updated 1 active plan package(s); Changes across: Docs, Runtime, Skills, Tests.
+
+### Plan Packages
+
+- `20260506_p15_reject_surface` (active)
+
+<details>
+<summary>File details</summary>
+
+**Docs** — Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+**Runtime** — Updated runtime internals:
+  - `runtime/engine.py`
+  - `runtime/handoff.py`
+  - `runtime/output.py`
+
+**Skills** — Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+**Tests** — Updated automated coverage:
+  - `tests/test_action_intent.py`
+
+**Plan package files**:
+  - `.sopify-skills/plan/20260506_p15_reject_surface/background.md`
+  - `.sopify-skills/plan/20260506_p15_reject_surface/design.md`
+  - `.sopify-skills/plan/20260506_p15_reject_surface/tasks.md`
+
+</details>
+
+## [2026-05-06.143016] - 2026-05-06
+
+### Summary
+
+- Updated 1 active plan package(s); Changes across: Runtime, Tests.
+
+### Plan Packages
+
+- `20260506_p15_reject_surface` (active)
+
+<details>
+<summary>File details</summary>
+
+**Runtime** — Updated runtime internals:
+  - `runtime/engine.py`
+  - `runtime/handoff.py`
+  - `runtime/output.py`
+
+**Tests** — Updated automated coverage:
+  - `tests/test_action_intent.py`
+
+**Plan package files**:
+  - `.sopify-skills/plan/20260506_p15_reject_surface/background.md`
+  - `.sopify-skills/plan/20260506_p15_reject_surface/design.md`
+  - `.sopify-skills/plan/20260506_p15_reject_surface/tasks.md`
+
+</details>
+
+## [2026-05-06.131235] - 2026-05-06
+
+### Summary
+
+- Archived 2 plan package(s); Updated 1 active plan package(s); Changes across: Docs, Runtime, Skills, Tests.
+
+### Plan Packages
+
+- `20260505_p15_advance_slices` (archived)
+- `20260505_p15_plan_materialization_auth` (archived)
+- `20260506_p15_authorization_contract_spec` (active)
+
+<details>
+<summary>File details</summary>
+
+**Docs** — Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+**Runtime** — Updated runtime internals:
+  - `runtime/_models/core.py`
+  - `runtime/action_intent.py`
+  - `runtime/engine.py`
+  - `runtime/handoff.py`
+  - `runtime/state.py`
+
+**Skills** — Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+**Tests** — Updated automated coverage:
+  - `tests/test_action_intent.py`
+
+**Plan package files**:
+  - `.sopify-skills/history/2026-05/20260505_p15_advance_slices/background.md`
+  - `.sopify-skills/history/2026-05/20260505_p15_advance_slices/design.md`
+  - `.sopify-skills/history/2026-05/20260505_p15_advance_slices/receipt.md`
+  - `.sopify-skills/history/2026-05/20260505_p15_advance_slices/tasks.md`
+  - `.sopify-skills/plan/20260505_p15_advance_slices/background.md`
+  - `.sopify-skills/plan/20260505_p15_advance_slices/design.md`
+  - `.sopify-skills/plan/20260505_p15_advance_slices/tasks.md`
+  - `.sopify-skills/history/2026-05/20260505_p15_plan_materialization_auth/background.md`
+  - `.sopify-skills/history/2026-05/20260505_p15_plan_materialization_auth/design.md`
+  - `.sopify-skills/history/2026-05/20260505_p15_plan_materialization_auth/receipt.md`
+  - `.sopify-skills/history/2026-05/20260505_p15_plan_materialization_auth/tasks.md`
+  - `.sopify-skills/plan/20260505_p15_plan_materialization_auth/background.md`
+  - `.sopify-skills/plan/20260505_p15_plan_materialization_auth/design.md`
+  - `.sopify-skills/plan/20260505_p15_plan_materialization_auth/tasks.md`
+  - `.sopify-skills/plan/20260506_p15_authorization_contract_spec/background.md`
+  - `.sopify-skills/plan/20260506_p15_authorization_contract_spec/design.md`
+  - `.sopify-skills/plan/20260506_p15_authorization_contract_spec/tasks.md`
+
+</details>
+
+## [2026-05-06.130854] - 2026-05-06
+
+### Summary
+
+- Updated 1 active plan package(s); Changes across: Runtime, Tests.
+
+### Plan Packages
+
+- `20260506_p15_authorization_contract_spec` (active)
+
+<details>
+<summary>File details</summary>
+
+**Runtime** — Updated runtime internals:
+  - `runtime/_models/core.py`
+  - `runtime/action_intent.py`
+  - `runtime/engine.py`
+  - `runtime/handoff.py`
+  - `runtime/state.py`
+
+**Tests** — Updated automated coverage:
+  - `tests/test_action_intent.py`
+
+**Plan package files**:
+  - `.sopify-skills/plan/20260506_p15_authorization_contract_spec/background.md`
+  - `.sopify-skills/plan/20260506_p15_authorization_contract_spec/design.md`
+  - `.sopify-skills/plan/20260506_p15_authorization_contract_spec/tasks.md`
+
+</details>
+
 ## [2026-05-05.200849] - 2026-05-05
 
 ### Summary

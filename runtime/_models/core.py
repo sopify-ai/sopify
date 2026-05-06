@@ -251,6 +251,7 @@ class RunState:
     plan_id: Optional[str] = None
     plan_path: Optional[str] = None
     execution_gate: Optional[ExecutionGate] = None
+    execution_authorization_receipt: Optional[Mapping[str, Any]] = None
     request_excerpt: str = ""
     request_sha1: str = ""
     owner_session_id: str = ""
@@ -274,6 +275,7 @@ class RunState:
             "plan_id": self.plan_id,
             "plan_path": self.plan_path,
             "execution_gate": self.execution_gate.to_dict() if self.execution_gate else None,
+            "execution_authorization_receipt": dict(self.execution_authorization_receipt) if self.execution_authorization_receipt else None,
             "request_excerpt": self.request_excerpt,
             "request_sha1": self.request_sha1,
             "owner_session_id": self.owner_session_id,
@@ -285,6 +287,7 @@ class RunState:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "RunState":
         execution_gate = data.get("execution_gate")
+        raw_receipt = data.get("execution_authorization_receipt")
         return cls(
             run_id=str(data.get("run_id") or ""),
             status=str(data.get("status") or "idle"),
@@ -296,6 +299,7 @@ class RunState:
             plan_id=data.get("plan_id") or None,
             plan_path=data.get("plan_path") or None,
             execution_gate=ExecutionGate.from_dict(execution_gate) if isinstance(execution_gate, Mapping) else None,
+            execution_authorization_receipt=dict(raw_receipt) if isinstance(raw_receipt, Mapping) else None,
             request_excerpt=str(data.get("request_excerpt") or ""),
             request_sha1=str(data.get("request_sha1") or ""),
             owner_session_id=str(data.get("owner_session_id") or ""),

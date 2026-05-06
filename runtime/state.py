@@ -289,6 +289,7 @@ class StateStore:
             plan_id=current.plan_id,
             plan_path=current.plan_path,
             execution_gate=current.execution_gate,
+            execution_authorization_receipt=current.execution_authorization_receipt,
             request_excerpt=current.request_excerpt,
             request_sha1=current.request_sha1,
             owner_session_id=current.owner_session_id,

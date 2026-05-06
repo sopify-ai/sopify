@@ -248,6 +248,7 @@ ActionProposal 管线中，每个 side-effecting action 必须携带明确的 su
 | route_name | 分类 | 说明 |
 |------------|------|------|
 | `state_conflict` | 跨路由错误面 | state-resolution error surface |
+| `proposal_rejected` | 跨路由错误面 | Validator DECISION_REJECT 独立 surface |
 | `cancel_active` | control/teardown | 清空 active flow，不产出 handoff |
 | `summary` | read-only utility | `~summary` 显式命令，不写 last_route、不覆盖 handoff |
 

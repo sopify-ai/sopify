@@ -1365,6 +1365,8 @@ class PlanSubjectEngineIntegrationTests(unittest.TestCase):
             )
             self.assertIn("action_proposal_rejected", result.route.reason)
             self.assertNotIn(result.route.route_name, self._EXEC_ROUTES)
+            # P1.5-A: reject MUST use independent surface, not consult
+            self.assertEqual(result.route.route_name, "proposal_rejected")
 
     def test_reject_invalid_digest_blocks_engine(self):
         """execute_existing_plan with wrong digest → rejected, not routed to execution."""
@@ -1392,6 +1394,8 @@ class PlanSubjectEngineIntegrationTests(unittest.TestCase):
             )
             self.assertIn("action_proposal_rejected", result.route.reason)
             self.assertNotIn(result.route.route_name, self._EXEC_ROUTES)
+            # P1.5-A: reject MUST use independent surface, not consult
+            self.assertEqual(result.route.route_name, "proposal_rejected")
 
     def test_valid_subject_not_blocked_by_engine(self):
         """execute_existing_plan with valid plan_subject → NOT rejected (router runs)."""
@@ -1422,6 +1426,479 @@ class PlanSubjectEngineIntegrationTests(unittest.TestCase):
             )
             # Valid subject → authorized, NOT rejected — router handles routing
             self.assertNotIn("action_proposal_rejected", result.route.reason)
+
+
+# ---------------------------------------------------------------------------
+# P1.5-A: DECISION_REJECT Surface 收口
+# ---------------------------------------------------------------------------
+
+
+class RejectSurfaceTests(unittest.TestCase):
+    """P1.5-A — reject MUST use independent surface, not masquerade as consult."""
+
+    def test_reject_handoff_kind_is_reject(self):
+        """Rejected proposal → handoff_kind == 'reject', not 'consult'."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            proposal = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("user confirmed execution",),
+            )
+            result = run_runtime(
+                "继续执行计划",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=proposal,
+            )
+            self.assertEqual(result.route.route_name, "proposal_rejected")
+            self.assertIsNotNone(result.handoff, "reject MUST emit handoff")
+            self.assertEqual(result.handoff.handoff_kind, "reject")
+            self.assertNotEqual(result.handoff.handoff_kind, "consult")
+
+    def test_reject_handoff_artifacts_contain_reason_code(self):
+        """Rejected proposal → handoff artifacts include reject_reason_code."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            proposal = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("user confirmed execution",),
+            )
+            result = run_runtime(
+                "继续执行计划",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=proposal,
+            )
+            self.assertIsNotNone(result.handoff)
+            artifacts = result.handoff.artifacts
+            self.assertIn("reject_reason_code", artifacts)
+            self.assertTrue(str(artifacts["reject_reason_code"]).strip())
+
+    def test_reject_required_host_action_is_continue_host_consult(self):
+        """Reject uses existing continue_host_consult (budget stays at 5)."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            proposal = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("user confirmed execution",),
+            )
+            result = run_runtime(
+                "继续执行计划",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=proposal,
+            )
+            self.assertIsNotNone(result.handoff)
+            self.assertEqual(result.handoff.required_host_action, "continue_host_consult")
+
+    def test_genuine_consult_not_affected(self):
+        """Normal consult (no action proposal) still uses consult surface."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            result = run_runtime(
+                "什么是 Python?",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+            )
+            self.assertEqual(result.route.route_name, "consult")
+            if result.handoff is not None:
+                self.assertEqual(result.handoff.handoff_kind, "consult")
+
+    def test_digest_mismatch_admission_reject_uses_new_surface(self):
+        """Digest mismatch admission reject → proposal_rejected surface (not consult)."""
+        import hashlib
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            plan_dir = workspace / ".sopify-skills" / "plan" / "20260504_test"
+            plan_dir.mkdir(parents=True)
+            plan_md = plan_dir / "plan.md"
+            plan_md.write_text("# original\n", encoding="utf-8")
+            digest = hashlib.sha256(plan_md.read_bytes()).hexdigest()
+
+            from runtime.action_intent import PlanSubjectProposal
+            plan_subject = PlanSubjectProposal(
+                subject_ref=".sopify-skills/plan/20260504_test",
+                revision_digest=digest,
+            )
+
+            # First run: authorize with correct digest
+            proposal = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("user confirmed execution",),
+                plan_subject=plan_subject,
+            )
+            result1 = run_runtime(
+                "继续执行计划",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=proposal,
+            )
+            self.assertNotIn("action_proposal_rejected", result1.route.reason)
+
+            # Mutate plan.md but keep OLD digest → stale
+            plan_md.write_text("# mutated content\n", encoding="utf-8")
+
+            stale_subject = PlanSubjectProposal(
+                subject_ref=".sopify-skills/plan/20260504_test",
+                revision_digest=digest,  # old digest, now mismatches plan.md
+            )
+            proposal2 = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("user confirmed execution",),
+                plan_subject=stale_subject,
+            )
+            result2 = run_runtime(
+                "继续执行计划",
+                workspace_root=workspace,
+                user_home=workspace / "home",
+                action_proposal=proposal2,
+            )
+            # Stale digest → admission reject → proposal_rejected surface
+            self.assertEqual(result2.route.route_name, "proposal_rejected")
+            self.assertIsNotNone(result2.handoff)
+            self.assertEqual(result2.handoff.handoff_kind, "reject")
+
+
+# ---------------------------------------------------------------------------
+# P1.5-B: ExecutionAuthorizationReceipt tests
+# ---------------------------------------------------------------------------
+
+from runtime.action_intent import (
+    ExecutionAuthorizationReceipt,
+    generate_proposal_id,
+    _receipt_fingerprint,
+    _check_stale_receipt,
+    PlanSubjectProposal,
+    DECISION_REJECT,
+)
+
+
+class ExecutionAuthorizationReceiptTests(unittest.TestCase):
+    """T5-A: Receipt dataclass unit tests."""
+
+    def test_to_dict_from_dict_roundtrip(self):
+        receipt = ExecutionAuthorizationReceipt.create(
+            plan_path=".sopify-skills/plan/test_plan",
+            plan_revision_digest="a" * 64,
+            gate_status="ready",
+            action_proposal_id="abcdef0123456789",
+            request_sha1="abc123",
+        )
+        data = receipt.to_dict()
+        restored = ExecutionAuthorizationReceipt.from_dict(data)
+        self.assertEqual(restored.plan_id, receipt.plan_id)
+        self.assertEqual(restored.plan_path, receipt.plan_path)
+        self.assertEqual(restored.plan_revision_digest, receipt.plan_revision_digest)
+        self.assertEqual(restored.gate_status, receipt.gate_status)
+        self.assertEqual(restored.action_proposal_id, receipt.action_proposal_id)
+        self.assertEqual(restored.authorization_source, receipt.authorization_source)
+        self.assertEqual(restored.fingerprint, receipt.fingerprint)
+        self.assertEqual(restored.authorized_at, receipt.authorized_at)
+
+    def test_fingerprint_deterministic(self):
+        """Same inputs → same fingerprint."""
+        r1 = ExecutionAuthorizationReceipt.create(
+            plan_path=".sopify-skills/plan/p1",
+            plan_revision_digest="b" * 64,
+            gate_status="ready",
+            action_proposal_id="1234567890abcdef",
+            request_sha1="sha1",
+        )
+        r2 = ExecutionAuthorizationReceipt.create(
+            plan_path=".sopify-skills/plan/p1",
+            plan_revision_digest="b" * 64,
+            gate_status="ready",
+            action_proposal_id="1234567890abcdef",
+            request_sha1="sha1",
+        )
+        self.assertEqual(r1.fingerprint, r2.fingerprint)
+
+    def test_fingerprint_sensitive_to_field_change(self):
+        """Any field change → different fingerprint."""
+        base_kwargs = dict(
+            plan_path=".sopify-skills/plan/p1",
+            plan_revision_digest="c" * 64,
+            gate_status="ready",
+            action_proposal_id="1234567890abcdef",
+            request_sha1="sha1",
+        )
+        base = ExecutionAuthorizationReceipt.create(**base_kwargs)
+        for field, alt_value in [
+            ("plan_path", ".sopify-skills/plan/p2"),
+            ("plan_revision_digest", "d" * 64),
+            ("gate_status", "blocked"),
+            ("action_proposal_id", "fedcba9876543210"),
+        ]:
+            changed_kwargs = {**base_kwargs, field: alt_value}
+            changed = ExecutionAuthorizationReceipt.create(**changed_kwargs)
+            self.assertNotEqual(base.fingerprint, changed.fingerprint, f"fingerprint should differ when {field} changes")
+
+    def test_plan_id_extracted_from_path(self):
+        receipt = ExecutionAuthorizationReceipt.create(
+            plan_path=".sopify-skills/plan/my_cool_plan",
+            plan_revision_digest="e" * 64,
+            gate_status="ready",
+            action_proposal_id="1234567890abcdef",
+            request_sha1="sha1",
+        )
+        self.assertEqual(receipt.plan_id, "my_cool_plan")
+
+    def test_authorization_source_structure(self):
+        receipt = ExecutionAuthorizationReceipt.create(
+            plan_path=".sopify-skills/plan/p1",
+            plan_revision_digest="f" * 64,
+            gate_status="ready",
+            action_proposal_id="1234567890abcdef",
+            request_sha1="my_sha1",
+        )
+        self.assertEqual(receipt.authorization_source["kind"], "request_hash")
+        self.assertEqual(receipt.authorization_source["request_sha1"], "my_sha1")
+
+    def test_frozen_dataclass(self):
+        receipt = ExecutionAuthorizationReceipt.create(
+            plan_path=".sopify-skills/plan/p1",
+            plan_revision_digest="0" * 64,
+            gate_status="ready",
+            action_proposal_id="1234567890abcdef",
+            request_sha1="sha",
+        )
+        with self.assertRaises(AttributeError):
+            receipt.plan_id = "changed"  # type: ignore[misc]
+
+
+class GenerateProposalIdTests(unittest.TestCase):
+    """T5-B: generate_proposal_id deterministic tests."""
+
+    def test_idempotent(self):
+        """Same inputs → same ID."""
+        id1 = generate_proposal_id("execute_existing_plan", "write_files", "ref", "digest", "hash")
+        id2 = generate_proposal_id("execute_existing_plan", "write_files", "ref", "digest", "hash")
+        self.assertEqual(id1, id2)
+
+    def test_length_16(self):
+        pid = generate_proposal_id("execute_existing_plan", "write_files", "ref", "digest", "hash")
+        self.assertEqual(len(pid), 16)
+
+    def test_input_change_changes_id(self):
+        """Any input change → different ID."""
+        base = ("execute_existing_plan", "write_files", "ref", "digest", "hash")
+        base_id = generate_proposal_id(*base)
+        alternatives = [
+            ("consult_readonly", "write_files", "ref", "digest", "hash"),
+            ("execute_existing_plan", "none", "ref", "digest", "hash"),
+            ("execute_existing_plan", "write_files", "other_ref", "digest", "hash"),
+            ("execute_existing_plan", "write_files", "ref", "other_digest", "hash"),
+            ("execute_existing_plan", "write_files", "ref", "digest", "other_hash"),
+        ]
+        for alt in alternatives:
+            alt_id = generate_proposal_id(*alt)
+            self.assertNotEqual(base_id, alt_id, f"ID should differ for {alt}")
+
+    def test_host_supplied_proposal_id_rejected(self):
+        """ActionProposal.from_dict MUST reject host-supplied proposal_id."""
+        raw = {
+            "action_type": "consult_readonly",
+            "side_effect": "none",
+            "confidence": "high",
+            "evidence": ["test"],
+            "proposal_id": "host_injected_value",
+        }
+        with self.assertRaises(ValueError, msg="proposal_id must not be supplied by host"):
+            ActionProposal.from_dict(raw)
+
+
+class StaleReceiptDetectionTests(unittest.TestCase):
+    """T5-D: stale receipt fail-closed tests."""
+
+    def setUp(self) -> None:
+        self.validator = ActionValidator()
+        self._tmpdir = tempfile.mkdtemp()
+        self.workspace = Path(self._tmpdir)
+        plan_dir = self.workspace / ".sopify-skills" / "plan" / "test_plan"
+        plan_dir.mkdir(parents=True)
+        self.plan_md = plan_dir / "plan.md"
+        self.plan_md.write_text("# Original Plan\n", encoding="utf-8")
+        import hashlib
+        self.original_digest = hashlib.sha256(self.plan_md.read_bytes()).hexdigest()
+        self.subject_ref = ".sopify-skills/plan/test_plan"
+        self.valid_receipt = ExecutionAuthorizationReceipt.create(
+            plan_path=self.subject_ref,
+            plan_revision_digest=self.original_digest,
+            gate_status="ready",
+            action_proposal_id="abcdef0123456789",
+            request_sha1="req_hash",
+        ).to_dict()
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def _make_proposal(self, subject_ref=None, revision_digest=None):
+        plan_subject = PlanSubjectProposal(
+            subject_ref=subject_ref or self.subject_ref,
+            revision_digest=revision_digest or self.original_digest,
+        )
+        return ActionProposal(
+            action_type="execute_existing_plan",
+            side_effect="write_files",
+            confidence="high",
+            evidence=("user confirmed execution",),
+            plan_subject=plan_subject,
+        )
+
+    def _ctx(self, receipt=None, gate_status="ready"):
+        return ValidationContext(
+            workspace_root=str(self.workspace),
+            existing_receipt=receipt,
+            current_gate_status=gate_status,
+        )
+
+    def test_no_receipt_passes(self):
+        """No existing receipt → first-time auth, no stale rejection."""
+        proposal = self._make_proposal()
+        decision = self.validator.validate(proposal, self._ctx(receipt=None))
+        self.assertEqual(decision.decision, DECISION_AUTHORIZE)
+
+    def test_fresh_receipt_passes(self):
+        """Receipt matches current facts → authorization proceeds."""
+        proposal = self._make_proposal()
+        decision = self.validator.validate(proposal, self._ctx(receipt=self.valid_receipt))
+        self.assertEqual(decision.decision, DECISION_AUTHORIZE)
+
+    def test_plan_content_changed_rejects(self):
+        """plan.md modified after receipt → stale → DECISION_REJECT."""
+        self.plan_md.write_text("# Modified Plan\n", encoding="utf-8")
+        import hashlib
+        new_digest = hashlib.sha256(self.plan_md.read_bytes()).hexdigest()
+        proposal = self._make_proposal(revision_digest=new_digest)
+        decision = self.validator.validate(proposal, self._ctx(receipt=self.valid_receipt))
+        self.assertEqual(decision.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_digest", decision.reason_code)
+
+    def test_plan_deleted_rejects(self):
+        """Plan directory removed → stale → DECISION_REJECT."""
+        import shutil
+        shutil.rmtree(self.workspace / ".sopify-skills" / "plan" / "test_plan")
+        # Proposal still references the old plan (will fail subject admission first,
+        # but let's test _check_stale_receipt directly)
+        proposal = self._make_proposal()
+        result = _check_stale_receipt(proposal, self._ctx(receipt=self.valid_receipt))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_path_gone", result.reason_code)
+
+    def test_gate_status_changed_rejects(self):
+        """gate_status changed since receipt → stale → DECISION_REJECT."""
+        proposal = self._make_proposal()
+        decision = self.validator.validate(proposal, self._ctx(receipt=self.valid_receipt, gate_status="blocked"))
+        self.assertEqual(decision.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_gate", decision.reason_code)
+
+    def test_plan_mismatch_rejects(self):
+        """Receipt for plan A, proposal for plan B → stale → DECISION_REJECT."""
+        other_plan_dir = self.workspace / ".sopify-skills" / "plan" / "other_plan"
+        other_plan_dir.mkdir(parents=True)
+        other_plan_md = other_plan_dir / "plan.md"
+        other_plan_md.write_text("# Other Plan\n", encoding="utf-8")
+        import hashlib
+        other_digest = hashlib.sha256(other_plan_md.read_bytes()).hexdigest()
+        proposal = self._make_proposal(
+            subject_ref=".sopify-skills/plan/other_plan",
+            revision_digest=other_digest,
+        )
+        decision = self.validator.validate(proposal, self._ctx(receipt=self.valid_receipt))
+        self.assertEqual(decision.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_plan_mismatch", decision.reason_code)
+
+    def test_malformed_receipt_rejects(self):
+        """Receipt with missing required fields → malformed → DECISION_REJECT."""
+        malformed = {"plan_path": self.subject_ref}  # missing most fields
+        proposal = self._make_proposal()
+        result = _check_stale_receipt(proposal, self._ctx(receipt=malformed))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_malformed", result.reason_code)
+
+    def test_empty_authorization_source_rejects(self):
+        """Receipt with empty authorization_source → malformed → DECISION_REJECT."""
+        bad_receipt = dict(self.valid_receipt)
+        bad_receipt["authorization_source"] = {}
+        proposal = self._make_proposal()
+        result = _check_stale_receipt(proposal, self._ctx(receipt=bad_receipt))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_malformed", result.reason_code)
+
+    def test_authorization_source_wrong_kind_rejects(self):
+        """authorization_source with invalid kind → malformed → DECISION_REJECT."""
+        bad_receipt = dict(self.valid_receipt)
+        bad_receipt["authorization_source"] = {"kind": "magic", "request_sha1": "abc123"}
+        proposal = self._make_proposal()
+        result = _check_stale_receipt(proposal, self._ctx(receipt=bad_receipt))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_malformed", result.reason_code)
+
+    def test_authorization_source_missing_sha1_rejects(self):
+        """authorization_source without request_sha1 → malformed → DECISION_REJECT."""
+        bad_receipt = dict(self.valid_receipt)
+        bad_receipt["authorization_source"] = {"kind": "request_hash"}
+        proposal = self._make_proposal()
+        result = _check_stale_receipt(proposal, self._ctx(receipt=bad_receipt))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_malformed", result.reason_code)
+
+    def test_gate_truth_missing_rejects(self):
+        """Receipt exists but no current gate truth → fail-closed → DECISION_REJECT."""
+        proposal = self._make_proposal()
+        decision = self.validator.validate(proposal, self._ctx(receipt=self.valid_receipt, gate_status=""))
+        self.assertEqual(decision.decision, DECISION_REJECT)
+        self.assertIn("stale_receipt_gate_missing", decision.reason_code)
+
+
+class RunStateReceiptPersistenceTests(unittest.TestCase):
+    """T5-C (partial): RunState receipt serialization roundtrip."""
+
+    def test_runstate_receipt_roundtrip(self):
+        from runtime._models.core import RunState
+        receipt_dict = ExecutionAuthorizationReceipt.create(
+            plan_path=".sopify-skills/plan/p1",
+            plan_revision_digest="a" * 64,
+            gate_status="ready",
+            action_proposal_id="1234567890abcdef",
+            request_sha1="sha",
+        ).to_dict()
+        run = RunState(
+            run_id="test-001",
+            status="active",
+            stage="develop_pending",
+            route_name="resume_active",
+            title="Test",
+            created_at="2026-05-06T00:00:00Z",
+            updated_at="2026-05-06T00:00:00Z",
+            execution_authorization_receipt=receipt_dict,
+        )
+        data = run.to_dict()
+        self.assertIsNotNone(data["execution_authorization_receipt"])
+        restored = RunState.from_dict(data)
+        self.assertEqual(restored.execution_authorization_receipt, receipt_dict)
+
+    def test_runstate_no_receipt_roundtrip(self):
+        from runtime._models.core import RunState
+        run = RunState(
+            run_id="test-002",
+            status="active",
+            stage="plan_generated",
+            route_name="develop",
+            title="Test",
+            created_at="2026-05-06T00:00:00Z",
+            updated_at="2026-05-06T00:00:00Z",
+        )
+        data = run.to_dict()
+        self.assertIsNone(data["execution_authorization_receipt"])
+        restored = RunState.from_dict(data)
+        self.assertIsNone(restored.execution_authorization_receipt)
 
 
 if __name__ == "__main__":

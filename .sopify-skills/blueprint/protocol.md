@@ -195,10 +195,39 @@ Sopify 把上述三类输入统一收敛为：
 
 | 出口 | 承载内容 |
 |------|---------|
-| `receipt` | 授权回执：plan identity + action identity + validator decision + fingerprint |
+| `receipt` | 授权回执（见下方 ExecutionAuthorizationReceipt） |
 | `handoff` | 交接事实：当前状态 + 验证结果 + 下一步建议 + checkpoint（如有） |
 | `history` | 归档事实：outcome + key_decisions + verification_evidence |
 | `blueprint` | 长期知识：只有稳定结论（via knowledge_sync） |
+
+#### ExecutionAuthorizationReceipt — *normative*
+
+> **升格状态**：本节从 informative/方向 升格为 **normative**（P1.5-B 升格）。字段语义使用 RFC 2119 表述。
+
+ExecutionAuthorizationReceipt 是 execute_existing_plan 授权通过后生成的机器事实，回答"这次执行被谁、基于哪个 revision、通过什么授权"。
+
+**Receipt MUST 包含以下字段：**
+
+| 字段 | 类型 | 语义 |
+|------|------|------|
+| `plan_id` | string | 目标 plan 的唯一标识（plan 目录名） |
+| `plan_path` | string | 目标 plan 的 workspace-relative 目录路径 |
+| `plan_revision_digest` | string | plan.md 内容的 SHA-256 hex digest |
+| `gate_status` | string | 生成时 ExecutionGate.gate_status 的值 |
+| `action_proposal_id` | string | 触发授权的 ActionProposal 唯一标识（engine 确定性生成，MUST NOT 由 host 指定） |
+| `authorization_source` | object | `{ kind: "request_hash", request_sha1: string }` |
+| `fingerprint` | string | `sha256(canonical_json({plan_id, plan_path, plan_revision_digest, gate_status, action_proposal_id}))` |
+| `authorized_at` | string | ISO 8601 UTC 时间戳 |
+
+**Fail-closed 不变量：**
+
+- Validator 在处理 execute_existing_plan 请求时 MUST 从持久化的 authoritative runtime state 读取已有 receipt
+- 如 `plan_revision_digest` 与当前 plan.md 实际 SHA-256 不匹配，Validator MUST 返回 DECISION_REJECT
+- 如 `plan_path` 指向的 plan 目录不存在，Validator MUST 返回 DECISION_REJECT
+- 如 `gate_status` 与当前 ExecutionGate.gate_status 不匹配，Validator MUST 返回 DECISION_REJECT
+- Stale receipt MUST NOT 降级为 consult，MUST NOT 自动 re-authorize
+
+**命名对齐注释**：`plan_revision_digest`（receipt 字段）是通用 Subject Identity 中 `revision_digest` 在 plan subject 场景的特化命名，不是独立概念。两者 MUST NOT 长期并存为不同语义。
 
 ## 7. Subject Identity & Review Wire Contract
 
@@ -215,6 +244,8 @@ Sopify 把上述三类输入统一收敛为：
 | `subject_type` | 被操作对象类型（`plan` 为 normative；`code` / `architecture` 保留 draft） |
 | `subject_ref` | 对象定位：workspace-relative 路径（如 `.sopify-skills/plan/20260501_dark_mode`） |
 | `revision_digest` | 版本标识：目标对象的确定性快照标识（SHA-256 hex digest），保证操作绑定到确定性快照 |
+
+> **命名对齐注释**：通用 Subject Identity 使用 `revision_digest`；ExecutionAuthorizationReceipt 使用 `plan_revision_digest`。后者是前者在 plan subject 场景的特化命名，不是独立概念。实现时 MUST NOT 混用或创建不同语义。
 
 **主体取证优先级**（当 subject 未显式给出时的解析链路）：
 
