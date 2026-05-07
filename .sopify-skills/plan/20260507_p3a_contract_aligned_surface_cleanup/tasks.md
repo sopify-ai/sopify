@@ -3,15 +3,17 @@
 ## 执行切片顺序
 
 ```
-A0: 文档矛盾收口（本次已完成）
+A0: 文档矛盾收口 ✅
  ↓
-A: review_or_execute_plan 最终删除 + plan review 语义迁移（14 runtime targets + guard/projection/resume 迁移）
+A: review_or_execute_plan 最终删除 + plan review 语义迁移 ✅
  ↓
-B: Execution routing 收敛（validator AUTHORIZE → deterministic route）
+B: Execution routing 收敛（validator AUTHORIZE → deterministic route）✅
  ↓
-C: Runtime 减重（dead path pruning, 目标 26K→<20K）
+C: Dead path cleanup（-88 LOC; 20K 目标剥离为 Px）✅
 
-D: knowledge_sync audit trail（独立尾项，不与 A/B/C 绑死）
+D: knowledge_sync audit trail ✅
+
+E: Blueprint 同步 + runtime 减重剥离为独立里程碑 ✅
 ```
 
 ## Phase A: `review_or_execute_plan` 最终删除 + plan review 语义迁移
@@ -68,18 +70,20 @@ D: knowledge_sync audit trail（独立尾项，不与 A/B/C 绑死）
 
 ## Blueprint 同步
 
-- [ ] E1: design.md sunset 表标记 `review_or_execute_plan` 为 ✅ 已完成
-- [ ] E2: tasks.md P3a 更新完成状态
-- [ ] E3: protocol.md §7 如有 `review_or_execute_plan` 引用则清理
+- [x] E1: design.md sunset 表 — `review_or_execute_plan` 已标记 ✅（在 Phase A 时已更新）
+- [x] E2: tasks.md P3a 更新完成状态 + 路线图表标记已完成 + Px runtime_surface_consolidation 独立里程碑
+- [x] E3: protocol.md §7 — `review_or_execute_plan` 已标记 ✅ P3a 已收口（L308，无需进一步修改）
+- [x] E4: 结构重构锚点更新（P3a 部分标 ✅，engine 拆分归 Px）
+- [x] E5: Runtime 正式减重从 P3a 剥离为独立里程碑 Px（design.md LOC 目标已更新）
 
 ## 完成标准
 
-- 全量测试通过（687 tests, 49 subtests, 0 regression）
-- grep `review_or_execute_plan` 在 `runtime/` 和活跃 `.sopify-skills/blueprint/` = 0 hits（排除 history/ 和 CHANGELOG.md）
-- grep `review_or_execute_plan` 在 `tests/` 仅限 fail-closed / compatibility coverage allowlist 内保留
-- Authorized ActionProposal 不再依赖 Router.classify() 做主路由判定（modify_files 仅经提取后的 complexity helper）
-- propose_plan 最终 runtime result 可观察行为与旧路径一致（plan_artifact.level + handoff），不只验证 derive 中间值
-- checkpoint_response 正确分流到 clarification_resume / decision_resume（仅 active 状态 {"pending","collecting"} 可 resume；terminal 状态 → REJECT）
-- cancel_flow 授权 derive 路径正确计算 cancel_scope（global/session 与 Router.classify 对齐）
-- ~~runtime/*.py LOC < 20,000~~ → deferred（26,179 LOC，剩余为活面；需新波 surface consolidation）
-- D（knowledge_sync）按实际成本决定是否进入本里程碑
+- ✅ 全量测试通过（689 tests, 49 subtests, 0 regression）
+- ✅ grep `review_or_execute_plan` 在 `runtime/` 和活跃 `.sopify-skills/blueprint/` = 0 hits（排除 history/ 和 CHANGELOG.md）
+- ✅ grep `review_or_execute_plan` 在 `tests/` 仅限 fail-closed / compatibility coverage allowlist 内保留
+- ✅ Authorized ActionProposal 不再依赖 Router.classify() 做主路由判定（modify_files 仅经提取后的 complexity helper）
+- ✅ propose_plan 最终 runtime result 可观察行为与旧路径一致（plan_artifact.level + handoff），不只验证 derive 中间值
+- ✅ checkpoint_response 正确分流到 clarification_resume / decision_resume（仅 active 状态 {"pending","collecting"} 可 resume；terminal 状态 → REJECT）
+- ✅ cancel_flow 授权 derive 路径正确计算 cancel_scope（global/session 与 Router.classify 对齐）
+- ~~runtime/*.py LOC < 20,000~~ → 剥离为 Px runtime_surface_consolidation
+- ✅ knowledge_sync audit trail 零成本挂接完成（成功/blocked 两路径均保留审计链）

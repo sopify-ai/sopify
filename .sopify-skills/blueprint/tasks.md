@@ -10,17 +10,18 @@
 
 > **先行切片例外**：以下两类改动不受上述顺序约束：① 已在后续里程碑描述中显式标注"可先行"的 presentation-only 切片；② 已证明不影响 protocol / validator / runtime machine contract 的纯展示层改动。除此之外，任何涉及契约面的工作必须等前置里程碑稳定。
 
-> **结构重构锚点**：跨 contract 的模块拆分与 legacy control surface 收口应与里程碑同步——P1 后优先 subject resolution / plan lookup 统一入口，P1.5 后优先 authorization policy / gate-receipt 收敛，P2 后优先 action contract adapter 统一，P3a 再做 engine.py / decision_tables.py / CLI entry 系统拆分与 sunset 表最终清理。不阻止与上述 contract 无关且不改变 machine truth 的低风险整理。
+> **结构重构锚点**：跨 contract 的模块拆分与 legacy control surface 收口应与里程碑同步——P1 后优先 subject resolution / plan lookup 统一入口（✅），P1.5 后优先 authorization policy / gate-receipt 收敛（✅），P2 后优先 action contract adapter 统一（✅），P3a sunset 表最终清理（✅）。engine.py / decision_tables.py 系统拆分属于 Px（runtime_surface_consolidation），需 P4 宿主消费面固化后执行。不阻止与上述 contract 无关且不改变 machine truth 的低风险整理。
 
 | 优先级 | 任务 | 前置条件 | 说明 |
 |--------|------|---------|------|
 | P0 | Blueprint rebaseline | 无 | 已完成。重写 blueprint，实体化 ADR，定义削减目标 |
-| P1 | subject_identity_binding | P0 | protocol / validator / runtime 三联动定义"操作的是谁" |
-| P1.5 | execution_authorization_spine | P1 | 操作化 ADR-017 ExecutionAuthorizationReceipt，规划授权链路 |
-| P2 | local_action_contracts | P1.5 | 在主体已绑定前提下收敛局部动作 contract |
-| P3a | contract_aligned_cleanup | P2 | 以 protocol/validator 已稳定为前提，清理 runtime 旧 contract 面 |
+| P1 | subject_identity_binding | P0 | 已完成。protocol / validator / runtime 三联动定义"操作的是谁" |
+| P1.5 | execution_authorization_spine | P1 | 已完成。操作化 ADR-017 ExecutionAuthorizationReceipt，规划授权链路 |
+| P2 | local_action_contracts | P1.5 | 已完成。在主体已绑定前提下收敛局部动作 contract |
+| P3a | contract_aligned_cleanup | P2 | 已完成。以 protocol/validator 已稳定为前提，清理 runtime 旧 contract 面 |
 | P3b | presentation_projection_cleanup | P3a | 清理 prompt/projection/test 旧表面 |
 | P4 | host_consumption_governance | P3b | 宿主只消费 contract，不定义 truth |
+| Px | runtime_surface_consolidation | P4 | Runtime 结构性减重（26K→<20K），需 P4 宿主消费面固化后再动 |
 
 ### P0: Blueprint Rebaseline（已完成）
 
@@ -32,51 +33,15 @@
 
 ### P1.5: Execution Authorization Spine（已完成）
 
-✅ 全部完成（4 个方案包 + 3 个先行切片 + 1 个桥接切片）。
+✅ 已完成（4 方案包 + 3 先行切片 + 1 桥接切片）。归档：`history/2026-05/20260505_p15_*` ~ `20260506_p15_*`
 
-| 序号 | 方案包 | 归档位置 |
-|------|--------|---------|
-| C | Plan Materialization Auth Boundary | `history/2026-05/20260505_p15_plan_materialization_auth/` |
-| A | DECISION_REJECT Surface 收口 | `history/2026-05/20260506_p15_reject_surface/` |
-| B | Authorization Contract Spec | `history/2026-05/20260506_p15_authorization_contract_spec/` |
-| D | Verifier Minimum Normative Slice | `history/2026-05/20260506_p15_verifier_normative_slice/` |
+### P2: Local Action Contracts on Bound Subjects（已完成）
 
-先行切片：Convention 入口兑现 ✅ + Protocol Compliance Suite Phase 1 ✅ + ~summary 全链路删除 ✅（归档：`history/2026-05/20260505_p15_advance_slices/`）
+✅ 已完成。admission contract 闭合（subject binding + delta schema + action-effect pairing）。归档：`history/2026-05/20260506_p2_local_action_contracts/`
 
-**蓝图条目索引（已交付，保留供 P2+ 回溯）：**
+### P3a: Contract-Aligned Surface Cleanup（已完成）
 
-1. DECISION_REJECT surface 收口 → A
-2. ExecutionAuthorizationReceipt 字段升格 → B
-3. execute_existing_plan authorization context → B
-4. plan revision binding 失效规则 → B
-5. action identity 唯一性保证 → B
-6. Plan materialization authorization boundary → C
-7. 字段命名对齐（revision_digest / plan_revision_digest）→ B
-
-### P2: Local Action Contracts on Bound Subjects
-
-在主体已绑定（P1）、授权脊柱已规划（P1.5）的前提下，收敛局部动作 admission contract。
-
-- 收敛 continue / revise / cancel / inspect 的局部动作 contract
-- 动作层只消费已绑定主体，不再承接主体歧义
-- 每个动作的 ActionProposal 必须携带 subject identity，validator 基于此做 admission
-- 不回头吸收主体歧义问题——如果主体不清，回到 P1 的 subject resolution 链路
-- **side_effect delta 语义（file-level 第一版）**：ActionProposal `side_effect` 当前是自由文本，无法被 Validator 结构化消费。引入 file-level delta 标注：`[{path, change_type: added|modified|removed}]`。不要求 module/function 级 scope（对单人维护太细），不引入 OpenSpec 的 specs/changes 工作区模型——只吸收"变更语义化描述"的标准。外部启发：OpenSpec ADDED/MODIFIED/REMOVED delta 语义，准入 T1 Adoption
-- **action-effect canonical pairing（admission 闭合）**：每个 action_type 有且仅有一个合法 side_effect，不匹配 → REJECT。防止 action_type 退化为标签
-- **P2 scope 边界**：P2 做 admission contract 闭合（subject binding + delta schema + action-effect pairing）。Execution routing 收敛（Validator 授权后直接走确定性执行，不再经 Router）属于 P3a
-
-### P3a: Contract-Aligned Surface Cleanup
-
-以 protocol/validator 已稳定为前提。清理 runtime 中与已稳定 contract 不一致的旧面。
-
-- 执行 `design.md` sunset 表中标注为 P3a 的 legacy surface 最终清理与复核
-- 清理旧 route/alias 到 canonical route family 的迁移残留
-- **Execution routing 收敛**：P2 已闭合 admission contract（subject + delta + pairing），但授权后仍经 old Router；P3a 收敛为 validator-authorized → deterministic execution，不再经 Router 做意图分类
-- 清理 failure recovery / deterministic guard / decision tables 中基于旧 contract 的分支
-- 清理 state 文件中超出 canonical budget 的遗留面
-- 不新增 checkpoint type、不扩 ActionProposal schema、不重做 gate 架构
-- **knowledge_sync audit trail**：archive receipt 增加 `knowledge_sync_result` 可选字段（实际同步了哪些 blueprint 文件、sync 级别、变更摘要）。先做 receipt 记录（"记账"），不做 validator 阻断（"判责"等后续里程碑）
-- **Runtime 正式减重**（目标 ~27K→<20K）：以 canonical surface 收敛为驱动，删旧分支、剪恢复厚度、裁兼容防御、按 canonical 输入薄化上下文层、裁窄观察面。蓝图定义删减原则与边界；模块级删除清单、执行顺序和验证方式由当期方案包定义。不新增模块、不重构 engine 架构
+✅ 已完成。runtime 旧 contract 面清理 + execution routing 收敛 + knowledge_sync audit trail + dead path cleanup。Runtime 结构性减重（26K→<20K）剥离为 Px。方案包：`plan/20260507_p3a_contract_aligned_surface_cleanup/`（待归档）
 
 ### P3b: Presentation & Projection Cleanup
 
@@ -101,6 +66,16 @@
 - 渐进式披露：Layer 0 Protocol ≤120 行 → Layer 1 Gate → Layer 2 Phase → Layer 3 Reference（不进 prompt）
 - **Builtin skill capability disclosure**：宿主文案稳定表达 builtin skill 的当前能力边界与可消费方式；AGENTS.md 只做消费投影，builtin_catalog 为唯一 truth source。当前 analyze/design/develop 是 phase-bound workflow skill（entry_kind=null, triggers=[]），不宣称 standalone invocation。若后续要支持 builtin skill 显式单独调用，必须先 formalize 独立的 invocation metadata contract / invocation syntax；在该 contract 明确前，本项只做披露，不预设其进入 P2 或单列里程碑。边界：只覆盖 builtin skill，不扩展到外部 skill discovery/routing/distribution（background.md 明确排除）
 
+### Px: Runtime Surface Consolidation
+
+独立里程碑。前置条件：P4 宿主消费面固化。P3a 实证：dead path 层面代码库已很紧（26,179 LOC），进一步减重需模块合并和架构简化，不能用"删死路"范式。
+
+- 目标：runtime/*.py LOC 26K → <20K
+- 前提：P4 固化宿主实际消费面后，才知道哪些内部 surface 可安全合并
+- 手段：模块合并（resolution_planner + sidecar + vnext 三合一等）、engine.py 拆分、上下文层薄化、compat shim 清退（workspace_preflight vendored fallback ~230 LOC, failure_recovery standalone ~100 LOC）
+- 约束：不改 machine contract、不改 protocol 语义、不扩 canonical budget
+- 不与 P3a/P3b/P4 绑死——单独立项、单独评估成本
+
 ## 未完成长期项
 
 - [ ] 补宿主级 first-hop ingress proof / diagnostics
@@ -108,7 +83,7 @@
 - [ ] `workflow-learning` 独立 helper 与更稳定 replay retrieval
 - [ ] blueprint 索引摘要更细粒度自动刷新
 - [ ] history feature_key 聚合视图
-- [x] Protocol Step 1：提取最小协议文档与行为契约 case → `blueprint/protocol.md` v0
+
 - [ ] CrossReview Phase 4a：advisory skill 接入 develop 后审查
 - [ ] Plan intake checklist（在 intake 模板/脚本落地前，后续新 plan 开包时手工回答以下问题）：
   1. 主命中哪个蓝图里程碑（P1 / P1.5 / P2 / P3a / P3b / P4）？可附次级影响里程碑
