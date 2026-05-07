@@ -41,7 +41,7 @@
 
 ### P3a: Contract-Aligned Surface Cleanup（已完成）
 
-✅ 已完成。runtime 旧 contract 面清理 + execution routing 收敛 + knowledge_sync audit trail + dead path cleanup。Runtime 结构性减重（26K→<20K）剥离为 Px。方案包：`plan/20260507_p3a_contract_aligned_surface_cleanup/`（待归档）
+✅ 已完成。runtime 旧 contract 面清理 + execution routing 收敛 + knowledge_sync audit trail + dead path cleanup。Runtime 结构性减重（26K→<20K）剥离为 Px。归档：`history/2026-05/20260507_p3a_contract_aligned_surface_cleanup/`
 
 ### P3b: Presentation & Projection Cleanup
 
