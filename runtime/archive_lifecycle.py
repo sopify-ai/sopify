@@ -53,6 +53,7 @@ class ArchiveCheckResult:
     status: str
     subject: ArchiveSubject
     notes: tuple[str, ...] = ()
+    knowledge_sync_result: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class ArchiveApplyResult:
     notes: tuple[str, ...]
     registry_updated: bool = False
     state_cleared: bool = False
+    knowledge_sync_result: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -84,12 +86,16 @@ class _ArchiveWriteResult:
     kb_artifact: KbArtifact | None
     notes: tuple[str, ...]
     registry_updated: bool = False
+    knowledge_sync_result: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
 class _KnowledgeSyncStatus:
     blocked_reason: str | None
     notes: tuple[str, ...]
+    changed_files: tuple[str, ...] = ()
+    review_pending: tuple[str, ...] = ()
+    required_missing: tuple[str, ...] = ()
 
 
 def resolve_archive_subject(
@@ -164,10 +170,10 @@ def check_archive_subject(subject: ArchiveSubject, *, config: RuntimeConfig) -> 
     scratch_store = StateStore(config)
     result = _apply_managed_archive(config=config, state_store=scratch_store, current_plan=subject.artifact, dry_run=True)
     if result.archived_plan is not None:
-        return ArchiveCheckResult(status="ready", subject=subject, notes=result.notes)
+        return ArchiveCheckResult(status="ready", subject=subject, notes=result.notes, knowledge_sync_result=result.knowledge_sync_result)
     if any("归档目标已存在" in note or "Archive target already exists" in note for note in result.notes):
-        return ArchiveCheckResult(status="archive_target_conflict", subject=subject, notes=result.notes)
-    return ArchiveCheckResult(status="blocked", subject=subject, notes=result.notes)
+        return ArchiveCheckResult(status="archive_target_conflict", subject=subject, notes=result.notes, knowledge_sync_result=result.knowledge_sync_result)
+    return ArchiveCheckResult(status="blocked", subject=subject, notes=result.notes, knowledge_sync_result=result.knowledge_sync_result)
 
 
 def apply_archive_subject(
@@ -193,6 +199,7 @@ def apply_archive_subject(
             archived_plan=None,
             kb_artifact=None,
             notes=check.notes,
+            knowledge_sync_result=check.knowledge_sync_result,
         )
 
     apply_store = state_store or StateStore(config)
@@ -215,6 +222,7 @@ def apply_archive_subject(
         notes=result.notes,
         registry_updated=result.registry_updated,
         state_cleared=state_cleared,
+        knowledge_sync_result=result.knowledge_sync_result,
     )
 
 
@@ -231,8 +239,9 @@ def archive_status_payload(
     notes: tuple[str, ...] = (),
     changed_files: tuple[str, ...] = (),
     state_cleared: bool = False,
+    knowledge_sync_result: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "archive_status": status,
         "archive_subject_kind": subject.kind,
         "archive_subject_plan_id": subject.plan_id,
@@ -241,6 +250,9 @@ def archive_status_payload(
         "archive_changed_files": list(changed_files),
         "state_cleared": state_cleared,
     }
+    if knowledge_sync_result is not None:
+        payload["knowledge_sync_result"] = knowledge_sync_result
+    return payload
 
 
 def _apply_managed_archive(
@@ -293,11 +305,13 @@ def _apply_managed_archive(
         managed_plan=managed_plan,
         created_at=current_plan.created_at,
     )
+    sync_result = _knowledge_sync_result(contract_status, managed_plan.knowledge_sync)
     if contract_status.blocked_reason is not None:
         return _ArchiveWriteResult(
             archived_plan=None,
             kb_artifact=None,
             notes=(*contract_status.notes, contract_status.blocked_reason),
+            knowledge_sync_result=sync_result,
         )
 
     archive_dir = _archive_target_dir(config=config, plan_id=managed_plan.plan_id)
@@ -312,6 +326,7 @@ def _apply_managed_archive(
                     path=str(archive_dir.relative_to(config.workspace_root)),
                 ),
             ),
+            knowledge_sync_result=sync_result,
         )
 
     if dry_run:
@@ -328,6 +343,7 @@ def _apply_managed_archive(
             ),
             kb_artifact=None,
             notes=contract_status.notes,
+            knowledge_sync_result=sync_result,
         )
 
     archive_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -384,6 +400,7 @@ def _apply_managed_archive(
         kb_artifact=KbArtifact(mode=config.kb_init, files=kb_files, created_at=iso_now()),
         notes=tuple(notes),
         registry_updated=registry_updated,
+        knowledge_sync_result=sync_result,
     )
 
 
@@ -678,6 +695,7 @@ def _evaluate_knowledge_sync(
         return _KnowledgeSyncStatus(
             blocked_reason=_text(config.language, "knowledge_sync_required_blocked", paths=", ".join(required_missing)),
             notes=(),
+            required_missing=tuple(required_missing),
         )
 
     notes: list[str] = []
@@ -689,6 +707,8 @@ def _evaluate_knowledge_sync(
     return _KnowledgeSyncStatus(
         blocked_reason=None,
         notes=tuple(notes),
+        changed_files=tuple(changed_files),
+        review_pending=tuple(review_pending),
     )
 
 
@@ -696,6 +716,25 @@ def _parse_created_at(value: str) -> datetime:
     if value:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     return datetime.now().astimezone()
+
+
+def _knowledge_sync_result(
+    status: _KnowledgeSyncStatus,
+    sync_config: Mapping[str, str],
+) -> dict[str, object]:
+    """Build a structured knowledge_sync_result for the archive receipt."""
+    outcome = "blocked" if status.blocked_reason else "passed"
+    result: dict[str, object] = {
+        "outcome": outcome,
+        "sync_level": dict(sync_config),
+    }
+    if status.changed_files:
+        result["changed_files"] = list(status.changed_files)
+    if status.review_pending:
+        result["review_pending"] = list(status.review_pending)
+    if status.required_missing:
+        result["required_missing"] = list(status.required_missing)
+    return result
 
 
 def _archive_target_dir(*, config: RuntimeConfig, plan_id: str) -> Path:

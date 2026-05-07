@@ -301,3 +301,73 @@ class PlanRegistryTests(unittest.TestCase):
             self.assertTrue(payload["execution_truth"]["current_plan_is_machine_truth"])
             self.assertTrue(any(item["plan_id"] == current_plan.plan_id for item in payload["recommendations"]))
             self.assertEqual(store.get_current_plan().plan_id, current_plan.plan_id)
+
+    def test_archive_receipt_includes_knowledge_sync_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            artifact = create_plan_scaffold("test sync audit", config=config, level="standard")
+            store.set_current_plan(artifact)
+
+            result = apply_archive_subject(
+                config=config,
+                state_store=store,
+                subject=resolve_archive_subject(
+                    {
+                        "ref_kind": "current_plan",
+                        "ref_value": "",
+                        "source": "current_plan",
+                        "allow_current_plan_fallback": True,
+                    },
+                    config=config,
+                    state_store=store,
+                    current_plan=artifact,
+                ),
+            )
+
+            self.assertIsNotNone(result.archived_plan)
+            self.assertIsNotNone(result.knowledge_sync_result)
+            sync = result.knowledge_sync_result
+            self.assertEqual(sync["outcome"], "passed")
+            self.assertIn("sync_level", sync)
+            self.assertIsInstance(sync["sync_level"], dict)
+            # standard level: all keys are "review", no files updated → all in review_pending
+            self.assertIn("review_pending", sync)
+            self.assertGreater(len(sync["review_pending"]), 0)
+
+    def test_archive_blocked_by_knowledge_sync_preserves_audit_trail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            config = load_runtime_config(workspace)
+            store = StateStore(config)
+            store.ensure()
+
+            artifact = create_plan_scaffold("test blocked audit", config=config, level="full")
+            store.set_current_plan(artifact)
+
+            result = apply_archive_subject(
+                config=config,
+                state_store=store,
+                subject=resolve_archive_subject(
+                    {
+                        "ref_kind": "current_plan",
+                        "ref_value": "",
+                        "source": "current_plan",
+                        "allow_current_plan_fallback": True,
+                    },
+                    config=config,
+                    state_store=store,
+                    current_plan=artifact,
+                ),
+            )
+
+            self.assertIsNone(result.archived_plan)
+            self.assertEqual(result.status, "blocked")
+            self.assertIsNotNone(result.knowledge_sync_result)
+            sync = result.knowledge_sync_result
+            self.assertEqual(sync["outcome"], "blocked")
+            self.assertIn("required_missing", sync)
+            self.assertGreater(len(sync["required_missing"]), 0)

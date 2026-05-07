@@ -63,9 +63,9 @@ A（review_or_execute_plan 删除）→ B（execution routing 收敛）→ C（r
 
 减重以"删除 dead path"为手段，不以"抽取通用层"为手段。目标是行数↓ + 分支数↓，不引入新抽象。
 
-### D5: knowledge_sync audit trail — tail item, receipt field only
+### D5: knowledge_sync audit trail — tail item, handoff artifact
 
-降为尾项（不与 A/B/C 绑死）。archive receipt.md 增 `knowledge_sync_result` 可选字段。先记账不判责。几乎零成本挂接时才做；如果涉及 finalize 路径重构则 defer 到 P3b。
+降为尾项（不与 A/B/C 绑死）。archive handoff artifacts 增 `knowledge_sync_result` 可选字段（嵌入 `archive_lifecycle` 子对象）。先记账不判责。成功路径和 blocked 路径均保留审计链。
 
 ### D6: Persisted state with old review_or_execute_plan — fail-closed
 

@@ -1018,6 +1018,7 @@ def run_runtime(
                 subject=archive_subject,
                 notes=archive_result.notes,
                 state_cleared=archive_result.state_cleared,
+                knowledge_sync_result=archive_result.knowledge_sync_result,
             )
         elif archive_check.status == "migration_required":
             notes.extend(archive_check.notes)
@@ -1040,6 +1041,7 @@ def run_runtime(
                 status=archive_check.status or ARCHIVE_STATUS_BLOCKED,
                 subject=archive_subject,
                 notes=archive_check.notes,
+                knowledge_sync_result=archive_check.knowledge_sync_result,
             )
         effective_route = _with_route_artifacts(
             effective_route,

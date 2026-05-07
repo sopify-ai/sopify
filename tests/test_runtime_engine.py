@@ -1525,6 +1525,11 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue(result.handoff.artifacts["state_cleared"])
             self.assertEqual(result.handoff.artifacts["archive_lifecycle"]["archive_status"], "completed")
             self.assertEqual(result.handoff.artifacts["archive_receipt_status"], "completed")
+            # knowledge_sync_result audit trail in archive receipt
+            sync_result = result.handoff.artifacts["archive_lifecycle"].get("knowledge_sync_result")
+            self.assertIsNotNone(sync_result)
+            self.assertEqual(sync_result["outcome"], "passed")
+            self.assertIn("sync_level", sync_result)
             # Archive is a terminal receipt surface — must not carry consult guard/projection.
             self.assertNotIn("deterministic_guard", result.handoff.artifacts)
             self.assertNotIn("action_projection", result.handoff.artifacts)
@@ -1728,6 +1733,10 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertIsNotNone(review_result.plan_artifact)
             self.assertTrue(any("knowledge_sync" in note for note in review_result.notes))
             self.assertTrue((workspace / ".sopify-skills" / "history" / "index.md").exists())
+            # knowledge_sync audit trail on successful archive (review level)
+            review_sync = review_result.handoff.artifacts["archive_lifecycle"].get("knowledge_sync_result")
+            self.assertIsNotNone(review_sync)
+            self.assertEqual(review_sync["outcome"], "passed")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -1740,6 +1749,12 @@ class EngineIntegrationTests(unittest.TestCase):
             required_result = run_runtime("归档当前 plan", workspace_root=workspace, user_home=workspace / "home", action_proposal=_archive_current_plan_action())
             self.assertIsNone(required_result.plan_artifact)
             self.assertTrue(any("knowledge_sync.required" in note for note in required_result.notes))
+            # knowledge_sync audit trail on blocked archive (required level)
+            blocked_sync = required_result.handoff.artifacts["archive_lifecycle"].get("knowledge_sync_result")
+            self.assertIsNotNone(blocked_sync)
+            self.assertEqual(blocked_sync["outcome"], "blocked")
+            self.assertIn("required_missing", blocked_sync)
+            self.assertGreater(len(blocked_sync["required_missing"]), 0)
 
     def test_archive_blocks_legacy_plan_without_auto_doctor(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

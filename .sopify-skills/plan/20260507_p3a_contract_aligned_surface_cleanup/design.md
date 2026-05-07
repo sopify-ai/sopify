@@ -196,22 +196,29 @@ else:
 
 ### 设计
 
-archive finalize 时，如果有 `knowledge_sync` 步骤（蓝图同步），在 receipt.md 中追加字段：
+archive finalize 时，`knowledge_sync` 评估结果以 `knowledge_sync_result` 字段写入 archive handoff artifacts（`archive_lifecycle` 子对象）。无论归档成功还是因 knowledge_sync 阻断，audit trail 均保留。
 
 ```yaml
 knowledge_sync_result:
-  synced_files:
-    - path: "blueprint/design.md"
-      sync_level: "回写"
-      summary: "新增 pairing 段落"
-  skipped_files: []
-  sync_trigger: "plan_archive"
+  outcome: "passed"          # "passed" | "blocked"
+  sync_level:                # plan 前端 matter 中的 knowledge_sync 配置快照
+    project: "review"
+    background: "review"
+    design: "review"
+    tasks: "review"
+  changed_files:             # 在 plan 创建后有更新的蓝图文件（可选，非空时出现）
+    - ".sopify-skills/blueprint/design.md"
+  review_pending:            # review 模式但未更新的文件（可选，非空时出现）
+    - ".sopify-skills/blueprint/tasks.md"
+  required_missing:          # required 模式但未更新的文件（可选，blocked 时出现）
+    - ".sopify-skills/blueprint/background.md"
 ```
 
 ### 实现位置
 
-- `runtime/plan_registry.py` 或 archive finalize 路径中
-- receipt.md 模板追加可选 section
+- `runtime/archive_lifecycle.py` — `_knowledge_sync_result()` 组装、`ArchiveCheckResult` / `ArchiveApplyResult` 透传
+- `runtime/engine.py` — 成功路径和 blocked 路径均传入 `archive_status_payload()`
+- handoff artifacts `archive_lifecycle.knowledge_sync_result` 自动透传到宿主
 
 ### 验证
 

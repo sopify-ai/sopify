@@ -62,9 +62,9 @@ D: knowledge_sync audit trail（独立尾项，不与 A/B/C 绑死）
 
 ## Phase D: knowledge_sync audit trail（尾项）
 
-- [ ] D1: 评估 archive finalize 路径是否允许零成本挂接
-- [ ] D2: 如可行：追加 knowledge_sync_result 写入逻辑 + receipt 模板更新 + 测试
-- [ ] D3: 如需重构 finalize 路径：defer 到 P3b，标记为 out-of-scope
+- [x] D1: 评估 archive finalize 路径是否允许零成本挂接 → 确认零成本
+- [x] D2: 追加 knowledge_sync_result 到 archive handoff artifacts + 成功/blocked 两路径全覆盖 + 3 个测试
+- [x] D3: 不需要重构 finalize 路径
 
 ## Blueprint 同步
 
