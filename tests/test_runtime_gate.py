@@ -1711,7 +1711,7 @@ class RuntimeGateTests(unittest.TestCase):
             self.assertEqual(result["status"], "ready")
             self.assertTrue(result["gate_passed"])
             self.assertEqual(result["allowed_response_mode"], NORMAL_RUNTIME_FOLLOWUP)
-            self.assertEqual(result["handoff"]["required_host_action"], "review_or_execute_plan")
+            self.assertEqual(result["handoff"]["required_host_action"], "continue_host_develop")
             self.assertTrue(result["evidence"]["handoff_found"])
             self.assertTrue(result["evidence"]["strict_runtime_entry"])
             self.assertEqual(result["evidence"]["handoff_source_kind"], "current_request_persisted")
@@ -1815,7 +1815,7 @@ class RuntimeGateTests(unittest.TestCase):
             )
             session_id = first["session_id"]
             self.assertEqual(first["status"], "ready")
-            self.assertEqual(first["handoff"]["required_host_action"], "review_or_execute_plan")
+            self.assertEqual(first["handoff"]["required_host_action"], "continue_host_develop")
 
             result = enter_runtime_gate(
                 "~go finalize",
@@ -2191,7 +2191,7 @@ class RuntimeGateTests(unittest.TestCase):
                     plan_id="plan-1",
                     plan_path=".sopify-skills/plan/runtime",
                     handoff_kind="plan",
-                    required_host_action="review_or_execute_plan",
+                    required_host_action="continue_host_develop",
                     resolution_id="handoff-resolution",
                 )
             )

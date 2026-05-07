@@ -102,8 +102,7 @@
     ],
     "ignored_required_host_actions": [
       "confirm_decision",
-      "answer_questions",
-      "review_or_execute_plan"
+      "answer_questions"
     ],
     "required_fields_order": [
       "required_host_action",
@@ -193,15 +192,6 @@
         "proof": [
           "current_run.stage",
           "matching_durable_identities"
-        ]
-      },
-      {
-        "kind": "plan_review",
-        "proof": [
-          "current_handoff.required_host_action=review_or_execute_plan",
-          "current_handoff.plan_id=current_plan.plan_id",
-          "current_handoff.plan_path=current_plan.path",
-          "gate_or_snapshot_proves_current_resume_entry"
         ]
       },
       {

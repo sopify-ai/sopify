@@ -305,7 +305,7 @@ ExecutionAuthorizationReceipt 是 execute_existing_plan 授权通过后生成的
 > |---------|--------------|
 > | `current_plan.path`（state.py） | → `plan_subject.subject_ref`（workspace-relative 目录路径） |
 > | `~go exec` 隐含的 plan 指向 | → 应显式携带 `plan_subject`，当前未携带 |
-> | `review_or_execute_plan`（action_projection） | legacy composite，计划 P3a 收口（见 `design.md` sunset 表） |
+> | `review_or_execute_plan`（action_projection） | ✅ P3a 已收口：plan review 语义迁移至 `continue_host_develop` + `plan_generated` stage |
 >
 > 以上映射为 informative 注释，不构成规范性要求。现役路径的 canonical 化属于 P3a contract-aligned cleanup 范围。
 

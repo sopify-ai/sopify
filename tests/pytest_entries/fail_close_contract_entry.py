@@ -8,6 +8,7 @@ import pytest
 
 from runtime.decision_tables import load_decision_tables, load_default_decision_tables
 from runtime.failure_recovery import (
+    FailureRecoveryError,
     evaluate_failure_recovery_case,
     load_default_failure_recovery_table,
     load_failure_recovery_case_matrix,
@@ -97,6 +98,18 @@ def test_fail_close_case_matrix_contract(case: dict[str, object]) -> None:
         recovery_table = _load_recovery_table_cached()
     except Exception as exc:
         pytest.fail(f"Failed to load failure recovery table: {type(exc).__name__}: {exc}")
+
+    if case.get("required_host_action") == "review_or_execute_plan":
+        with pytest.raises(
+            FailureRecoveryError,
+            match=r"No recovery row for .*required_host_action=review_or_execute_plan",
+        ):
+            evaluate_failure_recovery_case(
+                case,
+                decision_tables=decision_tables,
+                recovery_table=recovery_table,
+            )
+        return
 
     result = evaluate_failure_recovery_case(
         case,

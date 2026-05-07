@@ -216,7 +216,7 @@ def _required_host_action(
 ) -> str:
     route_name = decision.route_name
     if route_name == "plan_only":
-        return "review_or_execute_plan"
+        return "continue_host_develop"
     if route_name in {"workflow", "light_iterate"}:
         return "continue_host_develop"
     if route_name == "archive_lifecycle":

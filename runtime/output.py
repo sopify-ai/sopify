@@ -106,7 +106,6 @@ _LABELS = {
         "next_quick_fix": "在宿主会话中继续执行快速修复",
         "next_consult": "在宿主会话中继续问答，或改成明确变更请求",
         "next_decision": "回复 1/2（或 ~decide choose <option_id>）确认方案，或输入 取消 终止本轮设计",
-        "handoff_review_or_execute_plan": "已写入 plan handoff，宿主可继续评审方案或执行",
         "handoff_answer_questions": "已写入 clarification handoff，宿主应先补齐缺失事实信息",
         "handoff_continue_host_develop": "已写入 develop handoff，后续开发需宿主继续",
         "handoff_confirm_decision": "已写入 decision handoff，宿主应先确认当前设计分叉",
@@ -172,7 +171,6 @@ _LABELS = {
         "next_quick_fix": "Continue the quick-fix flow in the host session",
         "next_consult": "Continue the discussion in the host session, or restate it as a change request",
         "next_decision": "Reply with 1/2 (or `~decide choose <option_id>`) to confirm, or type cancel to abort this design round",
-        "handoff_review_or_execute_plan": "plan handoff written; the host can review the plan or execute it",
         "handoff_answer_questions": "clarification handoff written; the host should gather the missing factual details first",
         "handoff_continue_host_develop": "develop handoff written; downstream implementation still needs the host flow",
         "handoff_confirm_decision": "decision handoff written; the host should confirm the current design split first",
@@ -506,8 +504,6 @@ def _handoff_next_hint(result: RuntimeResult, language: str) -> str:
     if handoff is None:
         return labels["next_retry"]
     required_host_action = str(handoff.required_host_action or "").strip()
-    if required_host_action == "review_or_execute_plan":
-        return labels["next_plan"]
     if required_host_action == "continue_host_consult":
         if handoff.handoff_kind == "reject":
             return labels["next_reject"]
@@ -522,6 +518,8 @@ def _handoff_next_hint(result: RuntimeResult, language: str) -> str:
     if required_host_action == "resolve_state_conflict":
         return labels["next_state_conflict"]
     if required_host_action == "continue_host_develop":
+        if result.route.route_name == "plan_only":
+            return labels["next_plan"]
         if result.route.route_name == "resume_active":
             return labels["next_resume"]
         if result.route.route_name == "exec_plan":

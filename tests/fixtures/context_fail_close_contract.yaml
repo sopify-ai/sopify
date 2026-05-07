@@ -61,7 +61,6 @@ consult_readonly_contract:
   ignored_required_host_actions:
     - confirm_decision
     - answer_questions
-    - review_or_execute_plan
   required_fields:
     required_host_action:
       role: echoed_assertion
@@ -98,12 +97,6 @@ best_proven_resume_target:
       proof:
         - current_run.stage
         - matching_durable_identities
-    - kind: plan_review
-      proof:
-        - current_handoff.required_host_action=review_or_execute_plan
-        - current_handoff.plan_id=current_plan.plan_id
-        - current_handoff.plan_path=current_plan.path
-        - gate_or_snapshot_proves_current_resume_entry
     - kind: workflow_safe_start
       proof:
         - machine_contract_produces_safe_workflow_entry
@@ -124,7 +117,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - review_or_execute_plan
       signal_group: inspect_request
       target_kind: checkpoint
       target_slot: checkpoint_view
@@ -146,7 +138,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - review_or_execute_plan
       signal_group: hard_constraint
       target_kind: write_scope
       target_slot: materialize_or_execute
@@ -174,7 +165,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - review_or_execute_plan
       signal_group: progress_action
       target_kind: checkpoint
       target_slot: checkpoint_lifecycle
@@ -199,7 +189,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - review_or_execute_plan
       signal_group: hard_stop
       target_kind: checkpoint
       target_slot: checkpoint_lifecycle
@@ -222,7 +211,6 @@ signal_priority_table:
       enabled_checkpoint_kinds:
         - answer_questions
         - confirm_decision
-        - review_or_execute_plan
       signal_group: route_shift
       target_kind: host_action
       target_slot: current_subject_retopic
@@ -260,14 +248,6 @@ failure_recovery_table:
       reason_code: recovery.non_stable_truth.fail_closed.confirm_decision
       unresolved_outcome_family: fail_closed
       counts_toward_streak: true
-    - primary_failure_type: non_stable_truth
-      required_host_action: review_or_execute_plan
-      fallback_action: enter_blocking_recovery_branch
-      prompt_mode: request_state_recovery
-      retry_policy: manual_recovery_only
-      reason_code: recovery.non_stable_truth.fail_closed.review_or_execute_plan
-      unresolved_outcome_family: fail_closed
-      counts_toward_streak: true
     - primary_failure_type: truth_layer_contract_invalid
       required_host_action: answer_questions
       fallback_action: enter_blocking_recovery_branch
@@ -282,14 +262,6 @@ failure_recovery_table:
       prompt_mode: request_state_recovery
       retry_policy: manual_recovery_only
       reason_code: recovery.truth_layer_contract_invalid.fail_closed.confirm_decision
-      unresolved_outcome_family: fail_closed
-      counts_toward_streak: true
-    - primary_failure_type: truth_layer_contract_invalid
-      required_host_action: review_or_execute_plan
-      fallback_action: enter_blocking_recovery_branch
-      prompt_mode: request_state_recovery
-      retry_policy: manual_recovery_only
-      reason_code: recovery.truth_layer_contract_invalid.fail_closed.review_or_execute_plan
       unresolved_outcome_family: fail_closed
       counts_toward_streak: true
     - primary_failure_type: resolution_failure
@@ -308,14 +280,6 @@ failure_recovery_table:
       reason_code: recovery.resolution_failure.inspect_required.confirm_decision
       unresolved_outcome_family: inspect_required
       counts_toward_streak: true
-    - primary_failure_type: resolution_failure
-      required_host_action: review_or_execute_plan
-      fallback_action: repeat_current_checkpoint
-      prompt_mode: reask_plan_review
-      retry_policy: allow_retry_after_user_input
-      reason_code: recovery.resolution_failure.inspect_required.review_or_execute_plan
-      unresolved_outcome_family: inspect_required
-      counts_toward_streak: true
     - primary_failure_type: effect_contract_invalid
       required_host_action: answer_questions
       fallback_action: block_side_effect_and_retry_when_safe
@@ -330,14 +294,6 @@ failure_recovery_table:
       prompt_mode: safe_retry_after_contract_fix
       retry_policy: retry_after_contract_fix
       reason_code: recovery.effect_contract_invalid.fail_closed.confirm_decision
-      unresolved_outcome_family: fail_closed
-      counts_toward_streak: true
-    - primary_failure_type: effect_contract_invalid
-      required_host_action: review_or_execute_plan
-      fallback_action: block_side_effect_and_retry_when_safe
-      prompt_mode: safe_retry_after_contract_fix
-      retry_policy: retry_after_contract_fix
-      reason_code: recovery.effect_contract_invalid.fail_closed.review_or_execute_plan
       unresolved_outcome_family: fail_closed
       counts_toward_streak: true
 side_effect_mapping_table:

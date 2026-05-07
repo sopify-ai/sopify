@@ -13,7 +13,7 @@
 ## 当前焦点
 
 <!-- sopify:auto:focus:start -->
-- 当前活动 plan：暂无（P2 已归档；下一里程碑 P3a 待开）。
+- 当前活动 plan：暂无。
 - history 归档：已可用；最近归档为 `../history/2026-05/20260506_p2_local_action_contracts`。
 <!-- sopify:auto:focus:end -->
 
@@ -27,5 +27,5 @@
 - [Sopify 最小协议规范 (Protocol v0)](./protocol.md)
 - [Skill 标准对齐蓝图](./skill-standards-refactor.md)
 - [变更历史](../history/index.md)
-- 最近归档：`../history/2026-05/20260506_p15_verifier_normative_slice`
+- 最近归档：`../history/2026-05/20260506_p2_local_action_contracts`
 <!-- sopify:auto:read-next:end -->

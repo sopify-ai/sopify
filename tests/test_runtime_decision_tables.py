@@ -160,7 +160,6 @@ consult_readonly_contract:
   ignored_required_host_actions:
     - confirm_decision
     - answer_questions
-    - review_or_execute_plan
   required_fields:
     required_host_action:
       role: echoed_assertion
@@ -268,7 +267,6 @@ consult_readonly_contract:
   ignored_required_host_actions:
     - confirm_decision
     - answer_questions
-    - review_or_execute_plan
   required_fields:
     required_host_action:
       role: echoed_assertion

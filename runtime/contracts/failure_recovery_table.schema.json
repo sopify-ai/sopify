@@ -18,8 +18,7 @@
   ],
   "required_host_actions": [
     "answer_questions",
-    "confirm_decision",
-    "review_or_execute_plan"
+    "confirm_decision"
   ],
   "fallback_actions": [
     "enter_blocking_recovery_branch",

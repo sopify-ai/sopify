@@ -31,14 +31,12 @@ _PLAN_REVIEW_STAGES = frozenset(
 _HOST_ACTION_ALLOWED_ACTIONS = {
     "answer_questions": ("answer", "inspect", "cancel"),
     "confirm_decision": ("choose", "status", "cancel"),
-    "review_or_execute_plan": ("continue", "inspect", "revise", "cancel"),
     "continue_host_consult": ("consult", "block"),
     "continue_host_develop": ("continue", "checkpoint", "consult", "inspect", "block"),
 }
 _HOST_ACTION_EXPECTED_RESPONSE_MODE = {
     "answer_questions": CHECKPOINT_ONLY,
     "confirm_decision": CHECKPOINT_ONLY,
-    "review_or_execute_plan": NORMAL_RUNTIME_FOLLOWUP,
     "continue_host_consult": NORMAL_RUNTIME_FOLLOWUP,
     "continue_host_develop": NORMAL_RUNTIME_FOLLOWUP,
 }
@@ -177,7 +175,7 @@ def evaluate_deterministic_guard(
             notes=(),
         )
 
-    if normalized_action == "review_or_execute_plan":
+    if normalized_action == "continue_host_develop" and _run_stage(current_run) == "plan_generated":
         return _evaluate_plan_review_guard(
             allowed_response_mode=normalized_mode,
             required_host_action=normalized_action,
@@ -186,7 +184,7 @@ def evaluate_deterministic_guard(
             plan_id=plan_id,
             plan_path=plan_path,
             execution_gate=execution_gate,
-            allowed_actions=allowed_actions,
+            allowed_actions=("continue", "inspect", "revise", "cancel"),
         )
 
     proofs = [f"required_host_action={normalized_action}"]
@@ -249,7 +247,7 @@ def _evaluate_plan_review_guard(
             resume_target_kind="plan_review",
             checkpoint_kind="",
             allowed_actions=allowed_actions,
-            reason_code="guard.plan_review.stable.review_or_execute_plan",
+            reason_code="guard.plan_review.stable.plan_generated",
             proofs=tuple(proofs),
             notes=tuple(notes),
         )
@@ -262,7 +260,7 @@ def _evaluate_plan_review_guard(
         resume_target_kind="workflow_safe_start",
         checkpoint_kind="",
         allowed_actions=allowed_actions,
-        reason_code="guard.plan_review.workflow_safe_start.review_or_execute_plan",
+        reason_code="guard.plan_review.workflow_safe_start.plan_generated",
         proofs=tuple(proofs),
         notes=tuple(notes),
     )

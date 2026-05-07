@@ -619,7 +619,7 @@ class EngineIntegrationTests(unittest.TestCase):
                     plan_id=plan_artifact.plan_id,
                     plan_path=plan_artifact.path,
                     handoff_kind="plan_only",
-                    required_host_action="review_or_execute_plan",
+                    required_host_action="continue_host_develop",
                     resolution_id="handoff-resolution",
                 )
             )
@@ -1075,7 +1075,7 @@ class EngineIntegrationTests(unittest.TestCase):
             handoff = store.get_current_handoff()
             self.assertEqual(handoff.artifacts["result"], "replan_required")
             self.assertEqual(handoff.artifacts["root_cause"], "scope_or_design_mismatch")
-            self.assertEqual(handoff.artifacts["resume_context"]["resume_after"], "review_or_execute_plan")
+            self.assertEqual(handoff.artifacts["resume_context"]["resume_after"], "continue_host_develop")
             self.assertEqual(
                 handoff.artifacts["resume_context"]["develop_quality_result"]["result"],
                 "replan_required",
@@ -1226,7 +1226,8 @@ class EngineIntegrationTests(unittest.TestCase):
                         "changed_files": ["runtime/engine.py", "README.md"],
                         "working_summary": "用户反馈超出了当前 plan 边界。",
                         "verification_todo": ["回到 plan review 后重新整理任务"],
-                        "resume_after": "review_or_execute_plan",
+                        "resume_after": "continue_host_develop",
+                        "resume_route": "plan_only",
                     },
                 },
                 config=config,
@@ -1235,7 +1236,7 @@ class EngineIntegrationTests(unittest.TestCase):
             resumed = run_runtime("2", workspace_root=workspace, user_home=workspace / "home")
 
             self.assertEqual(resumed.route.route_name, "plan_only")
-            self.assertEqual(resumed.handoff.required_host_action, "review_or_execute_plan")
+            self.assertEqual(resumed.handoff.required_host_action, "continue_host_develop")
             self.assertEqual(resumed.recovered_context.current_run.stage, "plan_generated")
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
 
@@ -1465,7 +1466,7 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertTrue((workspace / ".sopify-skills" / "user" / "preferences.md").exists())
             self.assertFalse((workspace / ".sopify-skills" / "history" / "index.md").exists())
             self.assertFalse((workspace / ".sopify-skills" / "wiki").exists())
-            self.assertEqual(first.handoff.required_host_action, "review_or_execute_plan")
+            self.assertEqual(first.handoff.required_host_action, "continue_host_develop")
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_handoff.json").exists())
 
             resumed = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home")
@@ -2160,7 +2161,7 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(resumed.plan_artifact.path, plan_artifact.path)
             self.assertEqual(resumed.recovered_context.current_run.stage, "ready_for_execution")
             self.assertEqual(resumed.recovered_context.current_run.execution_gate.gate_status, "ready")
-            self.assertEqual(resumed.handoff.required_host_action, "review_or_execute_plan")
+            self.assertEqual(resumed.handoff.required_host_action, "continue_host_develop")
             self.assertFalse((workspace / ".sopify-skills" / "state" / "current_decision.json").exists())
 
     def test_engine_handoff_contracts_cover_replay(self) -> None:
@@ -2663,7 +2664,7 @@ class EngineIntegrationTests(unittest.TestCase):
             self.assertEqual(gate_payload["status"], "ready")
             self.assertTrue(gate_payload["gate_passed"])
             self.assertEqual(gate_payload["allowed_response_mode"], "normal_runtime_followup")
-            self.assertEqual(gate_payload["handoff"]["required_host_action"], "review_or_execute_plan")
+            self.assertEqual(gate_payload["handoff"]["required_host_action"], "continue_host_develop")
             self.assertIn(".sopify-skills/plan/", completed.stdout)
             self.assertTrue((workspace / gate_payload["state"]["current_handoff_path"]).exists())
             self.assertTrue((workspace / ".sopify-skills" / "state" / "current_gate_receipt.json").exists())

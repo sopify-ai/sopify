@@ -330,7 +330,7 @@ class DeterministicGuardTests(unittest.TestCase):
         current_run = RunState(
             run_id="run-1",
             status="active",
-            stage="ready_for_execution",
+            stage="plan_generated",
             route_name="workflow",
             title="Plan 1",
             created_at="2026-04-09T00:00:00+00:00",
@@ -347,8 +347,8 @@ class DeterministicGuardTests(unittest.TestCase):
         )
 
         guard = evaluate_deterministic_guard(
-            allowed_response_mode=expected_allowed_response_mode("review_or_execute_plan") or "",
-            required_host_action="review_or_execute_plan",
+            allowed_response_mode=expected_allowed_response_mode("continue_host_develop") or "",
+            required_host_action="continue_host_develop",
             current_run=current_run,
             current_plan=current_plan,
             plan_id=current_plan.plan_id,
@@ -455,7 +455,7 @@ class ResolutionPlannerTests(unittest.TestCase):
     def test_resolution_planner_makes_plan_review_boundary_explicit(self) -> None:
         guard = evaluate_deterministic_guard(
             allowed_response_mode=NORMAL_RUNTIME_FOLLOWUP,
-            required_host_action="review_or_execute_plan",
+            required_host_action="continue_host_develop",
             plan_id="plan-1",
             plan_path=".sopify-skills/plan/20260409_plan_1",
             current_plan=PlanArtifact(
@@ -481,23 +481,11 @@ class ResolutionPlannerTests(unittest.TestCase):
             ),
         )
 
-        planner = build_resolution_planner(guard).to_dict()
-
-        self.assertEqual(planner["supported_resolved_actions"], [])
-        self.assertEqual(
-            planner["blocked_resolved_actions"],
-            [
-                "stay_in_checkpoint_and_inspect",
-                "switch_to_consult_readonly",
-                "continue_checkpoint_confirmation",
-                "cancel_current_checkpoint",
-                "retopic_with_current_machine_truth",
-            ],
-        )
-        self.assertEqual(
-            planner["default_no_candidate_recovery"]["prompt_mode"],
-            "reask_plan_review",
-        )
+        with self.assertRaisesRegex(
+            ResolutionPlannerError,
+            r"No signal-priority rows defined for required_host_action='continue_host_develop'",
+        ):
+            build_resolution_planner(guard)
 
     def test_resolution_planner_requires_stable_guard(self) -> None:
         guard = evaluate_deterministic_guard(
@@ -714,25 +702,20 @@ class GuardrailIntegrationTests(unittest.TestCase):
                 user_home=workspace / "home",
             )
 
-            guard = result.handoff.artifacts["deterministic_guard"]
-            projection = result.handoff.artifacts["action_projection"]
-            planner = result.handoff.artifacts["resolution_planner"]
-            boundary = result.handoff.artifacts["sidecar_classifier_boundary"]
-            phase_boundary = result.handoff.artifacts["vnext_phase_boundary"]
+            artifacts = result.handoff.artifacts
+            guard = artifacts["deterministic_guard"]
+            projection = artifacts["action_projection"]
             v1_stats = result.handoff.observability["v1_stats"]
             self.assertEqual(guard["resume_target_kind"], "plan_review")
-            self.assertEqual(projection["required_host_action"], "review_or_execute_plan")
+            self.assertEqual(projection["required_host_action"], "continue_host_develop")
             self.assertEqual(projection["plan_path"], result.plan_artifact.path)
-            self.assertEqual(planner["supported_resolved_actions"], [])
-            self.assertFalse(boundary["v1_enabled"])
-            self.assertEqual(boundary["resolution_scope"], "review_or_execute_plan")
-            self.assertIn("retopic_current_subject", boundary["eligible_signal_ids"])
-            self.assertEqual(phase_boundary["active_phase"], "parser_first_v1")
-            self.assertFalse(phase_boundary["vnext_enabled"])
-            self.assertEqual(v1_stats["reason_code"], "guard.plan_review.stable.review_or_execute_plan")
+            self.assertNotIn("resolution_planner", artifacts)
+            self.assertNotIn("sidecar_classifier_boundary", artifacts)
+            self.assertNotIn("vnext_phase_boundary", artifacts)
+            self.assertEqual(v1_stats["reason_code"], "guard.plan_review.stable.plan_generated")
             self.assertEqual(v1_stats["outcome"], "ready")
-            self.assertEqual(v1_stats["fallback_path"], "repeat_current_checkpoint")
-            self.assertEqual(v1_stats["checkpoint_kind"], "review_or_execute_plan")
+            self.assertEqual(v1_stats["fallback_path"], "none")
+            self.assertEqual(v1_stats["checkpoint_kind"], "continue_host_develop")
 
     def test_vnext_phase_boundary_survives_resolution_planner_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -741,21 +724,18 @@ class GuardrailIntegrationTests(unittest.TestCase):
             with patch(
                 "runtime.handoff.build_resolution_planner",
                 side_effect=ResolutionPlannerError("planner unavailable"),
-            ):
+            ) as planner_builder:
                 result = run_runtime(
                     "~go plan 补 runtime 骨架",
                     workspace_root=workspace,
                     user_home=workspace / "home",
                 )
 
+            planner_builder.assert_not_called()
             artifacts = result.handoff.artifacts
-            self.assertEqual(artifacts["resolution_planner_error"], "planner unavailable")
+            self.assertNotIn("resolution_planner_error", artifacts)
             self.assertNotIn("resolution_planner", artifacts)
-            self.assertEqual(
-                artifacts["sidecar_classifier_boundary_error"],
-                "Resolution planner unavailable for sidecar boundary",
-            )
-            self.assertEqual(
-                artifacts["vnext_phase_boundary"]["active_phase"],
-                "parser_first_v1",
-            )
+            self.assertNotIn("sidecar_classifier_boundary_error", artifacts)
+            self.assertNotIn("sidecar_classifier_boundary", artifacts)
+            self.assertNotIn("vnext_phase_boundary_error", artifacts)
+            self.assertNotIn("vnext_phase_boundary", artifacts)

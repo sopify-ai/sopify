@@ -35,7 +35,7 @@ DEVELOP_RESUME_CONTEXT_REQUIRED_FIELDS = (
     "working_summary",
     "verification_todo",
 )
-DEVELOP_RESUME_AFTER_ACTIONS = ("continue_host_develop", "review_or_execute_plan")
+DEVELOP_RESUME_AFTER_ACTIONS = ("continue_host_develop",)
 
 
 class CheckpointRequestError(ValueError):

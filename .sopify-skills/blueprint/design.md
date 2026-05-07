@@ -276,7 +276,7 @@ ActionProposal 的标量 `side_effect` 字段表达粗粒度权限层级（`none
 |---------------|----------|------------|-------------|-----------|
 | `confirm_plan_package` | — | — | — | ✅ 已完成（Wave 3a） |
 | `confirm_execute` | ExecutionAuthorizationReceipt | receipt 替代 checkpoint | P1.5 authorization contract spec | P3a 复核（runtime 已清，tests/contracts 残留待确认） |
-| `review_or_execute_plan` | ActionProposal routing | Validator 接管 plan review/execute 语义 | P2 local action contracts | P3a impl |
+| `review_or_execute_plan` | ActionProposal routing | Validator 接管 plan review/execute 语义；plan review 状态改由 `continue_host_develop` + `plan_generated` stage 表达 | P2 local action contracts | ✅ 已完成（P3a） |
 | `continue_host_quick_fix` | `continue_host_develop(mode=quick_fix)` | 合并为 hint | P2 local action contracts | P3a 复核（runtime 已清） |
 | `continue_host_workflow` | `continue_host_develop(mode=standard)` | 合并 | P2 local action contracts | P3a 复核（runtime 已清） |
 | `archive_completed` | — | — | — | ✅ 已完成（archive lifecycle cutover） |

@@ -55,7 +55,7 @@ class BundleSmokeTests(unittest.TestCase):
             self.assertEqual(result.route.route_name, "plan_only")
             self.assertIsNotNone(result.plan_artifact)
             self.assertIsNotNone(result.handoff)
-            self.assertEqual(result.handoff.required_host_action, "review_or_execute_plan")
+            self.assertEqual(result.handoff.required_host_action, "continue_host_develop")
 
     def test_gate_available(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -70,7 +70,7 @@ class BundleSmokeTests(unittest.TestCase):
             self.assertEqual(payload["status"], "ready")
             self.assertTrue(payload["gate_passed"])
             self.assertEqual(payload["runtime"]["route_name"], "plan_only")
-            self.assertEqual(payload["handoff"]["required_host_action"], "review_or_execute_plan")
+            self.assertEqual(payload["handoff"]["required_host_action"], "continue_host_develop")
             self.assertEqual(payload["allowed_response_mode"], "normal_runtime_followup")
 
     def test_config_available(self) -> None:

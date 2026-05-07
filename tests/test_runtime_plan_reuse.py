@@ -258,7 +258,7 @@ class PlanReuseRuntimeTests(unittest.TestCase):
             self.assertEqual(second.plan_artifact.plan_id, current_plan.plan_id)
             self.assertEqual(second.recovered_context.current_run.stage, "plan_generated")
             self.assertEqual(second.recovered_context.current_run.execution_gate.gate_status, "blocked")
-            self.assertEqual(second.handoff.required_host_action, "review_or_execute_plan")
+            self.assertEqual(second.handoff.required_host_action, "continue_host_develop")
 
     def test_new_plan_selection_creates_new_scaffold_for_nonanchored_request(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -322,4 +322,4 @@ class PlanReuseRuntimeTests(unittest.TestCase):
             self.assertIsNotNone(second.plan_artifact)
             assert second.plan_artifact is not None
             self.assertNotEqual(second.plan_artifact.plan_id, current_plan.plan_id)
-            self.assertEqual(second.handoff.required_host_action, "review_or_execute_plan")
+            self.assertEqual(second.handoff.required_host_action, "continue_host_develop")

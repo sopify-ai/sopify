@@ -183,7 +183,7 @@ class StateStoreInvariantTests(unittest.TestCase):
                 route_name="workflow",
                 run_id="run-1",
                 handoff_kind="plan",
-                required_host_action="review_or_execute_plan",
+                required_host_action="continue_host_develop",
             )
 
             stored_run, stored_handoff = store.set_host_facing_truth(
@@ -217,7 +217,7 @@ class StateStoreInvariantTests(unittest.TestCase):
                 route_name="workflow",
                 run_id="run-1",
                 handoff_kind="plan",
-                required_host_action="review_or_execute_plan",
+                required_host_action="continue_host_develop",
             )
 
             with self.assertRaises(InvariantViolationError):
@@ -260,7 +260,7 @@ class ContextSnapshotTests(unittest.TestCase):
                     route_name="workflow",
                     run_id="run-1",
                     handoff_kind="plan",
-                    required_host_action="review_or_execute_plan",
+                    required_host_action="continue_host_develop",
                 ),
                 current_clarification=None,
                 current_decision=None,
@@ -597,7 +597,7 @@ class ContextSnapshotTests(unittest.TestCase):
                     route_name="workflow",
                     run_id="run-1",
                     handoff_kind="plan",
-                    required_host_action="review_or_execute_plan",
+                    required_host_action="continue_host_develop",
                     resolution_id="resolution-b",
                 )
             )
@@ -636,7 +636,7 @@ class ContextSnapshotTests(unittest.TestCase):
                     route_name="workflow",
                     run_id="run-1",
                     handoff_kind="plan",
-                    required_host_action="review_or_execute_plan",
+                    required_host_action="continue_host_develop",
                 )
             )
 
@@ -863,7 +863,7 @@ class ContextSnapshotTests(unittest.TestCase):
                     route_name="workflow",
                     run_id="run-1",
                     handoff_kind="plan",
-                    required_host_action="review_or_execute_plan",
+                    required_host_action="continue_host_develop",
                 )
             )
             store.set_current_decision(

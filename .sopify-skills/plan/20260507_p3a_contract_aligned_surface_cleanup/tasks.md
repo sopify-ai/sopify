@@ -5,7 +5,7 @@
 ```
 A0: 文档矛盾收口（本次已完成）
  ↓
-A: review_or_execute_plan 最终删除（9 py + 2 yaml + 3 schema.json = 14 runtime targets）
+A: review_or_execute_plan 最终删除 + plan review 语义迁移（14 runtime targets + guard/projection/resume 迁移）
  ↓
 B: Execution routing 收敛（validator AUTHORIZE → deterministic route）
  ↓
@@ -14,14 +14,24 @@ C: Runtime 减重（dead path pruning, 目标 26K→<20K）
 D: knowledge_sync audit trail（独立尾项，不与 A/B/C 绑死）
 ```
 
-## Phase A: `review_or_execute_plan` 最终删除
+## Phase A: `review_or_execute_plan` 最终删除 + plan review 语义迁移
 
-- [ ] A1: 逐文件删除 `review_or_execute_plan` 引用（9 py files + 2 yaml contracts + 3 schema.json），每文件确认语义替代已到位
-- [ ] A2: 删除 `contracts/failure_recovery_table.yaml`、`contracts/decision_tables.yaml` 中对应 entry；删除 `contracts/failure_recovery_table.schema.json`、`contracts/decision_tables.schema.json`、`contracts/signal_priority_table.schema.json` 中 enum 值
-- [ ] A3: 添加 fail-closed 测试：state 中残留 `review_or_execute_plan` → state_conflict / inspect-required
-- [ ] A4: 删除或改写 tests 中仅验证 `review_or_execute_plan` 旧行为的 test cases（allowlist 外的引用全部清除）
-- [ ] A5: 验证 grep 门：`runtime/` 和活跃 `.sopify-skills/blueprint/` 零引用；`tests/` 仅 allowlist 内 fail-closed / compatibility coverage 保留
-- [ ] A6: 全量测试通过
+- [x] A1: `handoff.py` — plan_only 分支改为返回 `"continue_host_develop"`
+- [x] A2: `develop_callback.py` — **仅 `_submit_quality_checkpoint` 路径（L484）**：`resume_after` 改为 `"continue_host_develop"` + 设置 `resume_route = "plan_only"`；通用 checkpoint 创建路径（L372）`resume_route="resume_active"` 保持不变
+- [x] A3: `checkpoint_request.py` — `DEVELOP_RESUME_AFTER_ACTIONS` 移除 `"review_or_execute_plan"`（仅保留 `"continue_host_develop"`）
+- [x] A4: `engine.py:1740/1803` — resume 判定改为检查 `resume_route == "plan_only"` 回退到 plan review
+- [x] A5: `engine.py:2401` — `next_required_action` 改为 `"continue_host_develop"`
+- [x] A6: `deterministic_guard.py` — 移除独立 entry，plan review guard 逻辑合入 `continue_host_develop` 分支（以 `current_run.stage == "plan_generated"` 判定）
+- [x] A7: `action_projection.py` — 移除独立 builder，plan review 字段合入 `continue_host_develop` projection（以 plan_generated 状态条件触发）
+- [x] A8: `plan_orchestrator.py` — stable action 判定改为三条件：`required_host_action == "continue_host_develop"` + `route_name == "plan_only"` + `guard.resume_target_kind == "plan_review"`
+- [x] A9: `vnext_phase_boundary.py` — 从 supported set 移除
+- [x] A10: `output.py` — 删除 `review_or_execute_plan` 独立 case；在 `continue_host_develop` 分支内新增 `route_name == "plan_only"` → `labels["next_plan"]`
+- [x] A11: contracts 清理 — `failure_recovery_table.yaml`、`decision_tables.yaml` 删除 entry；3 个 schema.json 从 enum 移除（resolution_planner / sidecar_classifier_boundary 直接不产出 artifact）
+- [x] A12: `test_context_v1_scope.py` 等集成测试 — plan_only 场景的 planner/boundary artifacts 已删除（旧 rows 为 no-op），更新断言
+- [x] A13: 添加 fail-closed 测试：state 中残留 `review_or_execute_plan` → state_conflict / inspect-required
+- [x] A14: 删除或改写 tests 中仅验证 `review_or_execute_plan` 旧行为的 test cases（allowlist 外的引用全部清除）
+- [x] A15: 验证 grep 门：`runtime/` 零引用；活跃 `.sopify-skills/blueprint/` 仅 informative/已收口注释；`tests/` 仅 allowlist 内保留
+- [x] A16: 全量测试通过（670 passed, 0 failures）
 
 ## Phase B: Execution routing 收敛
 

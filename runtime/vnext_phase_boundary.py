@@ -31,7 +31,6 @@ _SUPPORTED_PHASE_BOUNDARY_ACTIONS = frozenset(
     {
         "answer_questions",
         "confirm_decision",
-        "review_or_execute_plan",
     }
 )
 

@@ -481,7 +481,8 @@ def _submit_quality_checkpoint(
     resume_context.setdefault("changed_files", list(quality_context["changed_files"]))
     resume_context.setdefault("working_summary", quality_context["working_summary"])
     resume_context.setdefault("verification_todo", list(quality_context["verification_todo"]))
-    resume_context.setdefault("resume_after", "review_or_execute_plan")
+    resume_context.setdefault("resume_after", "continue_host_develop")
+    resume_context.setdefault("resume_route", "plan_only")
     resume_context["develop_quality_result"] = quality_result
     checkpoint_payload["resume_context"] = resume_context
     checkpoint_payload["quality_result"] = quality_result

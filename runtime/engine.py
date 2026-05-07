@@ -1736,8 +1736,9 @@ def _resume_from_develop_clarification(
         return (_clarification_pending_route(RouteDecision(route_name="clarification_resume", request_text=resumed_request, reason="missing develop context"), reason="Develop clarification still requires an active plan context"), None, notes, kb_artifact)
 
     resume_after = develop_resume_after(current_clarification.resume_context)
+    resume_route = str((current_clarification.resume_context or {}).get("resume_route") or "").strip()
     state_store.clear_current_clarification()
-    if resume_after == "review_or_execute_plan":
+    if resume_route == "plan_only":
         run_state = _copy_run_state(current_run, stage="plan_generated")
         state_store.set_current_run(run_state)
         notes.append("Develop clarification answered; host must review the plan before continuing")
@@ -1799,8 +1800,9 @@ def _resume_from_develop_decision(
         return (_decision_pending_route(RouteDecision(route_name="decision_resume", request_text=current_decision.request_text, reason="missing develop context"), reason="Develop decision still requires an active plan context"), None, notes, kb_artifact, None)
 
     resume_after = develop_resume_after(current_decision.resume_context)
+    resume_route = str((current_decision.resume_context or {}).get("resume_route") or "").strip()
     _consume_current_decision(state_store, current_decision)
-    if resume_after == "review_or_execute_plan":
+    if resume_route == "plan_only":
         run_state = _copy_run_state(current_run, stage="plan_generated")
         state_store.set_current_run(run_state)
         notes.append("Develop decision confirmed; host must review the plan before continuing")
@@ -2398,7 +2400,7 @@ def _apply_execution_gate_to_plan(
             gate_status="blocked",
             blocking_reason="missing_info",
             plan_completion="incomplete",
-            next_required_action="review_or_execute_plan",
+            next_required_action="continue_host_develop",
             notes=("Attached the new request to the current plan; review and update that plan before execution continues.",),
         )
         state_store.set_current_run(

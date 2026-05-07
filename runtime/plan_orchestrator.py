@@ -2,7 +2,7 @@
 
 The default runtime entry stays unchanged. This module only automates the
 planning-mode clarification/decision checkpoints and intentionally stops at
-stable handoff points such as `review_or_execute_plan`.
+stable handoff points such as plan review (continue_host_develop with plan_generated stage).
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from .workspace_preflight import WorkspacePreflightError, preflight_workspace_ru
 PLAN_ORCHESTRATOR_PENDING_EXIT = 2
 PLAN_ORCHESTRATOR_CANCELLED_EXIT = 3
 PLAN_ORCHESTRATOR_DEFAULT_MAX_LOOPS = 8
-_STABLE_HOST_ACTIONS = {"review_or_execute_plan"}
 _BRIDGED_HOST_ACTIONS = {"answer_questions", "confirm_decision"}
 
 PromptReader = Callable[[str], str]
@@ -130,7 +129,13 @@ def run_plan_loop(
             )
 
         host_action = handoff.required_host_action
-        if host_action in _STABLE_HOST_ACTIONS:
+        guard = (handoff.artifacts or {}).get("deterministic_guard") or {}
+        is_plan_review_stable = (
+            host_action == "continue_host_develop"
+            and result.route.route_name == "plan_only"
+            and str(guard.get("resume_target_kind") or "") == "plan_review"
+        )
+        if is_plan_review_stable:
             return PlanOrchestratorResult(
                 runtime_result=result,
                 exit_code=0,

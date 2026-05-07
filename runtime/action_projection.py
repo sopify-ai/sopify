@@ -13,7 +13,6 @@ _SUPPORTED_PROJECTION_ACTIONS = frozenset(
     {
         "answer_questions",
         "confirm_decision",
-        "review_or_execute_plan",
         "continue_host_consult",
         "continue_host_develop",
     }
@@ -123,38 +122,6 @@ def _build_confirm_decision_fields(
 
 
 
-def _build_plan_review_fields(
-    *,
-    plan_id: str | None,
-    plan_path: str | None,
-    current_run: RunState | None,
-    artifacts: Mapping[str, Any],
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "plan_id": str(plan_id or "").strip(),
-        "plan_path": str(plan_path or "").strip(),
-        "run_stage": str(getattr(current_run, "stage", "") or "").strip(),
-        "next_required_action": "",
-    }
-    execution_gate = artifacts.get("execution_gate")
-    if isinstance(execution_gate, Mapping):
-        payload["next_required_action"] = str(
-            execution_gate.get("next_required_action") or ""
-        ).strip()
-    execution_summary = artifacts.get("execution_summary")
-    if isinstance(execution_summary, Mapping):
-        payload["summary"] = str(execution_summary.get("summary") or "").strip()
-        payload["task_count"] = int(execution_summary.get("task_count") or 0)
-        payload["risk_level"] = str(execution_summary.get("risk_level") or "").strip()
-        payload["key_risk"] = str(execution_summary.get("key_risk") or "").strip()
-        payload["mitigation"] = str(execution_summary.get("mitigation") or "").strip()
-        if not payload["plan_path"]:
-            payload["plan_path"] = str(execution_summary.get("plan_path") or "").strip()
-    if not payload["plan_path"]:
-        raise ActionProjectionError("review_or_execute_plan projection requires plan_path")
-    return payload
-
-
 def _build_continue_host_consult_fields(
     *,
     plan_id: str | None,
@@ -182,12 +149,34 @@ def _build_continue_host_develop_fields(
     active_run_stage = str(
         getattr(current_run, "stage", "") or resume_context.get("active_run_stage") or ""
     ).strip()
-    return {
+    payload: dict[str, Any] = {
         "active_run_stage": active_run_stage,
         "task_refs": _coerce_string_list(resume_context.get("task_refs")),
         "changed_files": _coerce_string_list(resume_context.get("changed_files")),
         "verification_todo": _coerce_string_list(resume_context.get("verification_todo")),
     }
+    # When in plan review stage, append plan review fields
+    if active_run_stage == "plan_generated":
+        payload["plan_id"] = str(plan_id or "").strip()
+        payload["plan_path"] = str(plan_path or "").strip()
+        payload["next_required_action"] = ""
+        execution_gate = artifacts.get("execution_gate")
+        if isinstance(execution_gate, Mapping):
+            payload["next_required_action"] = str(
+                execution_gate.get("next_required_action") or ""
+            ).strip()
+        execution_summary = artifacts.get("execution_summary")
+        if isinstance(execution_summary, Mapping):
+            payload["summary"] = str(execution_summary.get("summary") or "").strip()
+            payload["task_count"] = int(execution_summary.get("task_count") or 0)
+            payload["risk_level"] = str(execution_summary.get("risk_level") or "").strip()
+            payload["key_risk"] = str(execution_summary.get("key_risk") or "").strip()
+            payload["mitigation"] = str(execution_summary.get("mitigation") or "").strip()
+            if not payload["plan_path"]:
+                payload["plan_path"] = str(execution_summary.get("plan_path") or "").strip()
+        if not payload["plan_path"]:
+            raise ActionProjectionError("plan review projection requires plan_path")
+    return payload
 
 
 def _extract_decision_options(
@@ -255,7 +244,6 @@ def _require_mapping(value: Any, *, label: str) -> Mapping[str, Any]:
 _PROJECTION_BUILDERS = {
     "answer_questions": _build_answer_questions_fields,
     "confirm_decision": _build_confirm_decision_fields,
-    "review_or_execute_plan": _build_plan_review_fields,
     "continue_host_consult": _build_continue_host_consult_fields,
     "continue_host_develop": _build_continue_host_develop_fields,
 }

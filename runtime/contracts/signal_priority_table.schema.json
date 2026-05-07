@@ -55,8 +55,7 @@
   ],
   "allowed_checkpoint_kinds": [
     "answer_questions",
-    "confirm_decision",
-    "review_or_execute_plan"
+    "confirm_decision"
   ],
   "signal_groups": [
     "inspect_request",

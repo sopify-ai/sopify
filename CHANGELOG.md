@@ -6,6 +6,120 @@ Format: Summary → Plan Packages → File Details (collapsible).
 
 ## [Unreleased]
 
+## [2026-05-07.143021] - 2026-05-07
+
+### Summary
+
+- Updated 1 active plan package(s); Changes across: Docs, Runtime, Scripts, Skills, Tests.
+
+### Plan Packages
+
+- `20260507_p3a_contract_aligned_surface_cleanup` (active)
+
+<details>
+<summary>File details</summary>
+
+**Docs** — Refined public documentation:
+  - `README.md`
+  - `README.zh-CN.md`
+
+**Runtime** — Updated runtime internals:
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/contracts/decision_tables.schema.json`
+  - `runtime/contracts/decision_tables.yaml`
+  - `runtime/contracts/failure_recovery_table.schema.json`
+  - `runtime/contracts/failure_recovery_table.yaml`
+  - `runtime/contracts/signal_priority_table.schema.json`
+  - `runtime/deterministic_guard.py`
+  - `runtime/develop_callback.py`
+  - `runtime/engine.py`
+  - `runtime/handoff.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/vnext_phase_boundary.py`
+
+**Scripts** — Adjusted maintenance scripts:
+  - `scripts/check-prompt-runtime-gate-smoke.py`
+
+**Skills** — Synced prompt-layer skills:
+  - `Claude/Skills/CN/CLAUDE.md`
+  - `Claude/Skills/EN/CLAUDE.md`
+  - `Codex/Skills/CN/AGENTS.md`
+  - `Codex/Skills/EN/AGENTS.md`
+
+**Tests** — Updated automated coverage:
+  - `tests/fixtures/context_fail_close_contract.yaml`
+  - `tests/pytest_entries/fail_close_contract_entry.py`
+  - `tests/test_bundle_smoke.py`
+  - `tests/test_context_v1_scope.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_failure_recovery.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_plan_reuse.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_state.py`
+
+**Plan package files**:
+  - `.sopify-skills/plan/20260507_p3a_contract_aligned_surface_cleanup/design.md`
+  - `.sopify-skills/plan/20260507_p3a_contract_aligned_surface_cleanup/tasks.md`
+
+</details>
+
+## [2026-05-07.142547] - 2026-05-07
+
+### Summary
+
+- Updated 1 active plan package(s); Changes across: Runtime, Scripts, Tests.
+
+### Plan Packages
+
+- `20260507_p3a_contract_aligned_surface_cleanup` (active)
+
+<details>
+<summary>File details</summary>
+
+**Runtime** — Updated runtime internals:
+  - `runtime/action_projection.py`
+  - `runtime/checkpoint_request.py`
+  - `runtime/contracts/decision_tables.schema.json`
+  - `runtime/contracts/decision_tables.yaml`
+  - `runtime/contracts/failure_recovery_table.schema.json`
+  - `runtime/contracts/failure_recovery_table.yaml`
+  - `runtime/contracts/signal_priority_table.schema.json`
+  - `runtime/deterministic_guard.py`
+  - `runtime/develop_callback.py`
+  - `runtime/engine.py`
+  - `runtime/handoff.py`
+  - `runtime/output.py`
+  - `runtime/plan_orchestrator.py`
+  - `runtime/vnext_phase_boundary.py`
+
+**Scripts** — Adjusted maintenance scripts:
+  - `scripts/check-prompt-runtime-gate-smoke.py`
+
+**Tests** — Updated automated coverage:
+  - `tests/fixtures/context_fail_close_contract.yaml`
+  - `tests/pytest_entries/fail_close_contract_entry.py`
+  - `tests/test_bundle_smoke.py`
+  - `tests/test_context_v1_scope.py`
+  - `tests/test_runtime_decision.py`
+  - `tests/test_runtime_decision_tables.py`
+  - `tests/test_runtime_engine.py`
+  - `tests/test_runtime_failure_recovery.py`
+  - `tests/test_runtime_gate.py`
+  - `tests/test_runtime_plan_reuse.py`
+  - `tests/test_runtime_router.py`
+  - `tests/test_runtime_state.py`
+
+**Plan package files**:
+  - `.sopify-skills/plan/20260507_p3a_contract_aligned_surface_cleanup/design.md`
+  - `.sopify-skills/plan/20260507_p3a_contract_aligned_surface_cleanup/tasks.md`
+
+</details>
+
 ## [2026-05-07.102024] - 2026-05-07
 
 ### Summary

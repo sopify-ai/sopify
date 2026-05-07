@@ -462,7 +462,7 @@ class RouterTests(unittest.TestCase):
                     route_name="workflow",
                     run_id="run-1",
                     handoff_kind="plan",
-                    required_host_action="review_or_execute_plan",
+                    required_host_action="continue_host_develop",
                     resolution_id="resolution-b",
                 )
             )
