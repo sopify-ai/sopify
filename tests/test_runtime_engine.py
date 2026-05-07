@@ -3441,6 +3441,24 @@ class RoutingConvergenceTests(unittest.TestCase):
             result = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
         self.assertEqual(result.route.route_name, "resume_active")
 
+    def test_execute_existing_plan_does_not_call_router_classify(self) -> None:
+        """Authorized execute_existing_plan must go through derive, not Router.classify."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            _config, _store, plan_artifact = _prepare_ready_plan_state(workspace)
+            plan_subject = self._make_plan_subject(workspace, plan_artifact)
+            proposal = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("test",),
+                plan_subject=plan_subject,
+            )
+            with mock.patch.object(
+                Router, "classify",
+                side_effect=AssertionError("Router.classify must not be called for authorized proposals"),
+            ):
+                result = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
+        self.assertEqual(result.route.route_name, "resume_active")
+
     def test_cancel_flow_routes_to_cancel_active(self) -> None:
         proposal = ActionProposal("cancel_flow", "none", "high", evidence=("test",))
         with tempfile.TemporaryDirectory() as td:
@@ -3542,6 +3560,97 @@ class RoutingConvergenceTests(unittest.TestCase):
             )
             result = run_runtime("确认", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
         self.assertEqual(result.route.route_name, "proposal_rejected")
+
+    def test_checkpoint_response_pending_clarification_routes_to_clarification_resume(self) -> None:
+        """Active pending clarification → clarification_resume."""
+        from runtime.engine import _derive_route_from_authorized_proposal
+        from runtime.context_snapshot import ContextResolvedSnapshot
+        clarification = ClarificationState(
+            clarification_id="c-1", feature_key="test", phase="develop",
+            status="pending", summary="need info", questions=("q1",),
+            missing_facts=("f1",),
+        )
+        snapshot = ContextResolvedSnapshot(
+            resolution_id="test", current_clarification=clarification,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            config = load_runtime_config(workspace)
+            proposal = ActionProposal("checkpoint_response", "write_runtime_state", "high", evidence=("test",))
+            route = _derive_route_from_authorized_proposal(
+                proposal, "回答澄清问题", skills=(), config=config, snapshot=snapshot,
+            )
+        self.assertEqual(route.route_name, "clarification_resume")
+
+    def test_checkpoint_response_pending_decision_routes_to_decision_resume(self) -> None:
+        """Active pending decision → decision_resume."""
+        from runtime.engine import _derive_route_from_authorized_proposal
+        from runtime.context_snapshot import ContextResolvedSnapshot
+        decision = DecisionState(
+            schema_version="1", decision_id="d-1", feature_key="test",
+            phase="develop", status="pending", decision_type="design",
+            question="which approach?", summary="pick one", options=(),
+        )
+        snapshot = ContextResolvedSnapshot(
+            resolution_id="test", current_decision=decision,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            config = load_runtime_config(workspace)
+            proposal = ActionProposal("checkpoint_response", "write_runtime_state", "high", evidence=("test",))
+            route = _derive_route_from_authorized_proposal(
+                proposal, "选择方案 A", skills=(), config=config, snapshot=snapshot,
+            )
+        self.assertEqual(route.route_name, "decision_resume")
+
+    def test_checkpoint_response_collecting_decision_routes_to_decision_resume(self) -> None:
+        """Active collecting decision → decision_resume."""
+        from runtime.engine import _derive_route_from_authorized_proposal
+        from runtime.context_snapshot import ContextResolvedSnapshot
+        decision = DecisionState(
+            schema_version="1", decision_id="d-2", feature_key="test",
+            phase="develop", status="collecting", decision_type="design",
+            question="which approach?", summary="pick one", options=(),
+        )
+        snapshot = ContextResolvedSnapshot(
+            resolution_id="test", current_decision=decision,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            config = load_runtime_config(workspace)
+            proposal = ActionProposal("checkpoint_response", "write_runtime_state", "high", evidence=("test",))
+            route = _derive_route_from_authorized_proposal(
+                proposal, "补充信息", skills=(), config=config, snapshot=snapshot,
+            )
+        self.assertEqual(route.route_name, "decision_resume")
+
+    def test_checkpoint_response_terminal_decision_rejects(self) -> None:
+        """Terminal decision (confirmed) → REJECT, not decision_resume."""
+        from runtime.engine import _derive_route_from_authorized_proposal
+        from runtime.context_snapshot import ContextResolvedSnapshot
+        for terminal_status in ("confirmed", "cancelled", "timed_out"):
+            with self.subTest(status=terminal_status):
+                decision = DecisionState(
+                    schema_version="1", decision_id="d-t", feature_key="test",
+                    phase="develop", status=terminal_status, decision_type="design",
+                    question="q", summary="s", options=(),
+                )
+                snapshot = ContextResolvedSnapshot(
+                    resolution_id="test", current_decision=decision,
+                )
+                with tempfile.TemporaryDirectory() as td:
+                    workspace = Path(td)
+                    (workspace / ".sopify-skills").mkdir(parents=True)
+                    config = load_runtime_config(workspace)
+                    proposal = ActionProposal("checkpoint_response", "write_runtime_state", "high", evidence=("test",))
+                    route = _derive_route_from_authorized_proposal(
+                        proposal, "确认", skills=(), config=config, snapshot=snapshot,
+                    )
+                self.assertEqual(route.route_name, "proposal_rejected",
+                    f"terminal status {terminal_status!r} must REJECT")
 
     # -- B8: bare text request fallback --
 
