@@ -56,7 +56,8 @@ from .plan_scaffold import (
     request_explicitly_wants_new_plan,
 )
 from .replay import ReplayWriter, build_decision_replay_event
-from .router import Router
+from .router import Router, estimate_complexity, decide_capture_mode
+from .skill_resolver import resolve_route_candidate_skills
 from .action_intent import (
     ActionProposal,
     ActionValidator,
@@ -121,6 +122,215 @@ _GLOBAL_EXECUTION_ROUTES = frozenset({"resume_active", "exec_plan", "archive_lif
 # Only stable review checkpoints may be promoted into the global execution
 # truth consumed by resume and archive lifecycle.
 _PROMOTABLE_REVIEW_STAGES = frozenset({"plan_generated", "ready_for_execution", "develop_pending"})
+
+# -- Phase B: action_type → route mapping for authorized proposals -----------
+
+_ACTION_TYPE_TO_ROUTE: dict[str, str] = {
+    "consult_readonly": "consult",
+    "propose_plan": "plan_only",
+    "execute_existing_plan": "resume_active",
+    # cancel_flow handled inline (needs snapshot for cancel_scope).
+}
+
+
+def _derive_route_from_authorized_proposal(
+    proposal: ActionProposal,
+    user_input: str,
+    *,
+    skills: tuple[SkillMeta, ...],
+    config: RuntimeConfig,
+    snapshot: ContextResolvedSnapshot | None,
+) -> RouteDecision:
+    """Deterministically map an authorized ActionProposal to a RouteDecision.
+
+    Called only when ``validation_decision.decision == DECISION_AUTHORIZE``
+    and there is no ``route_override``.  Falls through to Router.classify()
+    is NOT expected — every recognized action_type produces a route here.
+    """
+    action = proposal.action_type
+
+    # --- cancel_flow: snapshot-driven cancel_scope ---
+    if action == "cancel_flow":
+        has_global = _snapshot_global_execution_run(snapshot) is not None
+        route = RouteDecision(
+            route_name="cancel_active",
+            request_text=user_input,
+            reason="action_proposal_derive: cancel_flow",
+            complexity="simple",
+            should_recover_context=True,
+            active_run_action="cancel",
+            artifacts={"cancel_scope": "global" if has_global else "session"},
+        )
+    # --- checkpoint_response: snapshot-driven ---
+    elif action == "checkpoint_response":
+        route = _derive_checkpoint_response_route(user_input, snapshot=snapshot, skills=skills)
+    # --- modify_files: complexity-driven ---
+    elif action == "modify_files":
+        route = _derive_modify_files_route(user_input, skills=skills)
+    # --- propose_plan: complexity for plan_level, immediate materialization ---
+    elif action == "propose_plan":
+        signal = estimate_complexity(user_input)
+        route = RouteDecision(
+            route_name="plan_only",
+            request_text=user_input,
+            reason=f"action_proposal_derive: propose_plan ({signal.reason})",
+            complexity="complex",
+            plan_level=signal.plan_level or "standard",
+            plan_package_policy="immediate",
+            candidate_skill_ids=resolve_route_candidate_skills(
+                "plan_only", skills, fallback_preferred=("analyze", "design"),
+            ),
+        )
+    else:
+        # --- static mappings ---
+        route_name = _ACTION_TYPE_TO_ROUTE.get(action)
+        if route_name is not None:
+            route = _build_static_route(route_name, action, user_input, skills=skills)
+        else:
+            # Unreachable for valid ACTION_TYPES (archive_plan handled by route_override).
+            route = RouteDecision(
+                route_name="consult",
+                request_text=user_input,
+                reason=f"action_proposal_derive: unknown action_type {action!r}, falling back to consult",
+                complexity="simple",
+            )
+
+    # Apply capture_mode normalization — shared with Router.classify _with_capture.
+    capture = decide_capture_mode(config.workflow_learning_auto_capture, route.complexity)
+    if capture != route.capture_mode:
+        route = RouteDecision(
+            route_name=route.route_name,
+            request_text=route.request_text,
+            reason=route.reason,
+            command=route.command,
+            complexity=route.complexity,
+            plan_level=route.plan_level,
+            candidate_skill_ids=route.candidate_skill_ids,
+            should_recover_context=route.should_recover_context,
+            plan_package_policy=route.plan_package_policy,
+            should_create_plan=route.should_create_plan,
+            capture_mode=capture,
+            runtime_skill_id=route.runtime_skill_id,
+            active_run_action=route.active_run_action,
+            artifacts=route.artifacts,
+        )
+    return route
+
+
+def _derive_checkpoint_response_route(
+    user_input: str,
+    *,
+    snapshot: ContextResolvedSnapshot | None,
+    skills: tuple[SkillMeta, ...],
+) -> RouteDecision:
+    """Route checkpoint_response based on active checkpoint state in snapshot."""
+    if snapshot is not None:
+        clarification = snapshot.current_clarification
+        if clarification is not None and clarification.status == "pending":
+            return RouteDecision(
+                route_name="clarification_resume",
+                request_text=user_input,
+                reason="action_proposal_derive: checkpoint_response with pending clarification",
+                complexity="medium",
+                should_recover_context=True,
+                candidate_skill_ids=resolve_route_candidate_skills(
+                    "clarification_resume", skills, fallback_preferred=("analyze", "design"),
+                ),
+                active_run_action="clarification_response",
+            )
+        decision = snapshot.current_decision
+        if decision is not None and decision.status in {"pending", "collecting"}:
+            return RouteDecision(
+                route_name="decision_resume",
+                request_text=user_input,
+                reason="action_proposal_derive: checkpoint_response with active decision",
+                complexity="medium",
+                should_recover_context=True,
+                candidate_skill_ids=resolve_route_candidate_skills(
+                    "decision_resume", skills, fallback_preferred=("design",),
+                ),
+                active_run_action="decision_response",
+            )
+    # No active checkpoint → REJECT (fail-closed)
+    return RouteDecision(
+        route_name="proposal_rejected",
+        request_text=user_input,
+        reason="action_proposal_derive: checkpoint_response but no active pending/collecting checkpoint",
+        complexity="simple",
+        should_recover_context=False,
+        artifacts={"reject_reason_code": "checkpoint_response.no_active_checkpoint"},
+    )
+
+
+def _derive_modify_files_route(
+    user_input: str,
+    *,
+    skills: tuple[SkillMeta, ...],
+) -> RouteDecision:
+    """Route modify_files based on text complexity analysis."""
+    signal = estimate_complexity(user_input)
+    if signal.level == "simple":
+        return RouteDecision(
+            route_name="quick_fix",
+            request_text=user_input,
+            reason=f"action_proposal_derive: modify_files ({signal.reason})",
+            complexity=signal.level,
+            candidate_skill_ids=resolve_route_candidate_skills(
+                "quick_fix", skills, fallback_preferred=("develop",),
+            ),
+        )
+    if signal.level == "medium":
+        return RouteDecision(
+            route_name="light_iterate",
+            request_text=user_input,
+            reason=f"action_proposal_derive: modify_files ({signal.reason})",
+            complexity=signal.level,
+            plan_level=signal.plan_level,
+            plan_package_policy="authorized_only",
+            candidate_skill_ids=resolve_route_candidate_skills(
+                "light_iterate", skills, fallback_preferred=("design", "develop"),
+            ),
+        )
+    return RouteDecision(
+        route_name="workflow",
+        request_text=user_input,
+        reason=f"action_proposal_derive: modify_files ({signal.reason})",
+        complexity=signal.level,
+        plan_level=signal.plan_level,
+        plan_package_policy="authorized_only",
+        candidate_skill_ids=resolve_route_candidate_skills(
+            "workflow", skills, fallback_preferred=("analyze", "design", "develop"),
+        ),
+    )
+
+
+def _build_static_route(
+    route_name: str,
+    action_type: str,
+    user_input: str,
+    *,
+    skills: tuple[SkillMeta, ...],
+) -> RouteDecision:
+    """Build a RouteDecision for action types with a fixed route mapping."""
+    if route_name in {"cancel_active", "resume_active"}:
+        return RouteDecision(
+            route_name=route_name,
+            request_text=user_input,
+            reason=f"action_proposal_derive: {action_type}",
+            complexity="simple" if route_name == "cancel_active" else "medium",
+            should_recover_context=True,
+            active_run_action="cancel" if route_name == "cancel_active" else "resume",
+            candidate_skill_ids=resolve_route_candidate_skills(
+                route_name, skills, fallback_preferred=("develop",),
+            ) if route_name == "resume_active" else (),
+        )
+    # consult_readonly
+    return RouteDecision(
+        route_name="consult",
+        request_text=user_input,
+        reason=f"action_proposal_derive: {action_type}",
+        complexity="simple",
+    )
 
 
 @dataclass(frozen=True)
@@ -711,7 +921,14 @@ def run_runtime(
 
     if proposal_override_route is not None:
         classified_route = proposal_override_route
+    elif action_proposal is not None and validation_decision.decision == DECISION_AUTHORIZE:
+        classified_route = _derive_route_from_authorized_proposal(
+            action_proposal, user_input, skills=skills, config=config, snapshot=snapshot,
+        )
     else:
+        # Legacy text-classification path: used when no ActionProposal is
+        # provided (bare text requests).  Will be removed when all hosts
+        # emit ActionProposal.
         classified_route = router.classify(user_input, skills=skills, snapshot=snapshot)
     recovered = recover_context(
         classified_route,

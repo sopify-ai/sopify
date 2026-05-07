@@ -21,7 +21,7 @@ D: knowledge_sync audit trail（独立，可穿插在任意阶段间）
 P2 定义的替代链路：
 - host 提交 `execute_existing_plan` ActionProposal（含 plan_subject）
 - Validator 做 subject binding + pairing + evidence 检查
-- AUTHORIZE → engine 走 `exec_plan` route
+- AUTHORIZE → engine 走 `resume_active` route（`exec_plan` 的 `_should_emit_handoff` 为 debug-only，不产出 handoff）
 - 执行前 gate: `evaluate_execution_gate()` → ExecutionAuthorizationReceipt
 
 旧链路（`review_or_execute_plan` as `required_host_action`）完全被替代。

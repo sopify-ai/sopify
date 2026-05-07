@@ -368,7 +368,7 @@ class Router:
                 complexity="simple",
             )
 
-        signal = _estimate_complexity(text)
+        signal = estimate_complexity(text)
         if signal.level == "simple":
             return self._with_capture(
                 RouteDecision(
@@ -404,7 +404,7 @@ class Router:
         )
 
     def _with_capture(self, decision: RouteDecision) -> RouteDecision:
-        capture_mode = _decide_capture_mode(self.config.workflow_learning_auto_capture, decision.complexity)
+        capture_mode = decide_capture_mode(self.config.workflow_learning_auto_capture, decision.complexity)
         return RouteDecision(
             route_name=decision.route_name,
             request_text=decision.request_text,
@@ -671,7 +671,7 @@ def _classify_pending_clarification(
 
 
 
-def _estimate_complexity(text: str) -> _ComplexitySignal:
+def estimate_complexity(text: str) -> _ComplexitySignal:
     lowered = text.lower()
     file_refs = len(_FILE_REF_RE.findall(text))
     has_arch = any(keyword.lower() in lowered for keyword in _ARCHITECTURE_KEYWORDS)
@@ -845,7 +845,11 @@ def _runtime_skill(route_name: str, skills: Iterable[SkillMeta], skill_id: str) 
     )
 
 
-def _decide_capture_mode(policy: str, complexity: str) -> str:
+def decide_capture_mode(policy: str, complexity: str) -> str:
+    """Determine capture mode from auto-capture policy and complexity level.
+
+    Shared by Router.classify and engine derive to ensure identical normalization.
+    """
     if policy == "always":
         return "full"
     if policy == "manual" or policy == "off":

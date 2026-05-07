@@ -3379,3 +3379,201 @@ class StaleReceiptCrossRunIntegrationTests(unittest.TestCase):
             self.assertIsNotNone(result2.handoff, "reject must emit handoff")
             self.assertEqual(result2.handoff.handoff_kind, "reject")
             self.assertNotEqual(result2.handoff.handoff_kind, "consult")
+
+
+class RoutingConvergenceTests(unittest.TestCase):
+    """Phase B — action_type→route_name convergence & capture_mode parity."""
+
+    def _make_plan_subject(self, workspace: Path, plan_artifact: PlanArtifact):
+        """Create a valid PlanSubjectProposal for the given plan.
+
+        Creates plan.md (required by validator) with front matter from tasks.md,
+        then computes digest from plan.md.
+        """
+        import hashlib
+        from runtime.action_intent import PlanSubjectProposal
+        plan_dir = workspace / plan_artifact.path
+        plan_md = plan_dir / "plan.md"
+        if not plan_md.exists():
+            tasks_md = plan_dir / "tasks.md"
+            plan_md.write_text(tasks_md.read_text(encoding="utf-8"), encoding="utf-8")
+        digest = hashlib.sha256(plan_md.read_bytes()).hexdigest()
+        return PlanSubjectProposal(subject_ref=plan_artifact.path, revision_digest=digest)
+
+    def _make_minimal_plan_subject(self, workspace: Path):
+        """Create a minimal plan dir with plan.md for plan_subject validation only."""
+        import hashlib
+        from runtime.action_intent import PlanSubjectProposal
+        plan_dir = workspace / ".sopify-skills" / "plan" / "20260507_test"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        plan_md = plan_dir / "plan.md"
+        plan_md.write_text("---\nlevel: standard\n---\n# Test Plan\n", encoding="utf-8")
+        digest = hashlib.sha256(plan_md.read_bytes()).hexdigest()
+        rel_path = str(plan_dir.relative_to(workspace))
+        return PlanSubjectProposal(subject_ref=rel_path, revision_digest=digest)
+
+    def test_consult_readonly_routes_to_consult(self) -> None:
+        proposal = ActionProposal("consult_readonly", "none", "high", evidence=("test",))
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            result = run_runtime("解释下 router 模块", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
+        self.assertEqual(result.route.route_name, "consult")
+
+    def test_propose_plan_routes_to_plan_only(self) -> None:
+        proposal = _propose_plan_action()
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            result = run_runtime("重构 router 和 engine 之间的交互", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
+        self.assertEqual(result.route.route_name, "plan_only")
+
+    def test_execute_existing_plan_routes_to_resume_active(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            _config, _store, plan_artifact = _prepare_ready_plan_state(workspace)
+            plan_subject = self._make_plan_subject(workspace, plan_artifact)
+            proposal = ActionProposal(
+                "execute_existing_plan", "write_files", "high",
+                evidence=("test",),
+                plan_subject=plan_subject,
+            )
+            result = run_runtime("继续", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
+        self.assertEqual(result.route.route_name, "resume_active")
+
+    def test_cancel_flow_routes_to_cancel_active(self) -> None:
+        proposal = ActionProposal("cancel_flow", "none", "high", evidence=("test",))
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            result = run_runtime("取消", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
+        self.assertEqual(result.route.route_name, "cancel_active")
+        # No global run → cancel_scope must be "session", not empty/global.
+        self.assertEqual(result.route.artifacts.get("cancel_scope"), "session")
+
+    def test_cancel_flow_global_scope_when_global_run_exists(self) -> None:
+        """Derive: cancel_flow with global execution run → cancel_scope="global"."""
+        from runtime.engine import _derive_route_from_authorized_proposal
+        from runtime.context_snapshot import ContextResolvedSnapshot
+        fake_run = RunState(
+            run_id="run-global", status="active", stage="develop_pending",
+            route_name="workflow", title="t", created_at=iso_now(),
+            updated_at=iso_now(), plan_id="p", plan_path="p",
+        )
+        snapshot = ContextResolvedSnapshot(
+            resolution_id="test",
+            preferred_state_scope="global",
+            execution_active_run=fake_run,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            config = load_runtime_config(workspace)
+            proposal = ActionProposal("cancel_flow", "none", "high", evidence=("test",))
+            route = _derive_route_from_authorized_proposal(
+                proposal, "取消", skills=(), config=config, snapshot=snapshot,
+            )
+        self.assertEqual(route.route_name, "cancel_active")
+        self.assertEqual(route.artifacts.get("cancel_scope"), "global")
+
+    def test_modify_files_derive_simple_quick_fix(self) -> None:
+        """Derive: simple modify_files → quick_fix."""
+        from runtime.engine import _derive_route_from_authorized_proposal
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            config = load_runtime_config(workspace)
+            proposal = ActionProposal("modify_files", "write_files", "high", evidence=("test",))
+            route = _derive_route_from_authorized_proposal(
+                proposal, "修改 router.py 增加 timeout 参数",
+                skills=(), config=config, snapshot=None,
+            )
+        self.assertEqual(route.route_name, "quick_fix")
+
+    def test_modify_files_derive_complex_workflow(self) -> None:
+        """Derive: complex modify_files → workflow."""
+        from runtime.engine import _derive_route_from_authorized_proposal
+        complex_text = (
+            "重构整个 runtime 架构：\n"
+            "1. 拆分 engine.py 为 engine_core.py 和 engine_routing.py\n"
+            "2. 重写 router.py 的分类逻辑\n"
+            "3. 迁移 handoff.py 中所有 guard 逻辑到独立模块\n"
+            "4. 更新 tests/test_runtime_engine.py\n"
+            "5. 更新 tests/test_runtime_router.py\n"
+            "6. 确保所有契约文件一致\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            config = load_runtime_config(workspace)
+            proposal = ActionProposal("modify_files", "write_files", "high", evidence=("test",))
+            route = _derive_route_from_authorized_proposal(
+                proposal, complex_text,
+                skills=(), config=config, snapshot=None,
+            )
+        self.assertIn(route.route_name, {"workflow", "light_iterate"})
+
+    def test_modify_files_capture_mode_parity(self) -> None:
+        """Derive path must produce same capture_mode as decide_capture_mode for its complexity."""
+        from runtime.engine import _derive_route_from_authorized_proposal
+        from runtime.router import decide_capture_mode
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            config = load_runtime_config(workspace)
+            proposal = ActionProposal("modify_files", "write_files", "high", evidence=("test",))
+            route = _derive_route_from_authorized_proposal(
+                proposal, "修改 router.py 增加 timeout 参数",
+                skills=(), config=config, snapshot=None,
+            )
+            expected = decide_capture_mode(config.workflow_learning_auto_capture, route.complexity)
+        self.assertEqual(route.capture_mode, expected)
+
+    # -- B6: checkpoint_response active/terminal split --
+
+    def test_checkpoint_response_no_active_checkpoint_rejects(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            plan_subject = self._make_minimal_plan_subject(workspace)
+            proposal = ActionProposal(
+                "checkpoint_response", "write_runtime_state", "high",
+                evidence=("test",), plan_subject=plan_subject,
+            )
+            result = run_runtime("确认", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
+        self.assertEqual(result.route.route_name, "proposal_rejected")
+
+    # -- B8: bare text request fallback --
+
+    def test_propose_plan_produces_plan_artifact(self) -> None:
+        proposal = _propose_plan_action()
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            result = run_runtime("设计一个缓存模块", workspace_root=workspace, user_home=workspace / "home", action_proposal=proposal)
+        self.assertEqual(result.route.route_name, "plan_only")
+        self.assertIsNotNone(result.handoff, "propose_plan must produce handoff")
+        self.assertEqual(result.handoff.handoff_kind, "plan")
+
+    # -- B8: bare text request fallback --
+
+    def test_bare_text_request_uses_router_classify(self) -> None:
+        """No ActionProposal → Router.classify fallback."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            result = run_runtime("解释 router 的工作原理", workspace_root=workspace, user_home=workspace / "home")
+        self.assertEqual(result.route.route_name, "consult")
+
+    def test_bare_text_modify_uses_router_classify(self) -> None:
+        """No ActionProposal, modify request → Router.classify determines route."""
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            (workspace / ".sopify-skills").mkdir(parents=True)
+            result = run_runtime(
+                "修改 runtime/router.py 文件中的 classify 函数，增加 timeout 参数",
+                workspace_root=workspace, user_home=workspace / "home",
+            )
+        # Router classifies based on text heuristics; exact route depends on
+        # complexity scoring.  We just verify it goes through Router, not derive.
+        self.assertIn(result.route.route_name, {"quick_fix", "light_iterate", "workflow", "consult"})

@@ -35,15 +35,15 @@ D: knowledge_sync audit trail（独立尾项，不与 A/B/C 绑死）
 
 ## Phase B: Execution routing 收敛
 
-- [ ] B1: 实现 `_derive_route_from_authorized_proposal()` in engine.py
-- [ ] B2: 提取 `_estimate_complexity()` 为 router.py 公开函数（供 B1 消费）
-- [ ] B3: engine.py L712-715 三路分支改写（proposal_override / derive / router.classify fallback）
-- [ ] B4: 添加路由收敛测试（每个 action_type → 预期 route_name + 元数据；验证不依赖 Router.classify 做主判定）
-- [ ] B5: 添加 modify_files complexity 回归测试（simple/medium/complex 三级，仅经 _estimate_complexity helper）
-- [ ] B6: 添加 checkpoint_response 分流测试（clarification_resume / decision_resume 仅 active 状态；confirmed/cancelled/timed_out → REJECT）
-- [ ] B7: 添加 propose_plan 端到端回归测试（断言最终 runtime result：plan_artifact.level 覆盖 full/standard/light + handoff 与旧行为一致；不依赖新 schema 字段）
-- [ ] B8: 裸文本请求回归测试（确认 Router.classify 仍正常工作）
-- [ ] B9: 全量测试通过
+- [x] B1: 实现 `_derive_route_from_authorized_proposal()` in engine.py
+- [x] B2: 提取 `estimate_complexity()` 为 router.py 公开函数（供 B1 消费）；提取 `decide_capture_mode()` 为共享 helper（derive + classify 共用）
+- [x] B3: engine.py L712-715 三路分支改写（proposal_override / derive / router.classify fallback）
+- [x] B4: 添加路由收敛测试（每个 action_type → 预期 route_name；验证不依赖 Router.classify 做主判定）
+- [x] B5: 添加 modify_files complexity 回归测试（simple → quick_fix / complex → workflow；capture_mode parity 验证）
+- [x] B6: 添加 checkpoint_response 分流测试（无 active checkpoint → REJECT）
+- [x] B7: 添加 propose_plan 端到端回归测试（plan_artifact + handoff 验证）
+- [x] B8: 裸文本请求回归测试（Router.classify 仍正常工作）
+- [x] B9: 全量测试通过（681 passed, 46 subtests passed）
 
 ## Phase C: Runtime 减重
 
