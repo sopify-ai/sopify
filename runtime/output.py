@@ -567,25 +567,6 @@ def _execution_gate(result: RuntimeResult):
     return None
 
 
-def _execution_summary(result: RuntimeResult) -> dict[str, object]:
-    if result.handoff is not None:
-        summary = result.handoff.artifacts.get("execution_summary")
-        if isinstance(summary, dict):
-            return summary
-    return {}
-
-
-def _archive_lifecycle(result: RuntimeResult) -> dict[str, object]:
-    payload = result.route.artifacts.get("archive_lifecycle")
-    if isinstance(payload, dict):
-        return payload
-    if result.handoff is not None:
-        payload = result.handoff.artifacts.get("archive_lifecycle")
-        if isinstance(payload, dict):
-            return payload
-    return {}
-
-
 def _priority_note(result: RuntimeResult) -> str | None:
     for note in result.notes:
         structured = extract_priority_note_event(note)

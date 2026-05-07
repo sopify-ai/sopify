@@ -10,7 +10,6 @@ from .clarification import has_submitted_clarification, parse_clarification_resp
 from .context_snapshot import ContextResolvedSnapshot, resolve_context_snapshot, snapshot_state_conflict_artifacts
 from .decision import has_submitted_decision, parse_decision_response
 from .entry_guard import DIRECT_EDIT_BLOCKED_RUNTIME_REQUIRED_REASON_CODE
-from .plan_scaffold import find_plan_by_request_reference, request_explicitly_wants_new_plan
 from .models import ClarificationState, DecisionState, RouteDecision, RuntimeConfig, SkillMeta
 from .skill_resolver import resolve_route_candidate_skills, resolve_runtime_skill_id
 from .state import StateStore
@@ -172,11 +171,6 @@ _PLAN_MATERIALIZATION_META_DEBUG_PATTERNS = (
     re.compile(r"(为什么|为何|why).*(生成|创建|create).*(plan|方案)", re.IGNORECASE),
     re.compile(r"(不要|别再|不要再|stop|don't).*(生成|创建|create).*(plan|方案)", re.IGNORECASE),
     re.compile(r"(分析下|解释下|看看|review).*(命中|hit).*(guard|plan|方案)", re.IGNORECASE),
-)
-_EXPLICIT_PLAN_PACKAGE_PATTERNS = (
-    re.compile(r"(写到|写入|落到).*(background\.md|design\.md|tasks\.md)", re.IGNORECASE),
-    re.compile(r"(写到|写入|落到).*(\.sopify-skills/plan/)", re.IGNORECASE),
-    re.compile(r"(create|write).*(plan package|background\.md|design\.md|tasks\.md)", re.IGNORECASE),
 )
 _LIGHT_EDIT_HINTS = ("readme", "注释", "comment", "typo", "文案", "assert", "断言", "路径说明")
 @dataclass(frozen=True)
@@ -757,14 +751,6 @@ def _plan_package_policy_for_route(route_name: str, request_text: str, *, config
     if route_name not in {"workflow", "light_iterate"}:
         return "none"
     return "authorized_only"
-
-
-def _request_explicitly_materializes_plan(request_text: str, *, config: RuntimeConfig) -> bool:
-    if find_plan_by_request_reference(request_text, config=config) is not None:
-        return False
-    if request_explicitly_wants_new_plan(request_text):
-        return True
-    return any(pattern.search(request_text) is not None for pattern in _EXPLICIT_PLAN_PACKAGE_PATTERNS)
 
 
 def _has_tradeoff_or_contract_split(text: str) -> bool:

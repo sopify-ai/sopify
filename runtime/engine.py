@@ -2193,18 +2193,6 @@ def _normalized_plan_package_policy(decision: RouteDecision, *, config: RuntimeC
     return policy
 
 
-def _resume_active_route(*, request_text: str, candidate_skill_ids: tuple[str, ...]) -> RouteDecision:
-    return RouteDecision(
-        route_name="resume_active",
-        request_text=request_text,
-        reason="Execution confirmed and develop may start",
-        complexity="medium",
-        should_recover_context=True,
-        candidate_skill_ids=candidate_skill_ids,
-        active_run_action="resume",
-    )
-
-
 def _copy_run_state(
     current_run: RunState,
     *,
@@ -2715,30 +2703,6 @@ def _consume_current_decision(state_store: StateStore, decision_state: DecisionS
     consumed = consume_decision(decision_state)
     state_store.set_current_decision(consumed)
     state_store.clear_current_decision()
-
-
-def _consume_current_decision_if_confirmed_match(
-    state_store: StateStore,
-    decision_state: DecisionState | None,
-    *,
-    current_decision: DecisionState | None,
-) -> bool:
-    if decision_state is None or decision_state.status != "confirmed" or decision_state.selection is None:
-        return False
-    if current_decision is None:
-        return False
-    if current_decision.decision_id != decision_state.decision_id:
-        return False
-    if current_decision.status != "confirmed" or current_decision.selection is None:
-        return False
-    _consume_current_decision(state_store, current_decision)
-    return True
-
-
-def _confirmed_decision_context(*, current_decision: DecisionState | None) -> DecisionState | None:
-    if current_decision is None or current_decision.status != "confirmed" or current_decision.selection is None:
-        return None
-    return current_decision
 
 
 def _merge_kb_artifacts(kb_artifact: KbArtifact | None, extra_files: tuple[str, ...], *, config: RuntimeConfig) -> KbArtifact | None:

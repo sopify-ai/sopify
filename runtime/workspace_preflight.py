@@ -636,26 +636,6 @@ def _load_payload_manifest_from_root(payload_root: Path) -> tuple[dict[str, Any]
     return (payload, manifest_path)
 
 
-def _discover_payload_manifest(
-    manifest_candidates: list[tuple[Path, str | None]],
-) -> tuple[dict[str, Any] | None, Path | None, str | None]:
-    payload_manifest = None
-    payload_manifest_file = None
-    detected_host_id = None
-    for candidate, host_id in manifest_candidates:
-        if not candidate.is_file():
-            continue
-        try:
-            payload_manifest = json.loads(candidate.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise WorkspacePreflightError(f"Invalid payload manifest: {candidate}") from exc
-        if isinstance(payload_manifest, dict):
-            payload_manifest_file = candidate
-            detected_host_id = host_id
-            break
-    return (payload_manifest, payload_manifest_file, detected_host_id)
-
-
 def _resolve_payload_contract(
     *,
     payload_manifest_path: str | Path | None,

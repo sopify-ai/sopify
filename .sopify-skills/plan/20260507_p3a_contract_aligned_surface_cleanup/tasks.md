@@ -47,13 +47,18 @@ D: knowledge_sync audit trail（独立尾项，不与 A/B/C 绑死）
 
 ## Phase C: Runtime 减重
 
-- [ ] C1: 基于 A/B 后的 dead code analysis，列出模块级删除清单
-- [ ] C2: 执行删除（每模块单独确认测试通过）
-- [ ] C3: decision_tables.py 裁剪旧 route/action entries
-- [ ] C4: deterministic_guard.py 裁剪已删 surface 的 guard entries
-- [ ] C5: context_snapshot.py 裁剪只服务已删 route 的逻辑
-- [ ] C6: 验证 LOC < 20K
-- [ ] C7: 全量测试通过
+- [x] C1: 基于 A/B 后的 dead code analysis，列出模块级删除清单
+  - AST 分析：0 unreferenced public symbols, 6 unreferenced private functions + 1 orphaned constant
+  - 三路探索审计：exec_plan / replay / resolution_planner / sidecar / vnext_phase_boundary / decision_tables / context_snapshot 均为活面
+  - Compat shim（workspace_preflight vendored fallback ~230 LOC, failure_recovery standalone ~100 LOC）仍被测试/兼容链路摸到，非纯死路
+- [x] C2: 执行删除（6 dead functions + 1 constant = -88 LOC, 687 passed）
+- [x] C3: decision_tables.py — 无可裁剪旧 entries（YAML 已在 Phase A 清理，Python loader 全活）
+- [x] C4: deterministic_guard.py — plan_review guard 已在 Phase A 迁入 continue_host_develop，非死路
+- [x] C5: context_snapshot.py — conflict/quarantine 逻辑全局使用，无只服务已删 route 的面
+- [ ] ~~C6: 验证 LOC < 20K~~ → **deferred**: 26,179 LOC, 剩余全是活面; 20K 需 surface consolidation 新波
+- [x] C7: 全量测试通过（687 passed, 49 subtests）
+
+**Phase C 结论**: dead path 层面代码库已很紧。进一步减重需开新波 surface consolidation（不在 P3a 范围）。
 
 ## Phase D: knowledge_sync audit trail（尾项）
 
@@ -69,11 +74,12 @@ D: knowledge_sync audit trail（独立尾项，不与 A/B/C 绑死）
 
 ## 完成标准
 
-- 全量测试通过（670+ tests, 0 regression）
+- 全量测试通过（687 tests, 49 subtests, 0 regression）
 - grep `review_or_execute_plan` 在 `runtime/` 和活跃 `.sopify-skills/blueprint/` = 0 hits（排除 history/ 和 CHANGELOG.md）
 - grep `review_or_execute_plan` 在 `tests/` 仅限 fail-closed / compatibility coverage allowlist 内保留
 - Authorized ActionProposal 不再依赖 Router.classify() 做主路由判定（modify_files 仅经提取后的 complexity helper）
 - propose_plan 最终 runtime result 可观察行为与旧路径一致（plan_artifact.level + handoff），不只验证 derive 中间值
 - checkpoint_response 正确分流到 clarification_resume / decision_resume（仅 active 状态 {"pending","collecting"} 可 resume；terminal 状态 → REJECT）
-- runtime/*.py LOC < 20,000
+- cancel_flow 授权 derive 路径正确计算 cancel_scope（global/session 与 Router.classify 对齐）
+- ~~runtime/*.py LOC < 20,000~~ → deferred（26,179 LOC，剩余为活面；需新波 surface consolidation）
 - D（knowledge_sync）按实际成本决定是否进入本里程碑
